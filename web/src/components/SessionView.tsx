@@ -1,0 +1,222 @@
+import { useEffect, useState } from 'react'
+import type { PermissionMode, SessionMeta, SlashCommand } from '../../../shared/types.ts'
+import { api, closeSession, composerOf, draftsOf, hasContent, loadEvents, queuedParts, select, sendQueued, setComposer, useStore } from '../store.ts'
+import { fatigue, kTokens } from '../util.ts'
+import { Mascot, STATUS_LABEL } from './Mascot.tsx'
+import { RichInput } from './Inputs.tsx'
+import { Transcript } from './Transcript.tsx'
+import { AttentionPanel } from './AttentionPanel.tsx'
+import { revealItem, useItems } from '../items.ts'
+import { ListIcon } from './Icons.tsx'
+import { Splitter, useWidth } from './Splitter.tsx'
+
+export function ContextGauge({ m, onCompact }: { m: SessionMeta; onCompact?: () => void }) {
+  const used = m.context.used
+  const window = Math.max(m.context.window, used)
+  const pct = Math.min(100, (used / (window || 1)) * 100)
+  const f = fatigue(used, window)
+  const color = f < 0.35 ? 'var(--ok)' : f < 0.6 ? 'var(--warn)' : f < 0.85 ? 'var(--hot)' : 'var(--bad)'
+  return (
+    <div className="gauge" title={`${used.toLocaleString()} of ${window.toLocaleString()} tokens in context`}>
+      <div className="gauge-bar"><div style={{ width: `${Math.max(pct, used ? 1 : 0)}%`, background: color }} /></div>
+      <span className="gauge-label">{kTokens(used)} / {kTokens(window)}</span>
+      {onCompact && <button className="link" disabled={m.status === 'working' || !m.started} onClick={onCompact} title="Summarise the conversation so far to free up context (/compact)">Compact</button>}
+    </div>
+  )
+}
+
+const MODES: { v: PermissionMode; label: string }[] = [
+  { v: 'auto', label: 'Auto mode' },
+  { v: 'default', label: 'Ask before tools' },
+  { v: 'acceptEdits', label: 'Auto-accept edits' },
+  { v: 'plan', label: 'Plan only' },
+  { v: 'bypassPermissions', label: 'Bypass permissions' },
+]
+
+export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.ReactNode }) {
+  const [editing, setEditing] = useState(false)
+  const [title, setTitle] = useState(m.title)
+  useEffect(() => setTitle(m.title), [m.title])
+  const save = () => { setEditing(false); if (title.trim() && title !== m.title) void api(`/api/sessions/${m.id}`, 'PATCH', { title }) }
+  return (
+    <header className="session-head">
+      <Mascot status={m.status} look={m.look} fatigue={fatigue(m.context.used, m.context.window)} size={44} title={STATUS_LABEL[m.status]} />
+      <div className="head-main">
+        {editing
+          ? <input className="title-edit" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} onBlur={save} onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setTitle(m.title); setEditing(false) } }} />
+          : <h1 onDoubleClick={() => setEditing(true)} title="Double-click to rename">{m.title}</h1>}
+        <div className="head-sub">
+          <span className={`status-pill st-${m.status}`}>{m.compacting ? 'compacting' : STATUS_LABEL[m.status]}</span>
+          <span className="muted mono path" title={m.cwd}>{'\u200E' + m.cwd.replace(/^\/Users\/[^/]+/, '~') + '\u200E'}</span>
+          {m.model && <span className="muted">{m.model}</span>}
+        </div>
+      </div>
+      <div className="head-side">
+        <ContextGauge m={m} onCompact={() => void api(`/api/sessions/${m.id}/command`, 'POST', { cmd: '/compact' })} />
+        <div className="head-actions">
+          {m.kind === 'worker' && (
+            <select value={m.permissionMode} onChange={(e) => void api(`/api/sessions/${m.id}`, 'PATCH', { permissionMode: e.target.value })}>
+              {MODES.map((x) => <option key={x.v} value={x.v}>{x.label}</option>)}
+            </select>
+          )}
+          {extra}
+          {(m.status === 'working' || m.status === 'permission') && <button className="danger" onClick={() => void api(`/api/sessions/${m.id}/interrupt`)}>Stop</button>}
+          {m.kind === 'worker' && (m.archived
+            ? <>
+                <button onClick={() => void api(`/api/sessions/${m.id}`, 'PATCH', { archived: false })}>Reopen</button>
+                <button className="danger" title="Remove from Codiner. Claude Code keeps its own copy, so it stays in Resume." onClick={() => { if (confirm(`Delete "${m.title}" from Codiner? Claude Code's own transcript is kept, so you can still find it under Resume.`)) void api(`/api/sessions/${m.id}`, 'DELETE').then(() => select('master')) }}>Delete</button>
+              </>
+            : <button title="End the session and move it to Archived (reopenable)" onClick={() => void closeSession(m.id)}>Close</button>)}
+        </div>
+      </div>
+    </header>
+  )
+}
+
+function Inbox({ m }: { m: SessionMeta }) {
+  if (!m.inbox.length) return null
+  const dismiss = (id: string) => api(`/api/sessions/${m.id}/inbox/${id}/dismiss`)
+  return (
+    <div className="inbox">
+      {m.inbox.map((i) => (
+        <div key={i.id} className="inbox-item">
+          <div className="inbox-from">Drafted by the {i.from}</div>
+          <div className="inbox-text">{i.text}</div>
+          <div className="inbox-actions">
+            <button className="primary" onClick={async () => { await api(`/api/sessions/${m.id}/send`, 'POST', { parts: [{ kind: 'text', text: i.text }] }); await dismiss(i.id) }}>Send as is</button>
+            <button onClick={async () => { const c = composerOf(m.id); setComposer(m.id, { text: (c.text ? c.text + '\n\n' : '') + i.text }); await dismiss(i.id) }}>Edit first</button>
+            <button className="link" onClick={() => void dismiss(i.id)}>Dismiss</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// Typing "/" at the start of the composer lists the session's slash commands:
+// Claude Code's built-ins, your skills and the project's own.
+function useSlashMenu(sid: string, text: string, setText: (t: string) => void) {
+  const [cmds, setCmds] = useState<SlashCommand[] | null>(null)
+  const [index, setIndex] = useState(0)
+  const [closedFor, setClosedFor] = useState<string | null>(null)
+  const m = /^\/([\w:.-]*)$/.exec(text)
+  const typing = !!m && closedFor !== text
+  useEffect(() => { setCmds(null) }, [sid])
+  useEffect(() => { if (typing && !cmds) void api<SlashCommand[]>(`/api/sessions/${sid}/commands`, 'GET').then(setCmds).catch(() => {}) }, [typing, cmds, sid])
+  const q = (m?.[1] ?? '').toLowerCase()
+  const matches = !typing || !cmds ? [] : cmds
+    .filter((c) => c.name.toLowerCase().includes(q))
+    .sort((a, b) => Number(!a.name.toLowerCase().startsWith(q)) - Number(!b.name.toLowerCase().startsWith(q)) || a.name.localeCompare(b.name))
+    .slice(0, 50)
+  useEffect(() => setIndex(0), [q])
+  const pick = (c: SlashCommand) => setText(`/${c.name} `)
+  const onKey = (e: React.KeyboardEvent) => {
+    if (!matches.length) return false
+    if (e.key === 'ArrowDown') { setIndex((i) => (i + 1) % matches.length); return true }
+    if (e.key === 'ArrowUp') { setIndex((i) => (i - 1 + matches.length) % matches.length); return true }
+    if ((e.key === 'Tab' || (e.key === 'Enter' && !e.metaKey && !e.ctrlKey)) && matches[index]) { pick(matches[index]); return true }
+    if (e.key === 'Escape') { setClosedFor(text); return true }
+    return false
+  }
+  const menu = matches.length > 0 && (
+    <div className="slash-menu" onMouseDown={(e) => e.preventDefault()}>
+      {matches.map((c, i) => (
+        <button key={c.name} className={i === index ? 'on' : ''} onMouseEnter={() => setIndex(i)} onClick={() => pick(c)} ref={i === index ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>
+          <span className="slash-name">/{c.name}{c.argumentHint && <span className="muted"> {c.argumentHint}</span>}</span>
+          <span className="slash-desc">{c.description}</span>
+        </button>
+      ))}
+    </div>
+  )
+  return { onKey, menu }
+}
+
+export function Composer({ m }: { m: SessionMeta }) {
+  useStore()
+  const c = composerOf(m.id)
+  const drafts = draftsOf(m.id).filter(hasContent)
+  const notes = drafts.filter((d) => d.kind === 'note').length
+  const answers = drafts.filter((d) => d.kind === 'answer').length
+  const dismissed = drafts.filter((d) => d.kind === 'dismiss').length
+  const [sending, setSending] = useState(false)
+  // Sending while questions or items are still open warns once; sending again
+  // dismisses the rest.
+  const open = useItems(m.id).filter((i) => i.status === 'open')
+  const [warned, setWarned] = useState(false)
+  useEffect(() => { if (!open.length) setWarned(false) }, [open.length])
+  useEffect(() => setWarned(false), [m.id])
+  const slash = useSlashMenu(m.id, c.text, (text) => setComposer(m.id, { text }))
+  const isCommand = /^\/[\w:.-]+/.test(c.text.trim()) && !c.images.length
+  const n = isCommand ? 1 : queuedParts(m.id).length
+  const send = async () => {
+    if (!n || sending) return
+    if (!isCommand && open.length && !warned) { setWarned(true); revealItem(open[0].key); return }
+    setSending(true)
+    try {
+      if (isCommand) {
+        // A slash command has to be the whole message; queued replies wait for the next one.
+        await api(`/api/sessions/${m.id}/send`, 'POST', { parts: [{ kind: 'text', text: c.text.trim() }] })
+        setComposer(m.id, { text: '' })
+      } else await sendQueued(m.id, open.map((i) => ({ key: i.key, label: i.label })))
+    } finally { setSending(false) }
+  }
+  return (
+    <div className="composer">
+      <Inbox m={m} />
+      {(notes > 0 || answers > 0 || dismissed > 0 || open.length > 0) && (
+        <div className="queue">
+          {notes > 0 && <span className="chip static">{notes} {notes === 1 ? 'comment' : 'comments'}</span>}
+          {answers > 0 && <span className="chip static">{answers} {answers === 1 ? 'answer' : 'answers'}</span>}
+          {dismissed > 0 && <span className="chip static">{dismissed} dismissed</span>}
+          {open.length > 0 && <button className={`chip open-chip${warned ? ' warn' : ''}`} onClick={() => revealItem(open[0].key)}>{open.length} open</button>}
+        </div>
+      )}
+      <div className="composer-row">
+        {slash.menu}
+        <RichInput
+          value={c.text}
+          onChange={(text) => setComposer(m.id, { text })}
+          images={c.images}
+          onImages={(images) => setComposer(m.id, { images })}
+          placeholder={m.kind === 'master' ? 'Message the master' : 'Message Claude'}
+          onSubmit={send}
+          onKey={slash.onKey}
+          thumbs="overlay"
+        />
+        <button className="primary send" disabled={!n || sending} onClick={send}>
+          {sending ? 'Sending…' : isCommand ? 'Run' : warned && open.length ? 'Send anyway' : n > 1 ? `Send ${n}` : 'Send'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode }) {
+  const st = useStore()
+  const m = st.sessions.find((s) => s.id === id)
+  useEffect(() => { void loadEvents(id) }, [id])
+  const items = useItems(id)
+  const [panel, setPanel] = useState(() => localStorage.getItem('codiner.panel') !== '0')
+  const togglePanel = () => { localStorage.setItem('codiner.panel', panel ? '0' : '1'); setPanel(!panel) }
+  const [panelW, setPanelW] = useWidth('attention', 300)
+  if (!m) return <div className="empty">No such session.</div>
+  const open = items.filter((i) => i.status === 'open').length
+  return (
+    <div className="session">
+      <SessionHeader m={m} extra={<>
+        {extra}
+        {items.length > 0 && <button className={`panel-toggle${panel ? ' on' : ''}`} title="Questions and items" onClick={togglePanel}><ListIcon size={13} />{open > 0 && <span className="count">{open}</span>}</button>}
+      </>} />
+      <div className="session-body">
+        <div className="session-main">
+          <Transcript sid={id} />
+          <Composer m={m} />
+        </div>
+        {panel && items.length > 0 && <>
+          <Splitter width={panelW} setWidth={setPanelW} min={220} max={640} initial={300} reverse />
+          <AttentionPanel sid={id} width={panelW} onHide={togglePanel} />
+        </>}
+      </div>
+    </div>
+  )
+}

@@ -1,0 +1,32 @@
+{
+  "name": "codiner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A web UI over Claude Code: reply inline, answer questions in place, run sessions in parallel with a master agent.",
+  "scripts": {
+    "dev": "node server/index.ts --dev",
+    "build": "vite build",
+    "start": "vite build && node server/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.17",
+    "marked": "^18.1.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/ws": "^8.18.2",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  }
+}
