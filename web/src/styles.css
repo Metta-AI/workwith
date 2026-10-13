@@ -266,7 +266,9 @@ textarea.agents-md { font-size: 12.5px; line-height: 1.5; resize: vertical; min-
 .ack-row button { border: none; background: none; font-size: 18px; line-height: 1; padding: 4px; border-radius: 50%; transition: transform .08s; }
 .ack-row button:hover { transform: scale(1.3); background: rgba(127, 127, 127, .12); }
 .ack-row .more-emoji { padding: 4px 10px; border-radius: 14px; }
-.ack-row button.on { background: var(--accent-soft); }
+.ack-row button.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); position: relative; }
+/* An emoji you already put on comes off: hovering it says so. */
+.ack-row button.on:hover::after { content: '×'; position: absolute; top: -5px; right: -5px; width: 14px; height: 14px; border-radius: 50%; background: var(--bad); color: #fff; font-size: 11px; line-height: 14px; text-align: center; }
 .rail-ack .emoji-picker { left: 0; top: calc(100% + 4px); }
 .more-emoji { font-size: 14px !important; color: var(--muted); }
 .emoji-picker { position: absolute; z-index: 20; width: 260px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px rgba(0, 0, 0, .18); padding: 6px; }
@@ -356,7 +358,7 @@ textarea.agents-md { font-size: 12.5px; line-height: 1.5; resize: vertical; min-
 .note-card:hover .reactions, .note-card:focus-within .reactions, .note-card.blank .reactions { opacity: 1; }
 .reactions button { border: none; background: none; padding: 1px 4px; font-size: 14px; line-height: 1.3; border-radius: 6px; filter: grayscale(.6); }
 .reactions button:hover { background: rgba(127, 127, 127, .15); filter: none; }
-.reactions button.on { background: var(--accent-soft); filter: none; }
+.reactions button.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); filter: none; }
 .card-x { position: absolute; top: 4px; right: 4px; border: none; background: none; padding: 2px; line-height: 0; color: var(--muted); border-radius: 4px; }
 .card-x:hover { color: var(--text); background: rgba(127, 127, 127, .15); }
 .ask-card { margin: .7em 0 .9em; border-left: 3px solid var(--blue); background: var(--card); border-radius: 0 10px 10px 0; padding: 8px 10px; box-shadow: 0 1px 3px rgba(0, 0, 0, .06); }
@@ -376,6 +378,17 @@ textarea.agents-md { font-size: 12.5px; line-height: 1.5; resize: vertical; min-
 .rich-input { width: 100%; }
 .ri-field { position: relative; }
 .ri-edit { display: block; box-sizing: border-box; width: 100%; max-height: 420px; overflow-y: auto; background: var(--card); border: 1px solid var(--line); border-radius: 7px; padding: 5px 30px 5px 8px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 20px; cursor: text; }
+/* Live markdown in the fields (mdlive.ts): markers show only in the span or line you are in. */
+.ri-edit .md-mark { color: var(--muted); }
+.ri-edit .md-x:not(.md-active) > .md-mark { display: none; }
+.ri-edit .md-strong { font-weight: 650; }
+.ri-edit .md-em { font-style: italic; }
+.ri-edit .md-strike { text-decoration: line-through; }
+.ri-edit .md-code { font-family: var(--mono); font-size: .92em; background: var(--panel); border-radius: 4px; padding: 0 2px; }
+.ri-edit .md-link { color: var(--blue); }
+.ri-edit .md-h { font-weight: 700; } .ri-edit .md-h1 { font-size: 1.2em; } .ri-edit .md-h2 { font-size: 1.1em; }
+.ri-edit .md-bullet { color: var(--muted); }
+.ri-edit .md-quote { color: var(--muted); }
 .ri-edit:focus { outline: 2px solid var(--blue); outline-offset: -1px; }
 .ri-edit[data-empty]::before { content: attr(data-placeholder); color: var(--muted); pointer-events: none; position: absolute; }
 .ri-img { height: 24px; max-width: 96px; object-fit: cover; vertical-align: middle; position: relative; top: -1px; margin: -5px 2px; border-radius: 4px; border: 1px solid var(--line); cursor: zoom-in; }

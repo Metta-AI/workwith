@@ -1,0 +1,243 @@
+// Live markdown for the text fields, the way Obsidian does it: the text stays
+// markdown source, but it is drawn styled (bold bold, code in a box, headings
+// big) and the markers (**, _, `, #…) show only while the caret is in that
+// span or on that line. The field rebuilds its DOM from the text after each
+// change and puts the caret back at the same character, so positions here are
+// offsets into the text, where an image counts as its whole image link.
+
+import { imageToken, splitImages } from '../../shared/images.ts'
+
+// ---- text ↔ DOM ---------------------------------------------------------------
+
+export function imgNode(src: string, url?: string): HTMLImageElement {
+  const img = document.createElement('img')
+  img.src = src
+  img.className = 'ri-img'
+  if (url) img.dataset.url = url
+  else img.classList.add('loading')
+  return img
+}
+
+// The text a node stands for.
+function textOf(n: Node, last: boolean): string {
+  if (n.nodeType === Node.TEXT_NODE) return n.textContent ?? ''
+  if (n instanceof HTMLImageElement) return n.dataset.url ? imageToken(n.dataset.url) : ''
+  // The browser keeps a <br> at the very end so a final newline shows; it is not text.
+  if (n.nodeName === 'BR') return last ? '' : '\n'
+  let out = ''
+  const kids = [...n.childNodes]
+  // A browser may wrap new lines in <div>s; each starts a line.
+  kids.forEach((k, i) => {
+    const t = textOf(k, last && i === kids.length - 1)
+    out += (out && !out.endsWith('\n') && /^(DIV|P)$/.test(k.nodeName) ? '\n' : '') + t
+  })
+  return out
+}
+export const fromDom = (el: HTMLElement) => textOf(el, true)
+
+const span = (cls: string, ...kids: (Node | string)[]) => {
+  const s = document.createElement('span')
+  s.className = cls
+  for (const k of kids) s.append(k)
+  return s
+}
+const mark = (t: string, block = false) => span(block ? 'md-mark md-bmark' : 'md-mark', t)
+
+// Inline spans, left to right, not nested.
+const INLINE: [RegExp, string, number, number][] = [
+  // pattern, class, length of the opening marker, of the closing one (link: computed)
+  [/`[^`\n]+`/y, 'md-code', 1, 1],
+  [/\*\*[^*\n]+?\*\*/y, 'md-strong', 2, 2],
+  [/__[^_\n]+?__/y, 'md-strong', 2, 2],
+  [/~~[^~\n]+?~~/y, 'md-strike', 2, 2],
+  [/\*[^*\s][^*\n]*?\*(?!\*)/y, 'md-em', 1, 1],
+  [/_[^_\s][^_\n]*?_(?![\w])/y, 'md-em', 1, 1],
+  [/\[[^\]\n]+\]\([^)\s]*\)/y, 'md-link', 1, 0],
+]
+
+function inline(text: string): Node[] {
+  const out: Node[] = []
+  let plain = ''
+  const flush = () => { if (plain) out.push(document.createTextNode(plain)); plain = '' }
+  let i = 0
+  while (i < text.length) {
+    let hit: Node | null = null
+    // Markers only open at a word edge (so snake_case stays plain).
+    if (i === 0 || !/\w/.test(text[i - 1]) || text[i] === '`' || text[i] === '[') {
+      for (const [re, cls, a, b] of INLINE) {
+        re.lastIndex = i
+        const m = re.exec(text)
+        if (!m) continue
+        const s = m[0]
+        if (cls === 'md-link') {
+          const close = s.indexOf('](')
+          hit = span('md-x md-link', mark('['), s.slice(1, close), mark(s.slice(close)))
+        } else hit = span(`md-x ${cls}`, mark(s.slice(0, a)), s.slice(a, s.length - b), mark(s.slice(s.length - b)))
+        i += s.length
+        break
+      }
+    }
+    if (hit) { flush(); out.push(hit) } else plain += text[i++]
+  }
+  flush()
+  return out
+}
+
+function line(text: string): Node[] {
+  let m: RegExpExecArray | null
+  if ((m = /^(#{1,6} )(.*)$/.exec(text))) return [span(`md-x md-line md-h md-h${m[1].length - 1}`, mark(m[1], true), ...inline(m[2]))]
+  if ((m = /^(\s*(?:[-*+]|\d+[.)]) )(.*)$/.exec(text))) return [span('md-line md-li', span('md-bullet', m[1]), ...inline(m[2]))]
+  if ((m = /^(> ?)(.*)$/.exec(text))) return [span('md-x md-line md-quote', mark(m[1], true), ...inline(m[2]))]
+  return inline(text)
+}
+
+export function render(el: HTMLElement, value: string) {
+  const nodes: Node[] = []
+  for (const r of splitImages(value)) {
+    if ('url' in r) { nodes.push(imgNode(r.url, r.url)); continue }
+    r.text.split('\n').forEach((l, i) => {
+      if (i) nodes.push(document.createTextNode('\n'))
+      nodes.push(...line(l))
+    })
+  }
+  // A final newline needs something after it to show as a line.
+  if (value.endsWith('\n')) nodes.push(document.createElement('br'))
+  el.replaceChildren(...nodes)
+}
+
+// ---- caret ↔ offsets ------------------------------------------------------------
+
+// The text offset of a DOM position inside el.
+function offsetOf(el: HTMLElement, node: Node, off: number): number {
+  let n = 0
+  let found = -1
+  const walk = (p: Node): boolean => {
+    if (p === node && p.nodeType !== Node.TEXT_NODE) {
+      // A position between children: count the children before it.
+      for (let i = 0; i < off && i < p.childNodes.length; i++) n += textOf(p.childNodes[i], false).length
+      found = n
+      return true
+    }
+    if (p.nodeType === Node.TEXT_NODE) {
+      if (p === node) { found = n + off; return true }
+      n += p.textContent?.length ?? 0
+      return false
+    }
+    if (p !== el && (p instanceof HTMLImageElement || p.nodeName === 'BR')) { n += textOf(p, false).length; return false }
+    for (const k of p.childNodes) if (walk(k)) return true
+    return false
+  }
+  walk(el)
+  return found < 0 ? n : found
+}
+
+export function selectionOffsets(el: HTMLElement): [number, number] | null {
+  const s = getSelection()
+  if (!s?.rangeCount || !el.contains(s.anchorNode)) return null
+  const r = s.getRangeAt(0)
+  return [offsetOf(el, r.startContainer, r.startOffset), offsetOf(el, r.endContainer, r.endOffset)]
+}
+
+// The DOM position at a text offset. At the edge of a styled span, the caret
+// goes outside it (after it), so typing after **bold** is not bold.
+function positionAt(el: HTMLElement, target: number): [Node, number] {
+  let n = 0
+  let best: [Node, number] | null = null
+  const walk = (p: Node): boolean => {
+    if (p.nodeType === Node.TEXT_NODE) {
+      const len = p.textContent?.length ?? 0
+      if (target >= n && target <= n + len) {
+        best = [p, target - n]
+        // Prefer the start of the next text over the end of this one, unless this is the last.
+        if (target < n + len) return true
+      }
+      n += len
+      return false
+    }
+    if (p !== el && (p instanceof HTMLImageElement || p.nodeName === 'BR')) {
+      const len = textOf(p, false).length
+      if (target <= n && !best) { best = [p.parentNode!, [...p.parentNode!.childNodes].indexOf(p as ChildNode)]; return true }
+      n += len
+      if (target === n) best = [p.parentNode!, [...p.parentNode!.childNodes].indexOf(p as ChildNode) + 1]
+      return false
+    }
+    for (const k of p.childNodes) if (walk(k)) return true
+    return false
+  }
+  walk(el)
+  return best ?? [el, el.childNodes.length]
+}
+
+export function rangeAt(el: HTMLElement, start: number, end = start): Range {
+  const r = document.createRange()
+  const [a, ao] = positionAt(el, start)
+  r.setStart(a, ao)
+  const [b, bo] = positionAt(el, end)
+  r.setEnd(b, bo)
+  return r
+}
+
+export function select(el: HTMLElement, start: number, end = start) {
+  const s = getSelection()
+  if (!s) return
+  s.removeAllRanges()
+  s.addRange(rangeAt(el, start, end))
+}
+
+// Show the markers of the spans and lines the selection touches.
+export function activate(el: HTMLElement) {
+  const s = getSelection()
+  const on = new Set<Element>()
+  if (s?.rangeCount && el.contains(s.anchorNode)) {
+    const r = s.getRangeAt(0)
+    for (const n of [r.startContainer, r.endContainer]) {
+      for (let p: Node | null = n; p && p !== el; p = p.parentNode) if (p instanceof Element && p.classList.contains('md-x')) on.add(p)
+    }
+    // A caret just before or after a span counts as in it.
+    if (r.collapsed && r.startContainer.nodeType === Node.TEXT_NODE) {
+      const t = r.startContainer
+      if (r.startOffset === 0 && t.previousSibling instanceof Element && t.previousSibling.classList.contains('md-x')) on.add(t.previousSibling)
+      if (r.startOffset === t.textContent?.length && t.nextSibling instanceof Element && t.nextSibling.classList.contains('md-x')) on.add(t.nextSibling)
+    }
+  }
+  for (const x of el.querySelectorAll('.md-x')) x.classList.toggle('md-active', on.has(x))
+}
+
+// ---- markdown keys ----------------------------------------------------------------
+
+// Cmd+B, I, E, Shift+X and K wrap the selection, or unwrap it (markers inside
+// or just outside it count); with nothing selected, the caret lands inside.
+const WRAP: Record<string, [string, string]> = { b: ['**', '**'], i: ['_', '_'], e: ['`', '`'], x: ['~~', '~~'], k: ['[', ']()'] }
+export function wrapKey(e: { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }, value: string, s: number, t: number): { value: string; start: number; end: number } | null {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey) return null
+  const k = e.key.toLowerCase()
+  if (!WRAP[k] || (k === 'x') !== e.shiftKey) return null
+  const [a, b] = WRAP[k]
+  if (k !== 'k') {
+    if (value.slice(s - a.length, s) === a && value.slice(t, t + b.length) === b)
+      return { value: value.slice(0, s - a.length) + value.slice(s, t) + value.slice(t + b.length), start: s - a.length, end: t - a.length }
+    const sel = value.slice(s, t)
+    if (sel.length >= a.length + b.length && sel.startsWith(a) && sel.endsWith(b))
+      return { value: value.slice(0, s) + sel.slice(a.length, sel.length - b.length) + value.slice(t), start: s, end: t - a.length - b.length }
+  }
+  const v = value.slice(0, s) + a + value.slice(s, t) + b + value.slice(t)
+  // A link puts the caret where the URL goes.
+  return k === 'k' ? { value: v, start: t + a.length + b.length - 1, end: t + a.length + b.length - 1 } : { value: v, start: s + a.length, end: t + a.length }
+}
+
+// Enter, done here so the browser adds no extra line: in a list item it starts
+// the next item (numbered ones count up); on an empty item it ends the list.
+export function enterKey(value: string, s: number, t: number): { value: string; start: number; end: number } {
+  const lineStart = value.lastIndexOf('\n', s - 1) + 1
+  const m = /^(\s*)([-*+]|(\d+)([.)]))( \[[ x]\])? (.*)$/.exec(value.slice(lineStart, s))
+  let insert = '\n'
+  if (m && s === t) {
+    if (!m[6].trim() && value.slice(s, value.indexOf('\n', s) < 0 ? value.length : value.indexOf('\n', s)).trim() === '') {
+      // An empty item: take its bullet off instead.
+      return { value: value.slice(0, lineStart) + value.slice(s), start: lineStart, end: lineStart }
+    }
+    insert = `\n${m[1]}${m[3] ? `${Number(m[3]) + 1}${m[4]}` : m[2]}${m[5] ? ' [ ]' : ''} `
+  }
+  const v = value.slice(0, s) + insert + value.slice(t)
+  return { value: v, start: s + insert.length, end: s + insert.length }
+}

@@ -66,7 +66,10 @@ tags are plain text.
 The user can select any passage of your messages and comment on it. Their message then
 contains \`> quoted passage\` blocks, each followed by their note about that passage. A quote
 that ends in "…" is the first words of a longer passage (often a whole paragraph or list
-item) and stands for all of it. A note that is only an emoji is a reaction to that passage. A reply to
+item) and stands for all of it. A note that is only an emoji is a reaction to that passage.
+A reaction inside a \`<consider>\` item counts as the user's reply to it, but it can be
+ambiguous (agreement, thanks, or a polite "noted, moving on"). If it matters and it is not
+clear from the reaction what to do, raise the item again and ask. A reply to
 a \`<consider>\` item quotes its title. Answers arrive as "Answer to your question \`id\`". Items
 and questions the user set aside arrive in one "Dismissed, no reply" line; do not raise them
 again unless something changes. Items the user did arrive in one "Marked done" line, each

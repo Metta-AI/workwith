@@ -52,12 +52,18 @@ ever reports a key-based auth source. The sidebar footer shows your plan's 5-hou
   (the Terminal script runs it under `script` and calls the server when it ends), and that
   result goes into the item's Done.
 - **Reactions.** Move the pointer level with a paragraph or list item (over it, or in the left
-  gutter) and a 👍 shows at its left: click it, or press and hold (or drag up) for your most
-  used emoji and let go on one, or on + to search them all. Reactions stay at the left of their
-  passage; hovering one shows the passage. An emoji on an empty comment card is a reaction too,
-  so it moves to the left; the right margin is for comments with words. Most used come first.
-- **Markdown keys.** In every input, Cmd+B, Cmd+I, Cmd+E (code), Cmd+Shift+X (strikethrough)
-  and Cmd+K (link) wrap the selection, or unwrap it.
+  gutter) and your last-used emoji shows faintly at its left: click it to react, or press and
+  hold (or drag up) for your most used emoji and let go on one, on + to search them all, or on
+  the comment icon. An emoji on an empty comment card reacts to the selection instead. A
+  paragraph can have several. Reactions stay at the left of their passage (the right margin
+  is for comments with words); hovering one shows its passage, and clicking one, or a
+  selection's highlight, opens that passage's comment card, where its reactions come off. A
+  reaction inside an item to consider counts as a reply to it.
+- **Live markdown.** Every input draws its markdown as you type, the way Obsidian does: bold
+  is bold, code is boxed, headings are big, and the markers (`**`, `_`, `#`…) show only in
+  the span or line the caret is in (`web/src/mdlive.ts`). Cmd+B, Cmd+I, Cmd+E (code),
+  Cmd+Shift+X (strikethrough) and Cmd+K (link) wrap the selection, or unwrap it. Enter in a
+  list item starts the next one. The inputs keep their own undo (Cmd+Z, Cmd+Shift+Z).
 - **Sent replies stay put.** Sent comments stay in the margin as read-only cards; your sent
   message shows what you typed, with comments, reactions and answers folded into one line
   ("2 comments, 1 reaction").
@@ -227,3 +233,7 @@ server/agentsmd.ts  the global AGENTS.md: defaults, reading, editing
 shared/             types and ask-block parsing used by both sides
 web/src/            React UI: store.ts (state + socket), anchoring.ts (Marginer), components/
 ```
+
+## License
+
+MIT. See `LICENSE`.

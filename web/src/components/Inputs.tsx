@@ -1,11 +1,11 @@
 // A text field that grows with its text and takes pasted or dropped images,
 // which sit in the text where they were put (as image links, shared/images.ts).
-// It is a plain-text contenteditable: the DOM is the truth while you type, and
-// is rebuilt from `value` only when the value changes from outside.
+// The text is markdown, drawn live (mdlive.ts): the field rebuilds itself from
+// the text after each change, so it keeps its own undo history.
 
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import type { ImageRef } from '../../../shared/types.ts'
-import { imageToken, splitImages } from '../../../shared/images.ts'
+import { activate, enterKey, fromDom, imgNode, rangeAt, render, select, selectionOffsets, wrapKey } from '../mdlive.ts'
 import { imagesFrom, uploadImage } from '../util.ts'
 import { ImageIcon, XIcon } from './Icons.tsx'
 
@@ -24,31 +24,6 @@ type Props = {
   onKey?(e: React.KeyboardEvent<HTMLElement>): boolean
 }
 
-function imgNode(src: string, url?: string): HTMLImageElement {
-  const img = document.createElement('img')
-  img.src = src
-  img.className = 'ri-img'
-  if (url) img.dataset.url = url
-  else img.classList.add('loading')
-  return img
-}
-
-function toDom(el: HTMLElement, value: string) {
-  el.replaceChildren(...splitImages(value).map((r) => 'url' in r ? imgNode(r.url, r.url) : document.createTextNode(r.text)))
-}
-
-function fromDom(el: Node): string {
-  let out = ''
-  el.childNodes.forEach((n, i) => {
-    if (n.nodeType === Node.TEXT_NODE) out += n.textContent
-    else if (n instanceof HTMLImageElement) { if (n.dataset.url) out += imageToken(n.dataset.url) }
-    // The browser keeps a <br> at the very end so a final newline shows; it is not text.
-    else if (n.nodeName === 'BR') { if (i < el.childNodes.length - 1) out += '\n' }
-    else if (n instanceof HTMLElement) out += (out && !out.endsWith('\n') && /^(DIV|P)$/.test(n.nodeName) ? '\n' : '') + fromDom(n)
-  })
-  return out
-}
-
 function caretAt(x: number, y: number): Range | null {
   const d = document as Document & { caretPositionFromPoint?(x: number, y: number): { offsetNode: Node; offset: number } | null }
   if (d.caretPositionFromPoint) {
@@ -61,40 +36,83 @@ function caretAt(x: number, y: number): Range | null {
   return document.caretRangeFromPoint?.(x, y) ?? null
 }
 
+type Snap = { v: string; s: number; e: number; t: number }
+
 export function RichInput({ value, onChange, images, onImages, placeholder, autoFocus, onSubmit, onEscape, minRows = 2, onKey }: Props) {
   const ed = useRef<HTMLDivElement>(null)
-  const last = useRef<string | null>(null)   // what this field last reported
-  const caret = useRef<Range | null>(null)   // where the caret last was inside the field
+  const last = useRef<string | null>(null)        // what this field last reported
+  const caret = useRef<[number, number] | null>(null) // where the caret last was, as text offsets
+  const composing = useRef(false)                  // an IME is mid-word: leave the DOM alone
+  const past = useRef<Snap[]>([])                  // undo history, latest last
+  const future = useRef<Snap[]>([])
   const change = useRef(onChange)
   change.current = onChange
 
-  const sync = () => {
+  const emit = (v: string) => {
     const el = ed.current!
-    const v = fromDom(el)
     el.toggleAttribute('data-empty', !v && !el.querySelector('img'))
     if (v === last.current) return
     last.current = v
     change.current(v)
+  }
+  // Typing within a moment of the last change is one step to undo, up to a space or line break.
+  const record = (v: string, sel: [number, number] | null) => {
+    const now = Date.now(), top = past.current.at(-1)
+    const snap = { v, s: sel?.[0] ?? v.length, e: sel?.[1] ?? v.length, t: now }
+    const breaks = /\s/.test(v[snap.s - 1] ?? '')
+    if (top && top.v !== v && now - top.t < 600 && past.current.length > 1 && !breaks) past.current[past.current.length - 1] = snap
+    else if (!top || top.v !== v) past.current.push(snap)
+    if (past.current.length > 200) past.current.shift()
+    future.current = []
+  }
+  const apply = (snap: Snap) => {
+    const el = ed.current!
+    render(el, snap.v)
+    select(el, snap.s, snap.e)
+    activate(el)
+    emit(snap.v)
+  }
+  const undo = () => { if (past.current.length > 1) { future.current.push(past.current.pop()!); apply(past.current.at(-1)!) } }
+  const redo = () => { const s = future.current.pop(); if (s) { past.current.push(s); apply(s) } }
+
+  // After the browser changes the DOM: read the text, draw it again, put the caret back.
+  const sync = () => {
+    const el = ed.current!
+    const sel = selectionOffsets(el)
+    const v = fromDom(el)
+    // An image still uploading is not in the text yet; drawing again would drop it.
+    if (!composing.current && !el.querySelector('img.loading')) {
+      render(el, v)
+      if (sel && document.activeElement === el) select(el, sel[0], sel[1])
+    }
+    activate(el)
+    if (v !== last.current) record(v, sel)
+    emit(v)
   }
 
   useLayoutEffect(() => {
     const el = ed.current!
     if (value === last.current) return
     last.current = value
-    toDom(el, value)
+    render(el, value)
     el.toggleAttribute('data-empty', !value)
-    if (document.activeElement === el) placeCaretAtEnd(el)
+    past.current = [{ v: value, s: value.length, e: value.length, t: 0 }]
+    future.current = []
+    if (document.activeElement === el) select(el, value.length)
   }, [value])
 
   useEffect(() => {
     const el = ed.current!
-    if (autoFocus) { el.focus(); placeCaretAtEnd(el) }
+    if (autoFocus) { el.focus(); select(el, fromDom(el).length) }
   }, [autoFocus])
 
   useEffect(() => {
     const save = () => {
-      const s = getSelection()
-      if (s?.rangeCount && ed.current?.contains(s.anchorNode)) caret.current = s.getRangeAt(0).cloneRange()
+      const el = ed.current
+      if (!el) return
+      const sel = selectionOffsets(el)
+      if (sel) caret.current = sel
+      activate(el)
     }
     document.addEventListener('selectionchange', save)
     return () => document.removeEventListener('selectionchange', save)
@@ -105,7 +123,7 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
     const el = ed.current!
     for (const f of files) {
       const img = imgNode(URL.createObjectURL(f))
-      const r = at && el.contains(at.startContainer) ? at : endOf(el)
+      const r = at && el.contains(at.startContainer) ? at : caret.current ? rangeAt(el, caret.current[0], caret.current[1]) : endOf(el)
       r.deleteContents()
       r.insertNode(img)
       r.setStartAfter(img)
@@ -120,7 +138,23 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
         img.classList.remove('loading')
       } catch { img.remove() /* the store shows the error */ }
       sync()
+      at = caret.current ? rangeAt(el, caret.current[1]) : null
     }
+  }
+
+  // Markdown keys and Enter change the text here, not in the DOM.
+  const keyEdit = (e: React.KeyboardEvent) => {
+    const el = ed.current!
+    const sel = selectionOffsets(el)
+    if (!sel || composing.current) return false
+    const plainEnter = e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.altKey
+    const r = plainEnter ? enterKey(fromDom(el), sel[0], sel[1]) : wrapKey(e, fromDom(el), sel[0], sel[1])
+    if (!r) return false
+    const snap = { v: r.value, s: r.start, e: r.end, t: 0 }
+    past.current.push(snap)
+    future.current = []
+    apply(snap)
+    return true
   }
 
   return (
@@ -150,16 +184,25 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
           data-placeholder={placeholder}
           style={{ minHeight: `${minRows * 20 + 12}px` }}
           onInput={sync}
-          onPaste={(e) => { const f = imagesFrom(e.clipboardData); if (f.length) { e.preventDefault(); void add(f, caret.current) } }}
+          onCompositionStart={() => { composing.current = true }}
+          onCompositionEnd={() => { composing.current = false; sync() }}
+          onBeforeInput={(e) => {
+            const t = (e.nativeEvent as InputEvent).inputType
+            if (t === 'historyUndo') { e.preventDefault(); undo() }
+            if (t === 'historyRedo') { e.preventDefault(); redo() }
+          }}
+          onPaste={(e) => { const f = imagesFrom(e.clipboardData); if (f.length) { e.preventDefault(); void add(f, null) } }}
           onKeyDown={(e) => {
             if (onKey?.(e)) { e.preventDefault(); return }
-            if (markdownKey(e)) { e.preventDefault(); return }
+            if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return }
+            if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return }
+            if (keyEdit(e)) { e.preventDefault(); return }
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && onSubmit) { e.preventDefault(); onSubmit() }
             if (e.key === 'Escape' && onEscape) { e.preventDefault(); onEscape() }
           }}
         />
         <label className="attach" title="Attach images" onMouseDown={(e) => e.preventDefault()}>
-          <input type="file" accept="image/*" multiple hidden onChange={(e) => { void add([...(e.target.files ?? [])], caret.current); e.target.value = '' }} />
+          <input type="file" accept="image/*" multiple hidden onChange={(e) => { void add([...(e.target.files ?? [])], null); e.target.value = '' }} />
           <ImageIcon />
         </label>
       </div>
@@ -167,52 +210,11 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
   )
 }
 
-// Markdown by keyboard, as in most editors: the selection gets wrapped (or
-// unwrapped, if it already is); with nothing selected, the caret lands inside.
-const WRAP: Record<string, [string, string]> = { b: ['**', '**'], i: ['_', '_'], e: ['`', '`'], x: ['~~', '~~'], k: ['[', ']()'] }
-function markdownKey(e: React.KeyboardEvent): boolean {
-  if (!(e.metaKey || e.ctrlKey) || e.altKey) return false
-  const k = e.key.toLowerCase()
-  if (!WRAP[k] || (k === 'x') !== e.shiftKey) return false
-  const [a, b] = WRAP[k]
-  const sel = getSelection()
-  if (!sel?.rangeCount) return false
-  // Markers just outside the selection count too: take them in, so the text comes unwrapped.
-  const r = sel.getRangeAt(0)
-  const sc = r.startContainer, ec = r.endContainer
-  if (k !== 'k' && sc.nodeType === Node.TEXT_NODE && ec.nodeType === Node.TEXT_NODE && r.startOffset >= a.length
-    && sc.textContent!.slice(r.startOffset - a.length, r.startOffset) === a && ec.textContent!.slice(r.endOffset, r.endOffset + b.length) === b) {
-    const wide = r.cloneRange()
-    wide.setStart(sc, r.startOffset - a.length)
-    wide.setEnd(ec, r.endOffset + b.length)
-    sel.removeAllRanges()
-    sel.addRange(wide)
-  }
-  const text = sel.toString()
-  const wrapped = k !== 'k' && text.length >= a.length + b.length && text.startsWith(a) && text.endsWith(b)
-  const inner = wrapped ? text.slice(a.length, text.length - b.length) : text
-  document.execCommand('insertText', false, wrapped ? inner : a + text + b)
-  // Select the text again (or, for a link, put the caret where the URL goes).
-  const s = sel as Selection & { modify?(alter: string, dir: string, unit: string): void }
-  if (!s.modify) return true
-  if (k === 'k') { s.modify('move', 'backward', 'character'); return true }
-  if (!wrapped) for (let i = 0; i < b.length; i++) s.modify('move', 'backward', 'character')
-  for (let i = 0; i < inner.length; i++) s.modify('extend', 'backward', 'character')
-  return true
-}
-
 function endOf(el: HTMLElement): Range {
   const r = document.createRange()
   r.selectNodeContents(el)
   r.collapse(false)
   return r
-}
-
-function placeCaretAtEnd(el: HTMLElement) {
-  const s = getSelection()
-  if (!s) return
-  s.removeAllRanges()
-  s.addRange(endOf(el))
 }
 
 export function Thumbs({ images }: { images?: ImageRef[] }) {

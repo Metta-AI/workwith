@@ -82,7 +82,7 @@ export const AssistantMessage = memo(function AssistantMessage({ sid, msg, text,
   const pieces = useMemo(() => piecesOf(live ? trimPartialTag(text) : text), [text, live])
   const root = useRef<HTMLDivElement>(null)
   // Comments and reactions to a selection are highlighted; reactions to a whole paragraph are not.
-  const notes = live ? [] : draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note' && d.anchor.msg === msg && !d.whole)
+  const notes = live ? [] : draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note' && d.anchor.msg === msg && !(d.whole && d.reaction))
   const drafted = live ? [] : draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note' && d.anchor.msg === msg && !!d.reaction)
   const noteKey = notes.map((n) => n.id + JSON.stringify(n.anchor.pieces)).join('|')
   const sentAll = [...sent, ...reacts.filter((r) => !r.whole).map((r) => r.anchor)]
@@ -116,8 +116,10 @@ const contentsOf = (el: HTMLElement) => { const r = document.createRange(); r.se
 // one line form a row, the line's own (whole-paragraph) reaction nearest the
 // text. The reaction button for the paragraph or list item level with the
 // pointer sits on that mark, or left of the row if there is none, so nothing
-// moves. Hovering a mark shows its passage; clicking a selection's mark (or
-// its highlight) opens a comment on that passage.
+// moves. Hovering a mark shows its passage; clicking one (or a selection's
+// highlight) opens the comment card for that passage, where its reactions can
+// be added to or taken off. A reaction inside an item to consider counts as a
+// reply to it.
 type RailItem = { key: string; anchor: Anchor; quote: string; whole: boolean; emoji: string[]; drafts: NoteDraft[] }
 const keyOf = (a: Anchor) => JSON.stringify(a)
 
@@ -204,7 +206,7 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
       if (!getSelection()?.isCollapsed) return
       const hit = itemsRef.current.find((it) => !it.whole && rangesFor(it.anchor, el).some((r) => [...r.getClientRects()].some((b) =>
         e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom)))
-      if (hit) commentOn(hit.anchor, hit.quote)
+      if (hit) commentOn(hit.anchor, hit.quote, false)
     }
     el.addEventListener('click', click)
     return () => el.removeEventListener('click', click)
@@ -219,12 +221,18 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     return () => document.removeEventListener('mousedown', down)
   }, [row])
 
-  const commentOn = (anchor: Anchor, quote: string) => {
+  // The item to consider a passage sits in, if any.
+  const itemOf = (anchor: Anchor) => {
+    const n = root.current && rangesFor(anchor, root.current)[0]?.startContainer
+    return (n?.nodeType === 1 ? n as Element : n?.parentElement)?.closest<HTMLElement>('.consider[data-item]')?.dataset.item
+  }
+  const commentOn = (anchor: Anchor, quote: string, whole: boolean) => {
     focusPassage(sid, null)
     const k = keyOf(anchor)
     const open = draftsOf(sid).find((d): d is NoteDraft => d.kind === 'note' && !d.reaction && keyOf(d.anchor) === k)
     if (open) { state.focus = open.id; changed(); document.querySelector<HTMLElement>(`.note-card[data-id="${open.id}"] .ri-edit`)?.focus(); return }
-    addDraft(sid, { id: uid(), kind: 'note', anchor, quote, text: '', images: [], createdAt: Date.now() })
+    const itemKey = itemOf(anchor)
+    addDraft(sid, { id: uid(), kind: 'note', anchor, quote, text: '', images: [], createdAt: Date.now(), ...(whole ? { whole } : {}), ...(itemKey ? { itemKey } : {}) })
   }
   // The target's own reactions not sent yet, and toggling one.
   const mine = () => { const t = targetRef.current; return t ? draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note' && !!d.whole && keyOf(d.anchor) === t.key) : [] }
@@ -233,11 +241,12 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     setRow(false); setSearch(false)
     if (emoji === '+') return setSearch(true)
     if (!t) return
-    if (emoji === 'comment') return commentOn(t.anchor, t.el.innerText.trim())
+    if (emoji === 'comment') return commentOn(t.anchor, t.el.innerText.trim(), true)
     const cur = mine().find((d) => d.text.trim() === emoji)
     if (cur) return removeDraft(sid, cur.id)
     usedEmoji(emoji)
-    addDraft(sid, { id: uid(), kind: 'note', anchor: t.anchor, quote: t.el.innerText.trim(), text: emoji, images: [], createdAt: Date.now(), reaction: true, whole: true })
+    const itemKey = t.el.closest<HTMLElement>('.consider[data-item]')?.dataset.item
+    addDraft(sid, { id: uid(), kind: 'note', anchor: t.anchor, quote: t.el.innerText.trim(), text: emoji, images: [], createdAt: Date.now(), reaction: true, whole: true, ...(itemKey ? { itemKey } : {}) })
     state.focus = null
   }
   const press = (e: React.PointerEvent) => {
@@ -251,7 +260,11 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
       document.removeEventListener('pointerup', up)
       document.removeEventListener('pointermove', move)
       clearTimeout(timer)
-      if (!held) return toggle(lastEmoji())
+      if (!held) {
+        // On a line with reactions, a click opens its comment card; on a bare line it adds your last emoji.
+        const t = targetRef.current, own = t && itemsRef.current.find((it) => it.whole && it.key === t.key)
+        return own ? commentOn(own.anchor, own.quote, true) : toggle(lastEmoji())
+      }
       const over = (document.elementFromPoint(u.clientX, u.clientY) as Element | null)?.closest<HTMLElement>('[data-emoji]')
       if (over) toggle(over.dataset.emoji!)
     }
@@ -266,13 +279,13 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     const own = here ? r.items.find((it) => it.key === target!.key) : undefined
     const ack = (
       <div key="ack" className="rail-ack">
-        <button className={`ack-btn${on.size ? ' on' : ''}${own ? ' over' : ''}`} title="React (click for your last emoji; hold or drag up for more)" onPointerDown={press}
+        <button className={`ack-btn${on.size ? ' on' : ''}${own ? ' over' : ''}`} title={own ? 'Comment, or change reactions (hold or drag up for more)' : 'React (click for your last emoji; hold or drag up for more)'} onPointerDown={press}
           onMouseEnter={() => focusPassage(sid, own ? { anchor: own.anchor } : null)} onMouseLeave={() => focusPassage(sid, null)}>
           <span>{own ? own.emoji.join('') : lastEmoji()}</span>
         </button>
         {row && (
           <div className="ack-row">
-            {topEmoji(6).map((e) => <button key={e} data-emoji={e} className={on.has(e) ? 'on' : ''} onClick={() => toggle(e)}>{e}</button>)}
+            {topEmoji(6).map((e) => <button key={e} data-emoji={e} className={on.has(e) ? 'on' : ''} title={on.has(e) ? 'Take it off' : undefined} onClick={() => toggle(e)}>{e}</button>)}
             <button className="more-emoji" data-emoji="+" title="Search emoji" onClick={() => toggle('+')}>+</button>
             <button className="more-emoji" data-emoji="comment" title="Comment on this" onClick={() => toggle('comment')}><CommentIcon size={14} /></button>
           </div>
@@ -286,7 +299,7 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
           <button
             key={it.key} className={`react-mark${it.drafts.length ? ' draft' : ''}`}
             onMouseEnter={() => focusPassage(sid, { anchor: it.anchor })} onMouseLeave={() => focusPassage(sid, null)}
-            onClick={() => it.whole ? undefined : commentOn(it.anchor, it.quote)}
+            onClick={() => commentOn(it.anchor, it.quote, it.whole)}
           >{it.emoji.join('')}</button>
         ))}
         {here && !own && ack}

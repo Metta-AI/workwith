@@ -6,7 +6,8 @@ import { allEmoji, topEmoji, type EmojiInfo } from '../emoji.ts'
 export function EmojiPicker({ onPick, onClose }: { onPick(e: string): void; onClose(): void }) {
   const [list, setList] = useState<EmojiInfo[]>([])
   const [q, setQ] = useState('')
-  const [at, setAt] = useState(0)   // the emoji Enter picks; arrows move it
+  // The emoji Enter picks: none until you arrow down into the grid; typing leaves it again.
+  const [at, setAt] = useState(-1)
   const box = useRef<HTMLDivElement>(null)
   useEffect(() => { void allEmoji().then(setList) }, [])
   useEffect(() => {
@@ -28,11 +29,14 @@ export function EmojiPicker({ onPick, onClose }: { onPick(e: string): void; onCl
   )
   return (
     <div className="emoji-picker" ref={box} onMouseDown={(e) => { if (e.target !== e.currentTarget.querySelector('input')) e.preventDefault() }}>
-      <input autoFocus placeholder="Search emoji" value={q} onChange={(e) => { setQ(e.target.value); setAt(0) }} onKeyDown={(e) => {
-        const move = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: COLS, ArrowUp: -COLS }[e.key]
-        if (move) { e.preventDefault(); setAt((i) => Math.max(0, Math.min(flat.length - 1, i + move))) }
+      <input autoFocus placeholder="Search emoji" value={q} onChange={(e) => { setQ(e.target.value); setAt(-1) }} onKeyDown={(e) => {
+        const grid = at >= 0
+        if (e.key === 'ArrowDown') { e.preventDefault(); setAt((i) => i < 0 ? 0 : Math.min(flat.length - 1, i + COLS)) }
+        else if (e.key === 'ArrowUp' && grid) { e.preventDefault(); setAt((i) => i - COLS < 0 ? -1 : i - COLS) }
+        else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && grid) { e.preventDefault(); setAt((i) => Math.max(0, Math.min(flat.length - 1, i + (e.key === 'ArrowRight' ? 1 : -1)))) }
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose() }
-        if (e.key === 'Enter' && flat[at]) { e.preventDefault(); onPick(flat[at]) }
+        // Enter takes the emoji arrowed to, or else the first match of a search.
+        if (e.key === 'Enter') { const pick = grid ? flat[at] : words.length ? flat[0] : undefined; if (pick) { e.preventDefault(); onPick(pick) } }
       }} />
       <div className="emoji-grid">
         {shown.map((e, i) => btn(e, i))}

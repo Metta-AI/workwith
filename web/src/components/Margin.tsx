@@ -6,7 +6,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { rangesFor, setHighlights } from '../anchoring.ts'
-import { draftsOf, removeDraft, state, updateDraft, useStore, type NoteDraft } from '../store.ts'
+import { addDraft, draftsOf, removeDraft, state, uid, updateDraft, useStore, type NoteDraft } from '../store.ts'
 import type { Anchor, Event, ImageRef } from '../../../shared/types.ts'
 import { isReaction, topEmoji, usedEmoji } from '../emoji.ts'
 import { renderMd } from '../util.ts'
@@ -186,12 +186,18 @@ function NoteCard({ sid, note, onFocus, onBlur }: { sid: string; note: NoteDraft
   const [picking, setPicking] = useState(false)
   // The passage's reactions (not sent yet), which the emoji row shows as on.
   const k = JSON.stringify(note.anchor)
-  const reactions = draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note' && !!d.reaction && !d.whole && JSON.stringify(d.anchor) === k)
+  const reactions = draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note' && !!d.reaction && JSON.stringify(d.anchor) === k)
   const react = (r: string) => {
     const same = reactions.find((d) => d.text.trim() === r)
     if (isEmpty(note) && same) return removeDraft(sid, same.id)
     if (!note.text.includes(r)) usedEmoji(r)
-    // On an empty card the emoji is a reaction: it moves to the left of the passage and the card goes.
+    if (isEmpty(note) && reactions.length) {
+      // The passage has reactions already (the card was opened from one): add this one beside them, and keep the card.
+      addDraft(sid, { ...note, id: uid(), text: r, reaction: true, createdAt: Date.now() })
+      state.focus = null
+      return
+    }
+    // On a fresh empty card the emoji is a reaction: it moves to the left of the passage and the card goes.
     if (isEmpty(note)) { focusPassage(sid, null); updateDraft(sid, note.id, { text: r, reaction: true }); return }
     updateDraft(sid, note.id, { text: toggleReaction(note.text, r) })
   }

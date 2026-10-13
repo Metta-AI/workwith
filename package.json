@@ -2,6 +2,7 @@
   "name": "codiner",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "A web UI over Claude Code: reply inline, answer questions in place, run sessions in parallel with a master agent.",
   "scripts": {
