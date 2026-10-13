@@ -93,6 +93,9 @@ export async function api<T = any>(path: string, method = 'POST', body?: unknown
   const j = await r.json().catch(() => ({}))
   if (!r.ok) {
     state.error = j.error ?? `${r.status} ${r.statusText}`
+    // An error shows for a while, then goes (a click closes it sooner).
+    const shown = state.error
+    setTimeout(() => { if (state.error === shown) { state.error = null; changed() } }, 8000)
     changed()
     throw new Error(state.error!)
   }

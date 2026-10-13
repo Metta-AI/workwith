@@ -504,7 +504,10 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     let out = ''
     try { out = fs.readFileSync(run.log, 'utf8'); fs.rmSync(run.log, { force: true }) } catch { /* nothing recorded */ }
     // eslint-disable-next-line no-control-regex
-    const tail = out.replace(/\x1b\[[\d;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\r|\x04|\x08/g, '').replace(/^\^D/, '').trimEnd().split('\n').slice(-20).join('\n').slice(-3000)
+    // Progress output redraws a line with \r: keep what each line ended as.
+    const tail = out.replace(/\x1b\[[\d;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x04|\x08/g, '').replace(/^\^D/, '')
+      .split('\n').map((l) => l.replace(/\r+$/, '').split('\r').pop()!).join('\n')
+      .trimEnd().split('\n').slice(-20).join('\n').slice(-3000)
     broadcast({ type: 'run', sessionId: run.sid, token: id, code: Number(url.searchParams.get('code') ?? -1), tail })
     return send(res, 200, { ok: true })
   }

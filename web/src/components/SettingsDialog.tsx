@@ -38,7 +38,10 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
   const [adding, setAdding] = useState('')
   const tick = sel ? st.fileTick[sel] ?? 0 : 0
 
-  const loadFiles = () => api<FileRow[]>('/api/files', 'GET').then((f) => { setFiles(f); setSel((s) => s || f[0]?.path || '') })
+  const [stale, setStale] = useState(false)   // the server predates file history: it needs a restart
+  const loadFiles = () => api<FileRow[]>('/api/files', 'GET')
+    .then((f) => { setFiles(f); setSel((s) => s || f[0]?.path || '') })
+    .catch(() => { setStale(true); state.error = null; changed() })
   useEffect(() => { void loadFiles() }, [])
   useEffect(() => {
     if (!sel) return
@@ -98,6 +101,7 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
             </div>
           </nav>
           <section className="file-pane">
+            {stale && <div className="empty">Codiner's server is older than this page, so it has no file history yet. Restart Codiner, then open Settings again.</div>}
             {blame && <>
               <div className="file-tabs">
                 {(['read', 'edit', 'history'] as const).map((t) => <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</button>)}

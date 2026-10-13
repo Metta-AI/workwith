@@ -242,6 +242,7 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     if (emoji === '+') return setSearch(true)
     if (!t) return
     if (emoji === 'comment') return commentOn(t.anchor, t.el.innerText.trim(), true)
+    if (emoji === 'remove') { for (const d of mine()) removeDraft(sid, d.id); return }
     const cur = mine().find((d) => d.text.trim() === emoji)
     if (cur) return removeDraft(sid, cur.id)
     usedEmoji(emoji)
@@ -284,10 +285,14 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
           <span>{own ? own.emoji.join('') : lastEmoji()}</span>
         </button>
         {row && (
+          <div className="ack-pop">
+          {/* Takes your reactions off this paragraph: outside the row, so it can't be mistaken for an emoji. */}
+          {on.size > 0 && <button className="ack-clear" data-emoji="remove" title="Remove your reactions from this paragraph" onClick={() => toggle('remove')}><XIcon size={14} /></button>}
           <div className="ack-row">
             {[...new Set([...on, ...topEmoji(8)])].slice(0, Math.max(8, on.size)).map((e) => <button key={e} data-emoji={e} className={on.has(e) ? 'on' : ''} title={on.has(e) ? `Remove ${e} from this paragraph` : `Add ${e}`} onClick={() => toggle(e)}>{e}</button>)}
             <button className="more-emoji" data-emoji="+" title="Search emoji" onClick={() => toggle('+')}>+</button>
             <button className="more-emoji" data-emoji="comment" title="Comment on this" onClick={() => toggle('comment')}><CommentIcon size={14} /></button>
+          </div>
           </div>
         )}
         {search && <EmojiPicker onPick={toggle} onClose={() => setSearch(false)} />}

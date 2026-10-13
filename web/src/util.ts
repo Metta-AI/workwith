@@ -10,6 +10,14 @@ export const marked = new Marked(
   { gfm: true, breaks: false },
 )
 
+// Web links open in a new tab, everywhere markdown is rendered (all of it goes through DOMPurify).
+DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  if (node.tagName === 'A' && /^https?:/i.test(node.getAttribute('href') ?? '')) {
+    node.setAttribute('target', '_blank')
+    node.setAttribute('rel', 'noopener noreferrer')
+  }
+})
+
 export function renderMd(md: string): string {
   return DOMPurify.sanitize(marked.parse(md, { async: false }) as string)
 }
