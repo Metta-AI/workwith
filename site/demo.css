@@ -157,3 +157,9 @@ pre .k, pre .c { color: var(--sx-fn); } pre .n, pre .f { color: var(--sx-num); }
 [data-demo]:not([data-full]) .d-main { grid-template-columns: minmax(0, 1fr) 13rem; }
 @media (max-width: 52rem) { [data-demo]:not([data-full]) .d-main { grid-template-columns: 1fr; } }
 @media (max-width: 40rem) { .d-gauge, .d-head > small, .d-head-sub code { display: none; } }
+.d-ack { touch-action: none; user-select: none; }
+.d-ack.holding { opacity: 1; z-index: 6; }
+.d-ack-pop { position: absolute; bottom: calc(100% + 4px); left: -4px; display: flex; gap: 2px; padding: 3px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; box-shadow: 0 6px 20px rgba(0,0,0,.18); animation: d-up .12s ease-out; }
+.d-ack-pop span { font-size: 18px; line-height: 1; padding: 4px; border-radius: 50%; transition: transform .08s; cursor: pointer; filter: none !important; opacity: 1 !important; }
+.d-ack-pop span:hover, .d-ack-pop span.over { transform: scale(1.35); background: rgba(127,127,127,.14); }
+@keyframes d-up { from { opacity: 0; transform: translateY(4px); } }

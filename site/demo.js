@@ -103,6 +103,7 @@ class Demo {
     this.render()
     for (const ev of ['pointerdown', 'keydown', 'input', 'pointermove']) root.addEventListener(ev, () => this.touch(), { passive: true })
     root.addEventListener('mouseup', (e) => setTimeout(() => this.onSelect(e), 0))
+    root.addEventListener('pointerdown', (e) => { const b = e.target.closest('.d-ack'); if (b) this.hold(e, b) })
     root.addEventListener('click', (e) => this.onClick(e))
     root.addEventListener('input', (e) => this.onInput(e))
     new ResizeObserver(() => this.layout()).observe(root)
@@ -118,7 +119,7 @@ class Demo {
     for (const pre of this.root.querySelectorAll('pre[data-sh]')) pre.innerHTML = `<span class="p">$ </span>${highlightSh(pre.dataset.sh)}`
     for (const b of this.root.querySelectorAll('[data-react]')) {
       const g = document.createElement('button')
-      g.className = 'd-ack'; g.dataset.act = 'react'; g.title = 'React'; g.innerHTML = '<span>👍</span>'
+      g.className = 'd-ack'; g.title = 'Click to react. Press and hold, or drag up, for more.'; g.innerHTML = '<span>👍</span>'
       b.classList.add('d-reactable'); b.prepend(g)
     }
     this.update()
@@ -256,7 +257,6 @@ class Demo {
     const act = b.dataset.act
     const con = b.closest('.d-consider')
     if (act === 'toggle-activity') b.parentElement.classList.toggle('open')
-    else if (act === 'react') this.react(b)
     else if (act === 'dismiss') this.setItem(con, this.state.items[con.dataset.key] === 'dismissed' ? undefined : 'dismissed')
     else if (act === 'done') this.setItem(con, this.state.items[con.dataset.key] === 'done' ? undefined : 'done')
     else if (act === 'reply') {
@@ -279,13 +279,49 @@ class Demo {
     this.update()
   }
 
-  react(btn) {
+  // As in the app: a click reacts with 👍 (or takes the reaction off); press and
+  // hold, or drag up, for more emoji, and let go on one.
+  hold(e, btn) {
+    e.preventDefault()
+    const picked = e.target.closest('[data-emoji]')
+    if (picked) { this.react(btn, picked.dataset.emoji); return this.closePop(btn) }
+    if (btn.querySelector('.d-ack-pop')) return this.closePop(btn)
+    const x0 = e.clientX, y0 = e.clientY
+    let pop = null, over = null
+    const open = () => {
+      if (pop) return
+      pop = document.createElement('div')
+      pop.className = 'd-ack-pop'
+      pop.innerHTML = EMOJI.map((m) => `<span data-emoji="${m}">${m}</span>`).join('')
+      btn.append(pop); btn.classList.add('holding')
+    }
+    const timer = setTimeout(open, 350)
+    const under = (ev) => document.elementFromPoint(ev.clientX, ev.clientY)?.closest('[data-emoji]')
+    const move = (ev) => {
+      if (!pop && (y0 - ev.clientY > 8 || Math.abs(ev.clientX - x0) > 14)) open()
+      if (!pop) return
+      const t = under(ev)
+      if (t !== over) { over?.classList.remove('over'); over = t; over?.classList.add('over') }
+    }
+    const up = (ev) => {
+      clearTimeout(timer)
+      removeEventListener('pointermove', move); removeEventListener('pointerup', up)
+      if (!pop) this.react(btn, this.state.reactions.get(btn.parentElement) ?? '👍')
+      else { const t = under(ev); if (t) { this.react(btn, t.dataset.emoji); this.closePop(btn) } }
+      this.update()
+    }
+    addEventListener('pointermove', move); addEventListener('pointerup', up)
+  }
+  closePop(btn) { btn.querySelector('.d-ack-pop')?.remove(); btn.classList.remove('holding'); this.update() }
+
+  react(btn, emoji) {
     const block = btn.parentElement
-    const on = !this.state.reactions.has(block)
-    if (on) this.state.reactions.set(block, '👍'); else this.state.reactions.delete(block)
-    btn.classList.toggle('on', on)
+    const next = this.state.reactions.get(block) === emoji ? null : emoji
+    if (next) this.state.reactions.set(block, next); else this.state.reactions.delete(block)
+    btn.firstElementChild.textContent = next ?? '👍'
+    btn.classList.toggle('on', !!next)
     const con = block.closest('.d-consider')
-    if (con) this.setItem(con, on || this.itemHasReply(con) ? 'answered' : undefined)
+    if (con) this.setItem(con, next || this.itemHasReply(con) ? 'answered' : undefined)
   }
 
   itemHasReply(con) {

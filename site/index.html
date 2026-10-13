@@ -68,7 +68,6 @@
 
   /* What you see, what the agent sees */
   .pair { display: grid; grid-template-columns: 2fr 1fr; gap: 1.4rem; margin-top: 1.4rem; align-items: stretch; }
-  .pair pre { height: calc(100% - 2rem); }
   .pair .side-label { display: block; margin-bottom: .5rem; }
   .pair .seen { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--bg); }
   .arrow { display: none; }
@@ -97,8 +96,8 @@
   .harness-lede { font-size: 1.15rem; }
   .fine { font-size: .82rem; color: var(--muted); margin: 1rem 0 0; }
   footer .fine { margin: 0; flex-basis: 100%; }
-  .agent-live { min-height: 100%; }
-  .pair > div { min-width: 0; }
+  .pair > div { min-width: 0; display: flex; flex-direction: column; }
+  .pair pre { flex: 1; }
   .kind > [data-demo] { min-width: 0; }
 
   /* Install */
@@ -138,7 +137,7 @@
   </div>
   <aside class="margin-note" aria-label="A comment in the margin">
     <div class="q">mark up a draft</div>
-    Like this. Select any passage and say what you think. Red pen not included.
+    Like this. Select any passage and say what you think. Red pen not included 😉
     <div class="rx">✍️ 💪</div>
   </aside>
   </div>
