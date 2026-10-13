@@ -1,6 +1,6 @@
 // Pixel drawings for the critter's accessories (shared/looks.ts lists them).
-// The critter's grid is 18 wide; its body is x 2–13, y 3–9, its eyes at x 5 and
-// 10, y 4–5, its arms at x 0–1 and 14–15, y 5–6, and its legs at y 10–11. Hats
+// The critter's grid is 18 wide; its body is x 2–13, y 3–9 with the corners cut, its
+// eyes at x 5 and 10, y 4–5, its arms at x 0–1 and 14–15, y 6–7, and its feet at y 10–11. Hats
 // and hair use the rows above it (down to y -6), held things the columns 16–17.
 
 import type { LookSlot } from '../../../shared/looks.ts'
@@ -13,7 +13,7 @@ type Drawing = Px[] | { back?: Px[]; front: Px[]; spin?: Px[] }
 type Drawings = { [S in Exclude<LookSlot, 'color'>]: Record<(typeof LOOK_OPTIONS)[S][number], Drawing> }
 
 export const BODY_COLORS: Record<(typeof LOOK_OPTIONS)['color'][number], string> = {
-  classic: '#D97757', ocean: '#3f8fd6', moss: '#5e9e4f', grape: '#8a5cc7', bubblegum: '#e57aa8', slate: '#7d8a99', gold: '#d9a521', midnight: '#3b4a7a',
+  teal: '#1f9e96', tangerine: '#ff8c1a', ocean: '#3f8fd6', moss: '#5e9e4f', grape: '#8a5cc7', bubblegum: '#e57aa8', slate: '#7d8a99', gold: '#d9a521', midnight: '#3b4a7a',
 }
 
 const K = '#222', BROWN = '#3a2a1f', RED = '#e5534b', BLUE = '#4c8dff', YELLOW = '#ffd54a', GREEN = '#3fb950', PINK = '#ff6fae', WHITE = '#ffffff', GOLD = '#f2c230'
@@ -90,14 +90,14 @@ export const DRAWINGS: Drawings = {
     cape: { back: [[1, 3, 14, 9, '#c0392b']], front: [] },
   },
   held: {
-    coffee: [[16, 4, 2, 3, BLUE], [16, 2, 1, 1, '#c8c8c8'], [17, 1, 1, 1, '#c8c8c8']],
-    wand: [[16, 5, 1, 1, '#5c3317'], [17, 4, 1, 1, '#5c3317'], [17, 2, 1, 1, YELLOW], [16, 1, 1, 1, YELLOW]],
-    balloon: [[15, -3, 3, 3, RED], [16, 0, 1, 5, '#999']],
-    flower: [[16, 3, 1, 3, GREEN], [15, 1, 3, 2, PINK], [16, 1, 1, 1, YELLOW]],
-    lightsaber: [[16, -2, 1, 6, '#7fe3ff'], [16, 4, 1, 2, '#555']],
-    pencil: [[16, 1, 1, 1, '#ff9a9a'], [16, 2, 1, 4, '#f5b400'], [16, 6, 1, 1, '#333']],
-    flag: [[16, -1, 1, 8, '#666'], [17, -1, 1, 2, RED]],
-    umbrella: [[14, -2, 4, 1, BLUE], [15, -3, 2, 1, BLUE], [16, -1, 1, 6, '#333']],
+    coffee: [[16, 5, 2, 3, BLUE], [16, 3, 1, 1, '#c8c8c8'], [17, 2, 1, 1, '#c8c8c8']],
+    wand: [[16, 6, 1, 1, '#5c3317'], [17, 5, 1, 1, '#5c3317'], [17, 3, 1, 1, YELLOW], [16, 2, 1, 1, YELLOW]],
+    balloon: [[15, -2, 3, 3, RED], [16, 1, 1, 5, '#999']],
+    flower: [[16, 4, 1, 3, GREEN], [15, 2, 3, 2, PINK], [16, 2, 1, 1, YELLOW]],
+    lightsaber: [[16, -1, 1, 6, '#7fe3ff'], [16, 5, 1, 2, '#555']],
+    pencil: [[16, 2, 1, 1, '#ff9a9a'], [16, 3, 1, 4, '#f5b400'], [16, 7, 1, 1, '#333']],
+    flag: [[16, 0, 1, 8, '#666'], [17, 0, 1, 2, RED]],
+    umbrella: [[14, -1, 4, 1, BLUE], [15, -2, 2, 1, BLUE], [16, 0, 1, 6, '#333']],
   },
 }
 

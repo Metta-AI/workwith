@@ -13,7 +13,8 @@ type Props = { status: Status; fatigue: number; size?: number; title?: string; l
 const LAYERS = ['face', 'hair', 'neck', 'eyewear', 'hat', 'held'] as const
 
 export function Mascot({ status, fatigue, size = 28, title, look = {} }: Props) {
-  const BODY = BODY_COLORS[look.color ?? 'classic'] ?? BODY_COLORS.classic
+  // Looks saved before 'teal' became the default may still say 'classic'.
+  const BODY = BODY_COLORS[look.color ?? 'teal'] ?? BODY_COLORS.teal
   const ink = look.color === 'midnight' ? '#e8ecff' : '#2a1f1a'
   const tired = fatigue >= 0.55
   const spent = fatigue >= 0.85
@@ -30,18 +31,18 @@ export function Mascot({ status, fatigue, size = 28, title, look = {} }: Props) 
       {title && <title>{title}</title>}
       <g className="m-body">
         {parts.map((p) => rects(p.back, `b${p.slot}`))}
-        <rect x="2" y="3" width="12" height="7" fill={BODY} />
-        <rect x="0" y="5" width="2" height="2" fill={BODY} className="m-arm-l" />
-        <rect x="14" y="5" width="2" height="2" fill={BODY} className="m-arm-r" />
+        <rect x="3" y="3" width="10" height="1" fill={BODY} />
+        <rect x="2" y="4" width="12" height="5" fill={BODY} />
+        <rect x="3" y="9" width="10" height="1" fill={BODY} />
+        <rect x="0" y="6" width="2" height="2" fill={BODY} className="m-arm-l" />
+        <rect x="14" y="6" width="2" height="2" fill={BODY} className="m-arm-r" />
         {eyes}
         {parts.map((p) => rects(p.front, `f${p.slot}`))}
         {parts.map((p) => p.spin.length > 0 && <g key={`s${p.slot}`} className="m-spin">{rects(p.spin, `s${p.slot}`)}</g>)}
       </g>
-      <g className="m-legs" fill={BODY_COLORS[look.color ?? 'classic'] ?? BODY_COLORS.classic}>
-        <rect className="m-leg a" x="3" y="10" width="1" height="2" />
-        <rect className="m-leg b" x="5" y="10" width="1" height="2" />
-        <rect className="m-leg a" x="10" y="10" width="1" height="2" />
-        <rect className="m-leg b" x="12" y="10" width="1" height="2" />
+      <g className="m-legs" fill={BODY}>
+        <rect className="m-leg a" x="4" y="10" width="2" height="2" />
+        <rect className="m-leg b" x="10" y="10" width="2" height="2" />
       </g>
       {tired && !spent && <rect className="m-sweat" x="14" y="2" width="1" height="2" fill="#7cc4ff" />}
       {spent && status !== 'working' && <text className="m-z" x="14" y="3" fontSize="4" fill="#9aa">z</text>}

@@ -2,7 +2,7 @@
 // set_look tool (server/index.ts); the drawings are in web/src/components/looks.tsx.
 
 export const LOOK_OPTIONS = {
-  color: ['classic', 'ocean', 'moss', 'grape', 'bubblegum', 'slate', 'gold', 'midnight'],
+  color: ['teal', 'tangerine', 'ocean', 'moss', 'grape', 'bubblegum', 'slate', 'gold', 'midnight'],
   hat: ['top-hat', 'beanie', 'cap', 'cowboy', 'wizard', 'crown', 'party', 'beret', 'fez', 'chef', 'viking', 'propeller', 'headphones', 'halo', 'flower', 'bow', 'antenna', 'pirate', 'bucket', 'hard-hat', 'graduation', 'santa'],
   hair: ['spiky', 'mohawk', 'quiff', 'curly', 'long', 'bun', 'pigtails', 'afro', 'side-part', 'fringe'],
   eyewear: ['round-glasses', 'square-glasses', 'cat-eye-glasses', 'shades', 'monocle', 'eyepatch', '3d-glasses', 'goggles'],
