@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Anchor, Block, Event, ImageRef, Part } from '../../../shared/types.ts'
 import { addDraft, api, draftsOf, removeDraft, rewind, uid, useStore } from '../store.ts'
 import { anchorFromRange } from '../anchoring.ts'
-import { renderInline, renderMd } from '../util.ts'
+import { renderInline, renderMd, renderText } from '../util.ts'
 import { AssistantMessage, type Reaction } from './AssistantMessage.tsx'
 import { RichInput, Thumbs } from './Inputs.tsx'
 import { foldItems, revealItem, trackItems, type TrackedItem } from '../items.ts'
@@ -350,7 +350,7 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
           } : {})}
         >
           <PartHead p={p} />
-          {p.text.trim() && <div className="md" dangerouslySetInnerHTML={{ __html: renderMd(p.text) }} />}
+          {p.text.trim() && <div className="md" dangerouslySetInnerHTML={{ __html: renderText(p.text) }} />}
           <Thumbs images={p.images} />
         </div>
       ))}

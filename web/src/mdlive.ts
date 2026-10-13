@@ -83,23 +83,44 @@ function inline(text: string): Node[] {
   return out
 }
 
-function line(text: string): Node[] {
+// In a list, each character of an indent or a marker takes the same width
+// (--n of them, styles.css), so "- " and the two spaces that continue its item
+// line up, and a long line wraps under its own text (a hanging indent).
+const hang = (cls: string, lead: number, ...kids: Node[]) => {
+  const s = span(`md-line md-hang ${cls}`, ...kids)
+  s.style.setProperty('--n', String(lead))
+  return s
+}
+const cols = (cls: string, t: string) => {
+  const s = span(`md-cols ${cls}`, t)
+  s.style.setProperty('--n', String(t.length))
+  return s
+}
+
+// list: the line before was a list item, or continued one.
+function line(text: string, list: boolean): { nodes: Node[]; list: boolean } {
   let m: RegExpExecArray | null
-  if ((m = /^(#{1,6} )(.*)$/.exec(text))) return [span(`md-x md-line md-h md-h${m[1].length - 1}`, mark(m[1], true), ...inline(m[2]))]
-  // An unordered marker is drawn as a bullet off its line (styles.css); its indent stays text.
-  if ((m = /^(\s*)([-*+] )(.*)$/.exec(text))) return [span('md-x md-line md-li', ...(m[1] ? [m[1]] : []), span('md-bullet md-ul', m[2]), ...inline(m[3]))]
-  if ((m = /^(\s*(?:\d+[.)]) )(.*)$/.exec(text))) return [span('md-line md-li', span('md-bullet', m[1]), ...inline(m[2]))]
-  if ((m = /^(> ?)(.*)$/.exec(text))) return [span('md-x md-line md-quote', mark(m[1], true), ...inline(m[2]))]
-  return inline(text)
+  if ((m = /^(#{1,6} )(.*)$/.exec(text))) return { nodes: [span(`md-x md-line md-h md-h${m[1].length - 1}`, mark(m[1], true), ...inline(m[2]))], list: false }
+  // An unordered marker is drawn as a bullet off its line (styles.css).
+  if ((m = /^(\s*)([-*+] )(.*)$/.exec(text)))
+    return { nodes: [hang('md-x md-li', m[1].length + 2, ...(m[1] ? [cols('', m[1])] : []), cols('md-bullet md-ul', m[2]), ...inline(m[3]))], list: true }
+  if ((m = /^(\s*)(\d+[.)] )(.*)$/.exec(text)))
+    return { nodes: [hang('md-li', m[1].length + m[2].length, ...(m[1] ? [cols('', m[1])] : []), cols('md-bullet', m[2]), ...inline(m[3]))], list: true }
+  if (list && (m = /^([ \t]+)(\S.*)$/.exec(text))) return { nodes: [hang('md-cont', m[1].length, cols('', m[1]), ...inline(m[2]))], list: true }
+  if ((m = /^(> ?)(.*)$/.exec(text))) return { nodes: [span('md-x md-line md-quote', mark(m[1], true), ...inline(m[2]))], list: false }
+  return { nodes: inline(text), list: false }
 }
 
 export function render(el: HTMLElement, value: string) {
   const nodes: Node[] = []
   for (const r of splitImages(value)) {
     if ('url' in r) { nodes.push(imgNode(r.url, r.url)); continue }
+    let list = false
     r.text.split('\n').forEach((l, i) => {
       if (i) nodes.push(document.createTextNode('\n'))
-      nodes.push(...line(l))
+      const out = line(l, list)
+      nodes.push(...out.nodes)
+      list = out.list
     })
   }
   // A final newline needs something after it to show as a line.

@@ -22,6 +22,17 @@ export function renderMd(md: string): string {
   return DOMPurify.sanitize(marked.parse(md, { async: false }) as string)
 }
 
+// What you write, and drafts you send back, is text, not HTML: a "<id>" in it
+// shows as "<id>" instead of going missing as an unknown tag.
+const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const textMarked = new Marked(
+  markedHighlight({ emptyLangClass: 'hljs', langPrefix: 'hljs language-', highlight: (code, lang) => highlight(code, lang) }),
+  { gfm: true, breaks: false, renderer: { html: ({ text }) => escapeHtml(text) } },
+)
+export function renderText(md: string): string {
+  return DOMPurify.sanitize(textMarked.parse(md, { async: false }) as string)
+}
+
 export function renderInline(md: string): string {
   return DOMPurify.sanitize(marked.parseInline(md, { async: false }) as string)
 }

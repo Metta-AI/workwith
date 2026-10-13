@@ -418,7 +418,8 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .ask-answer { font-size: calc(13px * var(--fs, 1)); }
 /* A <draft>: text to edit and send back (AssistantMessage.tsx DraftCard). */
 .draft-title { font-weight: 600; }
-.draft-text { white-space: pre-wrap; font-size: calc(13px * var(--fs, 1)); color: var(--muted); max-height: 12em; overflow: auto; }
+.draft-text { font-size: calc(13px * var(--fs, 1)); color: var(--muted); max-height: 16em; overflow: auto; }
+.draft-text > :first-child { margin-top: 2px; } .draft-text > :last-child { margin-bottom: 0; }
 .draft-actions { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: calc(12px * var(--fs, 1)); }
 .draft-how { font-size: calc(12px * var(--fs, 1)); }
 .reply-btn.draft-approve.on { background: var(--ok); border-color: var(--ok); color: #fff; }
@@ -445,9 +446,14 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .ri-edit .md-link { color: var(--blue); }
 .ri-edit .md-h { font-weight: 700; } .ri-edit .md-h1 { font-size: 1.2em; } .ri-edit .md-h2 { font-size: 1.1em; }
 .ri-edit .md-bullet { color: var(--muted); }
-/* "- " shows as a bullet until the caret is on its line; the text stays "- ", so the caret's offsets do not move. */
+/* Lists (mdlive.ts): each indent or marker character is one column wide, and a
+   wrapped line hangs under the item's text. "- " shows as a bullet until the caret
+   is on its line; the text stays "- ", so the caret's offsets do not move. */
+.ri-edit { --col: .55em; }
+.ri-edit .md-hang { display: inline-block; width: 100%; box-sizing: border-box; vertical-align: top; padding-left: calc(var(--n) * var(--col)); text-indent: calc(var(--n) * var(--col) * -1); }
+.ri-edit .md-cols { display: inline-block; width: calc(var(--n) * var(--col)); text-indent: 0; white-space: pre; overflow: hidden; vertical-align: top; }
 .ri-edit .md-li:not(.md-active) > .md-ul { position: relative; color: transparent; }
-.ri-edit .md-li:not(.md-active) > .md-ul::before { content: '•'; position: absolute; left: 0; color: var(--muted); }
+.ri-edit .md-li:not(.md-active) > .md-ul::before { content: '•'; position: absolute; left: .1em; color: var(--muted); }
 .ri-edit .md-quote { color: var(--muted); }
 .ri-edit:focus { outline: 2px solid var(--blue); outline-offset: -1px; }
 .ri-edit[data-empty]::before { content: attr(data-placeholder); color: var(--muted); pointer-events: none; position: absolute; }
@@ -664,3 +670,8 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .start-context p { margin: 0; font-size: calc(13px * var(--fs, 1)); line-height: 1.45; }
 .start-context-body table { border-collapse: collapse; font-size: calc(12.5px * var(--fs, 1)); }
 .start-context-body th, .start-context-body td { padding: 2px 10px 2px 0; text-align: left; border-bottom: 1px solid var(--line); }
+.usage { cursor: pointer; }
+.mcp-modal p { margin: 0; font-size: calc(13px * var(--fs, 1)); line-height: 1.45; }
+.mcp-table { border-collapse: collapse; font-size: calc(13px * var(--fs, 1)); }
+.mcp-table th { text-align: left; font-weight: 500; color: var(--muted); padding: 2px 12px 4px 0; }
+.mcp-table td { padding: 3px 12px 3px 0; border-top: 1px solid var(--line); }
