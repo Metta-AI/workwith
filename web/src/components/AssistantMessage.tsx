@@ -14,6 +14,7 @@ import { askOf, commandOf, draftOf, isTask, segmentsOf, type Segment } from '../
 import type { Anchor } from '../../../shared/types.ts'
 import { marked, renderInline, renderText } from '../util.ts'
 import { anchorFromRange, rangesFor, setHighlights } from '../anchoring.ts'
+import { render as renderLive } from '../mdlive.ts'
 import { addDraft, api, changed, dismissItem, draftsOf, markDone, removeDraft, setDoneText, state, uid, undismissItem, updateDraft, useStore, type AnswerDraft, type DoneDraft, type NoteDraft } from '../store.ts'
 import type { TrackedItem } from '../items.ts'
 import { RichInput, Thumbs } from './Inputs.tsx'
@@ -445,7 +446,8 @@ function RunCard({ c, card, title, command, ready }: { c: Ctx; card: string; tit
 // Text Claude drafted for you (a commit message, an email). Untouched, it stays
 // open: Approve sends it back as it is (and greys it out), or edit it, and your
 // edits go back. Edited, it offers only Restore (two clicks), which returns it
-// to untouched.
+// to untouched, and a grey "Edited" that shows the original over the field
+// while the pointer is on it.
 function DraftCard({ c, ask, compact }: { c: Ctx; ask: Ask & { draft: string }; compact?: boolean }) {
   const askKey = `${c.msg}:${ask.id}`
   const item = c.items.get(askKey)
@@ -454,6 +456,7 @@ function DraftCard({ c, ask, compact }: { c: Ctx; ask: Ask & { draft: string }; 
   const answer = item?.reply?.kind === 'answer' ? item.reply : undefined
   const attrs = compact ? {} : { 'data-item': askKey }
   const [confirm, setConfirm] = useState(false)
+  const [peek, setPeek] = useState(false)
   useEffect(() => { if (!confirm) return; const t = setTimeout(() => setConfirm(false), 4000); return () => clearTimeout(t) }, [confirm])
   const head = (mark: React.ReactNode) => (
     <div className="ask-row">
@@ -487,7 +490,10 @@ function DraftCard({ c, ask, compact }: { c: Ctx; ask: Ask & { draft: string }; 
     <div className={`ask-card draft-card${approved || edited ? ' queued' : ''}${approved ? ' approved' : ''}`} {...attrs} onMouseUp={(e) => e.stopPropagation()}>
       {head(status === 'open' && <button className="icon-btn" title="Dismiss" onClick={() => dismissItem(c.sid, askKey, ask.question)}><XIcon size={13} /></button>)}
       {/* An edit ends an approval: the edits are what goes back. */}
-      <RichInput value={text} onChange={(t) => patch({ text: t, approved: false })} images={[]} onImages={() => {}} placeholder="Draft" minRows={2} />
+      <div className="draft-field">
+        <RichInput value={text} onChange={(t) => patch({ text: t, approved: false })} images={[]} onImages={() => {}} placeholder="Draft" minRows={2} />
+        {edited && peek && <Original text={ask.draft} />}
+      </div>
       <div className="draft-actions">
         {!edited && (
           <button className={`reply-btn draft-approve${approved ? ' on' : ''}`} title={approved ? 'Sends as is with your next message. Click to undo' : 'Send as is with your next message'} onClick={() => patch({ approved: !approved })}>
@@ -501,9 +507,17 @@ function DraftCard({ c, ask, compact }: { c: Ctx; ask: Ask & { draft: string }; 
             if (draft) removeDraft(c.sid, draft.id)
           }}><UndoIcon size={13} /> {confirm ? 'Restore the original?' : 'Restore'}</button>
         )}
+        {edited && <span className="muted draft-edited" onMouseEnter={() => setPeek(true)} onMouseLeave={() => setPeek(false)}>Edited</span>}
       </div>
     </div>
   )
+}
+
+// The original draft, drawn the way the field draws it, laid over the field.
+function Original({ text }: { text: string }) {
+  const el = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => { renderLive(el.current!, text) }, [text])
+  return <div ref={el} className="ri-edit draft-orig" />
 }
 
 export function AskCard({ c, ask, compact }: { c: Ctx; ask: Ask; compact?: boolean }) {

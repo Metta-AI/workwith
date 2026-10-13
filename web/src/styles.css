@@ -435,6 +435,12 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .reply-btn.draft-approve.on { background: var(--ok); border-color: var(--ok); color: #fff; }
 .draft-card.approved .ri-edit { color: var(--muted); background: transparent; }
 .reply-btn.draft-confirm { color: var(--bad); border-color: var(--bad); }
+.draft-field { position: relative; }
+.draft-edited { margin-left: auto; cursor: default; }
+.draft-edited:hover { color: var(--text); }
+/* The original draft, over the field while the pointer is on "Edited"; it grows past the field if longer. */
+.draft-orig { position: absolute; top: 0; left: 0; right: 0; min-height: 100%; max-height: none; overflow: visible; z-index: 3; pointer-events: none; border-style: dashed; animation: draft-orig-in .12s ease-out; }
+@keyframes draft-orig-in { from { opacity: 0; } }
 .ask-options { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 8px; }
 .chip { border-radius: 14px; padding: 2px 10px; font-size: calc(13px * var(--fs, 1)); text-align: left; }
 .chip.on { background: var(--blue); border-color: var(--blue); color: #fff; }

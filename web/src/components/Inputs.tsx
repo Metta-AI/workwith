@@ -5,7 +5,8 @@
 
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import type { ImageRef } from '../../../shared/types.ts'
-import { activate, enterKey, fromDom, imgNode, rangeAt, render, select, selectionOffsets, wrapKey } from '../mdlive.ts'
+import { htmlToMarkdown } from '../htmlmd.ts'
+import { activate, enterKey, fromDom, imgNode, rangeAt, render, select, selectionOffsets, snapCaret, wrapKey } from '../mdlive.ts'
 import { imagesFrom, uploadImage } from '../util.ts'
 import { ImageIcon, XIcon } from './Icons.tsx'
 
@@ -114,6 +115,7 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
       if (!el) return
       const sel = selectionOffsets(el)
       if (sel) caret.current = sel
+      if (document.activeElement === el) snapCaret(el)
       activate(el)
     }
     document.addEventListener('selectionchange', save)
@@ -152,11 +154,38 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
     const plainEnter = e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.altKey
     const r = plainEnter ? enterKey(fromDom(el), sel[0], sel[1]) : wrapKey(e, fromDom(el), sel[0], sel[1])
     if (!r) return false
-    const snap = { v: r.value, s: r.start, e: r.end, t: 0 }
+    edit(r.value, r.start, r.end)
+    return true
+  }
+  const edit = (v: string, s: number, e = s) => {
+    const snap = { v, s, e, t: 0 }
     past.current.push(snap)
     future.current = []
     apply(snap)
-    return true
+  }
+
+  // Copy gives the markdown as it is; the styled DOM would copy as odd indents.
+  const copy = (e: React.ClipboardEvent, cut: boolean) => {
+    const el = ed.current!
+    const sel = selectionOffsets(el)
+    if (!sel || sel[0] === sel[1]) return
+    const v = fromDom(el)
+    e.preventDefault()
+    e.clipboardData.setData('text/plain', v.slice(sel[0], sel[1]))
+    if (cut) edit(v.slice(0, sel[0]) + v.slice(sel[1]), sel[0])
+  }
+  // Paste keeps the formatting of rich text, as markdown.
+  const paste = (e: React.ClipboardEvent) => {
+    const f = imagesFrom(e.clipboardData)
+    if (f.length) { e.preventDefault(); void add(f, null); return }
+    const el = ed.current!
+    const sel = selectionOffsets(el)
+    const html = e.clipboardData.getData('text/html')
+    const t = ((html && htmlToMarkdown(html)) || e.clipboardData.getData('text/plain')).replace(/\r\n?/g, '\n')
+    if (!sel || !t || composing.current) return
+    e.preventDefault()
+    const v = fromDom(el)
+    edit(v.slice(0, sel[0]) + t + v.slice(sel[1]), sel[0] + t.length)
   }
 
   return (
@@ -193,7 +222,9 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
             if (t === 'historyUndo') { e.preventDefault(); undo() }
             if (t === 'historyRedo') { e.preventDefault(); redo() }
           }}
-          onPaste={(e) => { const f = imagesFrom(e.clipboardData); if (f.length) { e.preventDefault(); void add(f, null) } }}
+          onPaste={paste}
+          onCopy={(e) => copy(e, false)}
+          onCut={(e) => copy(e, true)}
           onKeyDown={(e) => {
             if (onKey?.(e)) { e.preventDefault(); return }
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return }
