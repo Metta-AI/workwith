@@ -327,7 +327,7 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
   return (
     <div className="user-wrap" onMouseLeave={() => setConfirm(false)}>
     <div className="user-turn">
-      {e.from && <div className="from">via {e.from}</div>}
+      {e.from && <div className="from">via {e.from === 'master' ? 'lead' : e.from}</div>}
       {replies.length > 0 && (
         <button className={`replies-sum${open ? ' open' : ''}`} onClick={() => setOpen(!open)}>
           <ChevronIcon size={11} className="chevron" /> {repliesSummary(replies)}

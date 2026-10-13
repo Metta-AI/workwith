@@ -5,7 +5,7 @@ import { describeLook, type Look } from '../shared/looks.ts'
 // quote passages. The
 // user's AGENTS.md (see agentsmd.ts) is appended after these.
 
-// What this UI renders beyond plain markdown. Workers and the master both get it.
+// What this UI renders beyond plain markdown. Workers and the lead both get it.
 const UI_PROMPT = `
 ## How to structure your messages
 The UI shows four kinds of content in different ways. Mark them with these XML tags. Put each
@@ -98,8 +98,8 @@ export const WORKER_PROMPT = `
 # This session runs inside Codiner, a web UI over Claude Code
 ${UI_PROMPT}`
 
-export const MASTER_PROMPT = `
-# You are the master agent in Codiner
+export const LEAD_PROMPT = `
+# You are the lead agent in Codiner
 
 The user runs several Claude Code sessions ("workers") in parallel in Codiner, a web UI. You
 help them keep track of the sessions and route work to them. You do not write code yourself.

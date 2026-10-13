@@ -4,7 +4,7 @@ import { api, changed, connect, select, state, useStore } from './store.ts'
 import { useState } from 'react'
 import { Sidebar } from './components/Sidebar.tsx'
 import { SessionView } from './components/SessionView.tsx'
-import { MasterView } from './components/MasterView.tsx'
+import { LeadView } from './components/LeadView.tsx'
 import { Splitter, useWidth } from './components/Splitter.tsx'
 import './styles.css'
 
@@ -24,13 +24,29 @@ function App() {
       <Splitter width={side} setWidth={setSide} min={180} max={560} initial={260} />
       <main>
         <SignIn />
+        <Restart />
         {!st.connected && !st.sessions.length ? <div className="empty">Connecting to the Codiner server…</div>
-          : sel?.kind === 'master' ? <MasterView id={sel.id} />
+          : sel?.kind === 'lead' ? <LeadView id={sel.id} />
           : sel ? <SessionView key={sel.id} id={sel.id} />
           : <div className="empty">Pick a session.</div>}
       </main>
       {st.lightbox && <div className="lightbox" onClick={() => { state.lightbox = null; changed() }}><img src={st.lightbox} alt="" /></div>}
       {st.error && <div className="toast" onClick={() => { state.error = null; changed() }}>{st.error}</div>}
+    </div>
+  )
+}
+
+// The server's code changed on disk: restart it from here (it comes back by itself).
+function Restart() {
+  const st = useStore()
+  if (!st.stale && !st.restarting) return null
+  const busy = st.sessions.filter((s) => s.status === 'working' || s.status === 'permission').length
+  return (
+    <div className="signin restart">
+      {st.restarting ? <span>Restarting Codiner…</span> : <>
+        <span>Codiner's server code has changed. Restart to use it.{busy ? ` ${busy} ${busy === 1 ? 'session is' : 'sessions are'} working and will stop.` : ''}</span>
+        <button className="primary" onClick={() => { state.restarting = true; changed(); void api('/api/restart').catch(() => {}) }}>Restart</button>
+      </>}
     </div>
   )
 }

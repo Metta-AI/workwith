@@ -13,7 +13,7 @@ type Drawing = Px[] | { back?: Px[]; front: Px[]; spin?: Px[] }
 type Drawings = { [S in Exclude<LookSlot, 'color'>]: Record<(typeof LOOK_OPTIONS)[S][number], Drawing> }
 
 export const BODY_COLORS: Record<(typeof LOOK_OPTIONS)['color'][number], string> = {
-  teal: '#1f9e96', tangerine: '#ff8c1a', ocean: '#3f8fd6', moss: '#5e9e4f', grape: '#8a5cc7', bubblegum: '#e57aa8', slate: '#7d8a99', gold: '#d9a521', midnight: '#3b4a7a',
+  teal: '#2b98c6', tangerine: '#ff8c1a', ocean: '#3f8fd6', moss: '#5e9e4f', grape: '#8a5cc7', bubblegum: '#e57aa8', slate: '#7d8a99', gold: '#d9a521', midnight: '#3b4a7a',
 }
 
 const K = '#222', BROWN = '#3a2a1f', RED = '#e5534b', BLUE = '#4c8dff', YELLOW = '#ffd54a', GREEN = '#3fb950', PINK = '#ff6fae', WHITE = '#ffffff', GOLD = '#f2c230'

@@ -1,5 +1,5 @@
 // Settings: display options, and the notes files you and Claude keep (AGENTS.md,
-// CLAUDE.md, the master's NOTES.md, and any you add), each with its history.
+// CLAUDE.md, the lead's NOTES.md, and any you add), each with its history.
 // Read shows a file rendered, every block marked by when it last changed and
 // by whom (server/filehistory.ts); clicking a block lists its changes, with
 // links to the conversations that made them.

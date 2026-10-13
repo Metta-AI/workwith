@@ -2,25 +2,42 @@
 //   sessions.json        every session's metadata
 //   events/<id>.jsonl    each session's event log, append-only
 //   images/<sha>.<ext>   images pasted into replies (content-addressed)
-//   master/              the master agent's working directory (NOTES.md lives here)
+//   lead/              the lead agent's working directory (NOTES.md lives here)
 
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { Event, ImageRef, SessionMeta, Settings } from '../shared/types.ts'
 
 export const DATA = process.env.CODINER_HOME ?? path.join(os.homedir(), '.codiner')
 const EVENTS = path.join(DATA, 'events')
 export const IMAGES = path.join(DATA, 'images')
-export const MASTER_DIR = path.join(DATA, 'master')
-for (const d of [DATA, EVENTS, IMAGES, MASTER_DIR]) fs.mkdirSync(d, { recursive: true })
+export const LEAD_DIR = path.join(DATA, 'lead')
+// The lead agent was called the master until October 2026. Move its directory once.
+const OLD_LEAD_DIR = path.join(DATA, 'master')
+if (fs.existsSync(OLD_LEAD_DIR) && !fs.existsSync(LEAD_DIR)) fs.renameSync(OLD_LEAD_DIR, LEAD_DIR)
+for (const d of [DATA, EVENTS, IMAGES, LEAD_DIR]) fs.mkdirSync(d, { recursive: true })
 
 const SESSIONS = path.join(DATA, 'sessions.json')
 const SETTINGS = path.join(DATA, 'settings.json')
 
 export function loadSessions(): SessionMeta[] {
-  try { return JSON.parse(fs.readFileSync(SESSIONS, 'utf8')) } catch { return [] }
+  let all: SessionMeta[]
+  try { all = JSON.parse(fs.readFileSync(SESSIONS, 'utf8')) } catch { return [] }
+  return all.map(renameMaster)
+}
+
+// The old master session becomes the lead: new id, kind and directory. Claude Code
+// keeps a conversation under the directory it ran in, so the lead starts a new one
+// (its NOTES.md moved with the directory). Its event log keeps the old transcript.
+export let leadRenamed = false
+function renameMaster(m: SessionMeta): SessionMeta {
+  if ((m.kind as string) !== 'master') return m
+  leadRenamed = true
+  const from = path.join(EVENTS, `${m.id}.jsonl`), to = path.join(EVENTS, 'lead.jsonl')
+  if (fs.existsSync(from) && !fs.existsSync(to)) fs.renameSync(from, to)
+  return { ...m, id: 'lead', kind: 'lead', title: 'Lead', cwd: LEAD_DIR, claudeSessionId: randomUUID(), started: false, context: { ...m.context, used: 0 } }
 }
 
 let saveTimer: NodeJS.Timeout | null = null
@@ -35,7 +52,10 @@ export function saveSessions(all: () => SessionMeta[]) {
 }
 
 export function loadSettings(): Settings {
-  try { return { masterAutoSend: false, ...JSON.parse(fs.readFileSync(SETTINGS, 'utf8')) } } catch { return { masterAutoSend: false } }
+  try {
+    const { masterAutoSend, ...s } = JSON.parse(fs.readFileSync(SETTINGS, 'utf8'))
+    return { leadAutoSend: masterAutoSend ?? false, ...s }
+  } catch { return { leadAutoSend: false } }
 }
 export function saveSettings(s: Settings) { fs.writeFileSync(SETTINGS, JSON.stringify(s, null, 1)) }
 

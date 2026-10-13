@@ -1,5 +1,5 @@
 // Where the notes you and Claude keep came from. Each tracked file (AGENTS.md,
-// your global CLAUDE.md, the master's NOTES.md, and any you add in Settings)
+// your global CLAUDE.md, the lead's NOTES.md, and any you add in Settings)
 // keeps every version, with who made it: you in Settings, a Codiner session at
 // the message where Claude edited it, a Claude Code session elsewhere (found
 // in its transcript), or someone outside. Blame per line comes from diffing the

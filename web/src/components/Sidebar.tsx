@@ -33,7 +33,7 @@ export function Sidebar({ width }: { width: number }) {
   const [newIn, setNewIn] = useState<string | null>(null)
   const [history, setHistory] = useState(false)
   const [settings, setSettings] = useState(false)
-  const master = st.sessions.find((s) => s.kind === 'master')
+  const lead = st.sessions.find((s) => s.kind === 'lead')
   const groups = groupSessions(st.sessions, st.showArchived)
   const u = st.usage
   return (
@@ -42,7 +42,7 @@ export function Sidebar({ width }: { width: number }) {
         <span>Codiner</span>
         <span className={`conn ${st.connected ? 'on' : 'off'}`} title={st.connected ? 'Connected' : 'Reconnecting…'} />
       </div>
-      {master && <Row s={master} label="Master" active={st.selected === master.id} />}
+      {lead && <Row s={lead} label="Lead" active={st.selected === lead.id} />}
       <div className="side-actions">
         <button className="primary" onClick={() => setNewIn('')}>+ New session</button>
         <button onClick={() => setHistory(true)} title="Pick up any Claude Code conversation on this machine, including ones from the terminal">Resume…</button>
@@ -86,7 +86,7 @@ function Row({ s, depth = 0, active, label }: { s: SessionMeta; depth?: number; 
         <span className="row-title">{label ?? s.title}</span>
         <span className="row-sub">{s.compacting ? 'compacting' : STATUS_LABEL[s.status]} · {timeAgo(s.lastActivity)}</span>
       </span>
-      {s.inbox.length > 0 && <span className="count" title="Drafts from the master">{s.inbox.length}</span>}
+      {s.inbox.length > 0 && <span className="count" title="Drafts from the lead">{s.inbox.length}</span>}
       {s.kind === 'worker' && !s.archived && (
         <span className="row-close" role="button" title="Close (moves to Archived, reopenable)" onClick={(e) => { e.stopPropagation(); void closeSession(s.id) }}><XIcon size={12} /></span>
       )}

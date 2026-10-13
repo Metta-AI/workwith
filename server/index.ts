@@ -12,25 +12,25 @@ import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { Part, PermissionMode, ServerMsg, SessionMeta, Settings, Usage } from '../shared/types.ts'
-import { execFile, execFileSync } from 'node:child_process'
+import { execFile, execFileSync, spawn } from 'node:child_process'
 import os from 'node:os'
 import { Session, type Hooks, type Launch, type SlashCommand } from './session.ts'
 import { findHistory, importTranscript, listDirs, listHistory } from './history.ts'
-import { MASTER_PROMPT, WORKER_PROMPT, lookPrompt } from './prompts.ts'
+import { LEAD_PROMPT, WORKER_PROMPT, lookPrompt } from './prompts.ts'
 import { LOOK_OPTIONS, LOOK_SLOTS, cleanLook, describeLook } from '../shared/looks.ts'
 import { AGENTS_FILE, agentsPrompt, readAgentsMd, writeAgentsMd } from './agentsmd.ts'
 import { handleMcp, type Tool } from './mcp.ts'
 import { blame, initFileHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
 import { authState, cancelLogin, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
 import {
-  DATA, MASTER_DIR, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, loadSessions, loadSettings, saveImage, saveSessions, saveSettings,
+  DATA, LEAD_DIR, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, leadRenamed, loadSessions, loadSettings, saveImage, saveSessions, saveSettings,
 } from './store.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const PORT = Number(process.env.PORT ?? 4545)
 const DEV = process.argv.includes('--dev')
 const MCP_TOKEN = randomUUID()
-const MASTER_ID = 'master'
+const LEAD_ID = 'lead'
 const MODES: PermissionMode[] = ['auto', 'default', 'acceptEdits', 'plan', 'bypassPermissions']
 
 // ---- state ----------------------------------------------------------------
@@ -124,12 +124,12 @@ function launchFor(meta: SessionMeta): () => Launch {
   if (meta.kind === 'worker') return () => ({
     args: [
       '--mcp-config', JSON.stringify({ mcpServers: { codiner: { type: 'http', url: `http://127.0.0.1:${PORT}/mcp/${MCP_TOKEN}/look/${meta.id}` } } }),
-      '--allowedTools', 'mcp__codiner__set_look',
+      '--allowedTools', 'mcp__codiner__set_look,mcp__codiner__set_title',
     ],
-    prompt: WORKER_PROMPT + lookPrompt(meta.look) + agentsPrompt(),
+    prompt: WORKER_PROMPT + lookPrompt(meta.look) + titlePrompt(meta) + agentsPrompt(),
   })
   return () => ({
-    prompt: MASTER_PROMPT + lookPrompt(meta.look) + agentsPrompt(),
+    prompt: LEAD_PROMPT + lookPrompt(meta.look) + agentsPrompt(),
     args: [
       '--strict-mcp-config',
       '--mcp-config', JSON.stringify({ mcpServers: { codiner: { type: 'http', url: `http://127.0.0.1:${PORT}/mcp/${MCP_TOKEN}` } } }),
@@ -162,13 +162,18 @@ for (const m of loadSessions()) {
   if (meta.context.window === 200_000 || meta.context.used > meta.context.window) meta.context.window = Math.max(knownWindow(meta.model), meta.context.used)
   adopt(meta)
 }
-if (!sessions.has(MASTER_ID)) {
-  adopt(newMeta({ id: MASTER_ID, kind: 'master', title: 'Master', cwd: MASTER_DIR }))
+if (!sessions.has(LEAD_ID)) {
+  adopt(newMeta({ id: LEAD_ID, kind: 'lead', title: 'Lead', cwd: LEAD_DIR }))
+  metaChanged()
+}
+if (leadRenamed) {
+  get(LEAD_ID).notice('The master is now called the lead. It starts a new conversation and keeps its NOTES.md.')
+  saveSettings(settings)
   metaChanged()
 }
 // Auto mode became the default: move sessions still on the old defaults over, once.
 if (!settings.autoModeMigrated) {
-  for (const s of sessions.values()) if (s.meta.permissionMode === 'default' || (s.meta.kind === 'master' && s.meta.permissionMode === 'acceptEdits')) s.meta.permissionMode = 'auto'
+  for (const s of sessions.values()) if (s.meta.permissionMode === 'default' || (s.meta.kind === 'lead' && s.meta.permissionMode === 'acceptEdits')) s.meta.permissionMode = 'auto'
   settings = { ...settings, autoModeMigrated: true }
   saveSettings(settings)
   metaChanged()
@@ -213,12 +218,12 @@ function resumeHistory(claudeId: string): Session {
   return s
 }
 
-// Context added to each message you send, out of the transcript: the master gets
+// Context added to each message you send, out of the transcript: the lead gets
 // the board; a worker gets who else is at work in its directory, from the
 // ~/.claude/bin/agents helper when there is one, so it need not check first.
 const AGENTS_BIN = path.join(os.homedir(), '.claude', 'bin', 'agents')
 function hiddenFor(s: Session): { hidden?: string } {
-  if (s.meta.kind === 'master') return { hidden: board() }
+  if (s.meta.kind === 'lead') return { hidden: board() }
   if (!fs.existsSync(AGENTS_BIN)) return {}
   let out = ''
   try { out = execFileSync(AGENTS_BIN, ['active', s.meta.cwd, '--other', s.meta.claudeSessionId.slice(0, 8)], { timeout: 3000, encoding: 'utf8' }) }
@@ -227,7 +232,7 @@ function hiddenFor(s: Session): { hidden?: string } {
   return { hidden: `[Codiner, ${new Date().toISOString().slice(0, 16)}Z] Other agents active in ${s.meta.cwd} (from \`agents active\`): ${who ? `\n${who}` : 'none.'}` }
 }
 
-// What the master sees at the end of each message you send it.
+// What the lead sees at the end of each message you send it.
 function board(): string {
   const lines = metas().filter((m) => m.kind === 'worker' && !m.archived).map((m) => {
     const ctx = Math.round((m.context.used / (m.context.window || 1)) * 100)
@@ -236,19 +241,43 @@ function board(): string {
   return `<board>\n${lines.length ? lines.join('\n') : '(no worker sessions)'}\n</board>`
 }
 
-// ---- master tools -----------------------------------------------------------
+// ---- lead tools -----------------------------------------------------------
 
 function deliver(s: Session, text: string): string {
-  if (settings.masterAutoSend) {
-    s.send([{ kind: 'text', text }], { from: 'master' })
+  if (settings.leadAutoSend) {
+    s.send([{ kind: 'text', text }], { from: 'lead' })
     return `Sent to ${s.meta.id}.`
   }
-  s.meta.inbox.push({ id: randomUUID().slice(0, 8), text, from: 'master', ts: Date.now() })
+  s.meta.inbox.push({ id: randomUUID().slice(0, 8), text, from: 'lead', ts: Date.now() })
   metaChanged()
   return `Held as a draft in ${s.meta.id}'s inbox; the user will review and send it (auto-send is off).`
 }
 
 // The critter's look, chosen by the Claude in that session.
+// Workers name their session after its task, and keep the name current, unless you named it.
+function titlePrompt(meta: SessionMeta): string {
+  return meta.titleByUser
+    ? `\n\n## Your session's name\nThe user named this session "${meta.title}". Keep that name.\n`
+    : `\n\n## Your session's name\nName this session after its task with the set_title tool: 2 to 5 words, like "Login flow fix". Do it once the task is clear, and again only if the task changes a lot. Do not mention it unless the user asks.\n`
+}
+
+function titleTool(id: string): Tool {
+  return {
+    name: 'set_title',
+    description: "Name your session in the Codiner sidebar after its task: 2 to 5 words. Call it when the task becomes clear, and again only if the task changes a lot.",
+    inputSchema: { type: 'object', properties: { title: { type: 'string' } }, required: ['title'] },
+    run: (args) => {
+      const s = get(id)
+      if (s.meta.titleByUser) return `The user named this session "${s.meta.title}" themselves. Keep that name.`
+      const t = String(args?.title ?? '').replace(/\s+/g, ' ').trim().slice(0, 60)
+      if (!t) return 'Give a title of 2 to 5 words.'
+      s.meta.title = t
+      metaChanged()
+      return `Renamed to "${t}".`
+    },
+  }
+}
+
 function lookTool(id: string): Tool {
   return {
     name: 'set_look',
@@ -328,7 +357,7 @@ const tools: Tool[] = [
       const words = String(query ?? '').toLowerCase().split(/\s+/).filter(Boolean)
       const byClaude = new Map(metas().map((m) => [m.claudeSessionId, m.id]))
       return listHistory()
-        .filter((h) => !h.continuedIn && !h.cwd.startsWith(MASTER_DIR))
+        .filter((h) => !h.continuedIn && !h.cwd.startsWith(DATA))
         .filter((h) => { const hay = `${h.title} ${h.cwd} ${h.firstPrompt} ${h.lastPrompt}`.toLowerCase(); return words.every((w) => hay.includes(w)) })
         .slice(0, Math.min(Number(limit) || 10, 50))
         .map((h) => ({
@@ -414,6 +443,11 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     return
   }
   if (a === 'images' && method === 'POST') return send(res, 200, saveImage(String((await json(req)).dataUrl ?? '')))
+  if (a === 'restart' && method === 'POST') {
+    send(res, 200, { ok: true })
+    setTimeout(restart, 100)
+    return
+  }
   if (a === 'files') {
     const p = url.searchParams.get('path') ?? ''
     const known = trackedFiles().includes(p)
@@ -454,7 +488,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   }
   if (a === 'settings' && method === 'PUT') {
     const body = await json(req)
-    settings = { ...settings, ...(typeof body.masterAutoSend === 'boolean' ? { masterAutoSend: body.masterAutoSend } : {}) }
+    settings = { ...settings, ...(typeof body.leadAutoSend === 'boolean' ? { leadAutoSend: body.leadAutoSend } : {}) }
     saveSettings(settings)
     broadcast({ type: 'settings', settings })
     return send(res, 200, settings)
@@ -463,7 +497,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     const byClaude = new Map(metas().map((m) => [m.claudeSessionId, m.id]))
     const q = (url.searchParams.get('q') ?? '').toLowerCase()
     const items = listHistory()
-      .filter((h) => !h.continuedIn && !h.cwd.startsWith(MASTER_DIR))
+      .filter((h) => !h.continuedIn && !h.cwd.startsWith(DATA))
       .filter((h) => !q || `${h.title} ${h.cwd} ${h.firstPrompt} ${h.lastPrompt}`.toLowerCase().includes(q))
       .slice(0, 300)
       .map((h) => ({ ...h, codinerId: byClaude.get(h.id) ?? null }))
@@ -473,7 +507,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   if (a === 'recent-dirs' && method === 'GET') {
     const seen = new Map<string, { path: string; ts: number; source: string }>()
     const add = (p: string, ts: number, source: string) => {
-      if (p.startsWith(MASTER_DIR) || p.startsWith(DATA)) return
+      if (p.startsWith(DATA)) return
       const cur = seen.get(p)
       if (!cur || cur.ts < ts) seen.set(p, { path: p, ts, source: cur && cur.source !== source ? 'both' : source })
     }
@@ -518,11 +552,11 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     else throw new HttpError(404, 'Not found')
     return send(res, 200, authState())
   }
-  if (a === 'master' && id === 'reset' && method === 'POST') {
-    const s = get(MASTER_ID)
+  if (a === 'lead' && id === 'reset' && method === 'POST') {
+    const s = get(LEAD_ID)
     s.stop()
     Object.assign(s.meta, { claudeSessionId: randomUUID(), started: false, context: { used: 0, window: s.meta.context.window }, error: null, unread: false, pendingAsks: 0 })
-    s.notice('Fresh start: the master forgot this conversation. It keeps NOTES.md.')
+    s.notice('Fresh start: the lead forgot this conversation. It keeps NOTES.md.')
     return send(res, 200, { ok: true })
   }
   if (a !== 'sessions') throw new HttpError(404, 'Not found')
@@ -531,14 +565,14 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   const s = get(id)
   if (!b && method === 'PATCH') {
     const body = await json(req)
-    if (typeof body.title === 'string' && body.title.trim()) s.meta.title = body.title.trim()
+    if (typeof body.title === 'string' && body.title.trim()) { s.meta.title = body.title.trim(); s.meta.titleByUser = true }
     if (typeof body.archived === 'boolean' && s.meta.kind === 'worker') { s.meta.archived = body.archived; if (body.archived) s.stop() }
     if (MODES.includes(body.permissionMode)) s.setPermissionMode(body.permissionMode)
     metaChanged()
     return send(res, 200, s.meta)
   }
   if (!b && method === 'DELETE') {
-    if (s.meta.kind !== 'worker') throw new HttpError(400, 'The master session cannot be deleted')
+    if (s.meta.kind !== 'worker') throw new HttpError(400, 'The lead session cannot be deleted')
     s.stop()
     sessions.delete(id)
     deleteEvents(id)
@@ -611,11 +645,11 @@ const server = http.createServer(async (req, res) => {
     if (!localHost(req) || !localOrigin(req)) throw new HttpError(403, 'Codiner only answers requests from its own page')
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`)
     if (url.pathname === `/mcp/${MCP_TOKEN}`) {
-      const master = [...sessions.values()].find((s) => s.meta.kind === 'master')
-      return await handleMcp(req, res, master ? [...tools, lookTool(master.meta.id)] : tools)
+      const lead = [...sessions.values()].find((s) => s.meta.kind === 'lead')
+      return await handleMcp(req, res, lead ? [...tools, lookTool(lead.meta.id)] : tools)
     }
     const look = url.pathname.startsWith(`/mcp/${MCP_TOKEN}/look/`) && url.pathname.split('/').pop()
-    if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look)])
+    if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look)])
     if (url.pathname.startsWith('/api/')) return await api(req, res, url)
     if (vite) return vite.middlewares(req, res)
     serveStatic(url.pathname, res)
@@ -645,7 +679,7 @@ server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => {
     sockets.add(ws)
     ws.on('close', () => sockets.delete(ws))
-    ws.send(JSON.stringify({ type: 'hello', sessions: metas(), settings, usage, platform: process.platform, home: os.homedir(), auth: authState() } satisfies ServerMsg))
+    ws.send(JSON.stringify({ type: 'hello', sessions: metas(), settings, usage, platform: process.platform, home: os.homedir(), auth: authState(), stale } satisfies ServerMsg))
   })
 })
 
@@ -661,7 +695,7 @@ if (DEV) {
 
 // A missing or expired login starts a sign-in; once signed in, what failed goes again.
 // Files whose history is kept: the notes every session reads, and any you add in Settings.
-const BUILT_IN = () => [AGENTS_FILE, path.join(os.homedir(), '.claude', 'CLAUDE.md'), path.join(MASTER_DIR, 'NOTES.md')]
+const BUILT_IN = () => [AGENTS_FILE, path.join(os.homedir(), '.claude', 'CLAUDE.md'), path.join(LEAD_DIR, 'NOTES.md')]
 const trackedFiles = () => [...new Set([...BUILT_IN(), ...(settings.trackedFiles ?? [])])]
 initFileHistory({
   files: trackedFiles,
@@ -680,6 +714,34 @@ initAuth({
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Codiner on http://localhost:${PORT}${DEV ? ' (dev)' : ''}`)
 })
+
+// ---- restarting itself --------------------------------------------------------
+// When the server's own code on disk is newer than this process, the page offers
+// a restart: a new server starts detached (its log in ~/.codiner/server.log) as
+// soon as this one has let go of the port. Sessions resume on their next message.
+const STARTED = Date.now()
+function codeTime(): number {
+  let t = 0
+  for (const d of ['server', 'shared']) for (const f of fs.readdirSync(path.join(ROOT, d))) {
+    if (f.endsWith('.ts')) t = Math.max(t, fs.statSync(path.join(ROOT, d, f)).mtimeMs)
+  }
+  return Math.max(t, fs.statSync(path.join(ROOT, 'package.json')).mtimeMs)
+}
+let stale = false
+setInterval(() => {
+  let now = stale
+  try { now = codeTime() > STARTED } catch { /* a file mid-save */ }
+  if (now !== stale) { stale = now; broadcast({ type: 'stale', stale }) }
+}, 5000).unref()
+
+function restart() {
+  const q = (x: string) => `'${x.replace(/'/g, `'\\''`)}'`
+  const log = q(path.join(DATA, 'server.log'))
+  // The built UI is rebuilt first when not serving it through Vite.
+  const cmd = `sleep 1; ${DEV ? '' : `npx vite build >> ${log} 2>&1 && `}exec ${[process.execPath, ...process.argv.slice(1)].map(q).join(' ')} >> ${log} 2>&1`
+  spawn('sh', ['-c', cmd], { cwd: process.cwd(), env: process.env, detached: true, stdio: 'ignore' }).unref()
+  shutdown()
+}
 
 function shutdown() {
   for (const s of sessions.values()) s.stop()

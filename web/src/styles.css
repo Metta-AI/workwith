@@ -1,6 +1,6 @@
 :root {
   --bg: #faf9f6; --panel: #f2f0eb; --card: #ffffff; --line: #e3dfd6; --text: #23201c; --muted: #8a847a;
-  --accent: #0e8279; --accent-soft: #d7efec; --ok: #3fb950; --warn: #d4a72c; --hot: #e08a3c; --bad: #e5534b;
+  --accent: #1f7fae; --accent-soft: #d8eaf4; --ok: #3fb950; --warn: #d4a72c; --hot: #e08a3c; --bad: #e5534b;
   --blue: #4c8dff; --hl-draft: rgba(255, 196, 0, .38); --hl-sent: rgba(255, 196, 0, .16); --hl-focus: rgba(255, 170, 0, .62);
   --mono: ui-monospace, 'SF Mono', Menlo, monospace;
   color-scheme: light dark;
@@ -8,7 +8,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #1d1c1a; --panel: #252420; --card: #2c2a26; --line: #3a3732; --text: #ebe7df; --muted: #9a948a;
-    --accent: #26a69a; --accent-soft: #173a36; --hl-draft: rgba(255, 196, 0, .30); --hl-sent: rgba(255, 196, 0, .13); --hl-focus: rgba(255, 180, 0, .5);
+    --accent: #3a9cd0; --accent-soft: #16303e; --hl-draft: rgba(255, 196, 0, .30); --hl-sent: rgba(255, 196, 0, .13); --hl-focus: rgba(255, 180, 0, .5);
   }
 }
 * { box-sizing: border-box; }
@@ -47,7 +47,7 @@ code, pre, .mono { font-family: var(--mono); font-size: 12.5px; }
 
 .app { display: flex; height: 100%; }
 main { min-width: 0; height: 100%; overflow: hidden; flex: 1; display: flex; flex-direction: column; }
-main > .session, main > .master { flex: 1; height: auto; min-height: 0; }
+main > .session, main > .lead { flex: 1; height: auto; min-height: 0; }
 .splitter { flex: none; width: 5px; margin: 0 -2px; z-index: 5; cursor: col-resize; position: relative; }
 .splitter::after { content: ''; position: absolute; inset: 0 2px; background: transparent; transition: background .15s; }
 .splitter:hover::after, body.resizing .splitter::after { background: var(--accent); }
@@ -401,6 +401,8 @@ textarea.agents-md { font-size: 12.5px; line-height: 1.5; resize: vertical; min-
 .lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .75); display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
 .lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 6px; box-shadow: 0 8px 40px rgba(0, 0, 0, .5); }
 .signin { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 20px; background: rgba(212, 167, 44, .16); border-bottom: 1px solid var(--warn); font-size: 13px; }
+h1.rename { cursor: text; border-radius: 5px; } h1.rename:hover { background: rgba(127, 127, 127, .12); }
+.signin.restart { background: var(--accent-soft); border-bottom-color: var(--accent); }
 .signin.st-failed { background: rgba(229, 83, 75, .1); border-bottom-color: var(--bad); }
 .signin input { width: 220px; font-size: 12.5px; }
 .rich-input .attach { position: absolute; right: 7px; top: 7px; cursor: pointer; opacity: .55; line-height: 0; }
@@ -441,8 +443,8 @@ textarea.agents-md { font-size: 12.5px; line-height: 1.5; resize: vertical; min-
 .inbox-text { white-space: pre-wrap; margin: 4px 0 6px; max-height: 200px; overflow-y: auto; }
 .inbox-actions { display: flex; gap: 6px; }
 
-/* ---- master ---- */
-.master { display: flex; height: 100%; }
+/* ---- lead ---- */
+.lead { display: flex; height: 100%; }
 .board { flex: none; overflow-y: auto; padding: 14px 18px; border-right: 1px solid var(--line); background: var(--panel); }
 .board-head { display: flex; align-items: baseline; gap: 10px; } .board-head h2 { font-size: 15px; margin: 0 0 8px; }
 .board-group { margin-bottom: 14px; }
@@ -453,7 +455,7 @@ textarea.agents-md { font-size: 12.5px; line-height: 1.5; resize: vertical; min-
 .card-top { display: flex; gap: 10px; align-items: center; } .card-top .count { margin-left: auto; }
 .card-title { font-weight: 600; }
 .card-text { font-size: 12.5px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.master-chat { min-width: 0; min-height: 0; flex: 1; }
+.lead-chat { min-width: 0; min-height: 0; flex: 1; }
 
 /* ---- modal & toast ---- */
 .modal-back { position: fixed; inset: 0; background: rgba(0, 0, 0, .35); display: flex; align-items: flex-start; justify-content: center; padding-top: 10vh; z-index: 30; }

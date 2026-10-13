@@ -1,4 +1,4 @@
-// Just enough of MCP's streamable-HTTP transport to hand the master agent a
+// Just enough of MCP's streamable-HTTP transport to hand the lead agent a
 // few tools: JSON-RPC over POST, answered with plain JSON (no SSE needed).
 
 import type { IncomingMessage, ServerResponse } from 'node:http'

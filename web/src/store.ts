@@ -37,6 +37,8 @@ type State = {
   showSteps: boolean          // keep Claude's in-between messages out of the activity rows
   runs: Record<string, Run>
   fileTick: Record<string, number>   // bumped when a tracked file gets a new version
+  stale: boolean                     // the server's code on disk is newer than the server
+  restarting: boolean
 }
 
 const saved = <T,>(k: string, d: T): T => { try { return JSON.parse(localStorage.getItem(k) ?? '') ?? d } catch { return d } }
@@ -44,11 +46,11 @@ const saved = <T,>(k: string, d: T): T => { try { return JSON.parse(localStorage
 export const state: State = {
   connected: false,
   sessions: [],
-  settings: { masterAutoSend: false },
+  settings: { leadAutoSend: false },
   usage: {},
   events: {},
   streaming: {},
-  selected: saved('codiner.selected', 'master'),
+  selected: saved('codiner.selected', 'lead'),
   drafts: saved('codiner.drafts', {}),
   composer: saved('codiner.composer', {}),
   focus: null,
@@ -61,6 +63,8 @@ export const state: State = {
   showSteps: saved('codiner.showSteps', false),
   runs: {},
   fileTick: {},
+  stale: false,
+  restarting: false,
 }
 
 let version = 0
@@ -118,13 +122,14 @@ function onServer(m: ServerMsg) {
   switch (m.type) {
     case 'hello':
       state.sessions = m.sessions; state.settings = m.settings; state.usage = m.usage
-      state.platform = m.platform; state.home = m.home; state.auth = m.auth ?? { state: 'ok' }
-      if (!m.sessions.some((s) => s.id === state.selected)) state.selected = 'master'
+      state.platform = m.platform; state.home = m.home; state.auth = m.auth ?? { state: 'ok' }; state.stale = !!m.stale; state.restarting = false
+      if (!m.sessions.some((s) => s.id === state.selected)) state.selected = 'lead'
       break
     case 'sessions': state.sessions = m.sessions; break
     case 'settings': state.settings = m.settings; break
     case 'usage': state.usage = m.usage; break
     case 'auth': state.auth = m.auth; break
+    case 'stale': state.stale = m.stale; break
     case 'file': state.fileTick = { ...state.fileTick, [m.path]: (state.fileTick[m.path] ?? 0) + 1 }; break
     case 'run': {
       const run = state.runs[m.token]
@@ -198,7 +203,7 @@ export function revealEvent(sid: string, seq: number) {
 // Closing archives the session (its process ends; Reopen brings it back).
 export async function closeSession(id: string) {
   await api(`/api/sessions/${id}`, 'PATCH', { archived: true })
-  if (state.selected === id) select('master')
+  if (state.selected === id) select('lead')
 }
 
 // ---- drafts -------------------------------------------------------------------------

@@ -18,7 +18,7 @@ export type InboxItem = { id: string; text: string; from: string; ts: number }
 
 export type SessionMeta = {
   id: string
-  kind: 'worker' | 'master'
+  kind: 'worker' | 'lead'
   title: string
   cwd: string
   parentId: string | null
@@ -37,8 +37,9 @@ export type SessionMeta = {
   lastText: string        // the tail of the last thing Claude said, for overviews
   error: string | null
   archived: boolean
-  inbox: InboxItem[]      // messages the master agent drafted for this session
+  inbox: InboxItem[]      // messages the lead agent drafted for this session
   look?: Look             // what its critter wears; Claude picks it (shared/looks.ts)
+  titleByUser?: boolean   // you named it: Claude keeps that name (else it names it after its task)
   // Set by a rewind: the next start resumes claudeSessionId cut at this entry, as a fork.
   resumeAt?: string | null
 }
@@ -85,11 +86,13 @@ export type AuthState = { state: 'ok' | 'needed' | 'pending' | 'failed'; url?: s
 
 export type Usage = { fiveHour?: number; sevenDay?: number; resetsAt?: number; status?: string }
 // trackedFiles: files whose history Codiner keeps, besides AGENTS.md, CLAUDE.md and NOTES.md.
-export type Settings = { masterAutoSend: boolean; autoModeMigrated?: boolean; trackedFiles?: string[] }
+export type Settings = { leadAutoSend: boolean; autoModeMigrated?: boolean; trackedFiles?: string[] }
 
 export type ServerMsg =
-  | { type: 'hello'; sessions: SessionMeta[]; settings: Settings; usage: Usage; platform: string; home: string; auth: AuthState }
+  | { type: 'hello'; sessions: SessionMeta[]; settings: Settings; usage: Usage; platform: string; home: string; auth: AuthState; stale?: boolean }
   | { type: 'auth'; auth: AuthState }
+  // The server's code on disk is newer than the running server.
+  | { type: 'stale'; stale: boolean }
   // A tracked file has a new version.
   | { type: 'file'; path: string }
   // A command run from a <run> block ended.

@@ -1,5 +1,5 @@
 // The user's global AGENTS.md: instructions for every Codiner session, workers
-// and master alike. It is read each time a claude process starts, so an edit
+// and lead alike. It is read each time a claude process starts, so an edit
 // reaches a session the next time it wakes (sessions sleep when idle).
 
 import fs from 'node:fs'

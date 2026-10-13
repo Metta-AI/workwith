@@ -46,7 +46,7 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
       <div className="head-main">
         {editing
           ? <input className="title-edit" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} onBlur={save} onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setTitle(m.title); setEditing(false) } }} />
-          : <h1 onDoubleClick={() => setEditing(true)} title="Double-click to rename">{m.title}</h1>}
+          : <h1 className="rename" onClick={() => setEditing(true)} title="Click to rename">{m.title}</h1>}
         <div className="head-sub">
           <span className={`status-pill st-${m.status}`}>{m.compacting ? 'compacting' : STATUS_LABEL[m.status]}</span>
           <span className="muted mono path" title={m.cwd}>{'\u200E' + m.cwd.replace(/^\/Users\/[^/]+/, '~') + '\u200E'}</span>
@@ -85,7 +85,7 @@ function SessionMenu({ m }: { m: SessionMeta }) {
     busy && <button key="stop" className="danger" onClick={act(() => api(`/api/sessions/${m.id}/interrupt`))}>Stop</button>,
     m.kind === 'worker' && !m.archived && <button key="close" title="End the session and move it to Archived (reopenable)" onClick={act(() => closeSession(m.id))}>Close</button>,
     m.kind === 'worker' && m.archived && <button key="reopen" onClick={act(() => api(`/api/sessions/${m.id}`, 'PATCH', { archived: false }))}>Reopen</button>,
-    m.kind === 'worker' && m.archived && <button key="delete" className="danger" title="Remove from Codiner. Claude Code keeps its own copy, so it stays in Resume." onClick={act(() => { if (confirm(`Delete "${m.title}" from Codiner? Claude Code's own transcript is kept, so you can still find it under Resume.`)) return api(`/api/sessions/${m.id}`, 'DELETE').then(() => select('master')) })}>Delete</button>,
+    m.kind === 'worker' && m.archived && <button key="delete" className="danger" title="Remove from Codiner. Claude Code keeps its own copy, so it stays in Resume." onClick={act(() => { if (confirm(`Delete "${m.title}" from Codiner? Claude Code's own transcript is kept, so you can still find it under Resume.`)) return api(`/api/sessions/${m.id}`, 'DELETE').then(() => select('lead')) })}>Delete</button>,
   ].filter(Boolean)
   if (!items.length) return null
   return (
@@ -103,7 +103,7 @@ function Inbox({ m }: { m: SessionMeta }) {
     <div className="inbox">
       {m.inbox.map((i) => (
         <div key={i.id} className="inbox-item">
-          <div className="inbox-from">Drafted by the {i.from}</div>
+          <div className="inbox-from">Drafted by the {i.from === 'master' ? 'lead' : i.from}</div>
           <div className="inbox-text">{i.text}</div>
           <div className="inbox-actions">
             <button className="primary" onClick={async () => { await api(`/api/sessions/${m.id}/send`, 'POST', { parts: [{ kind: 'text', text: i.text }] }); await dismiss(i.id) }}>Send as is</button>
@@ -227,7 +227,7 @@ export function Composer({ m }: { m: SessionMeta }) {
           onChange={(text) => setComposer(m.id, { text })}
           images={c.images}
           onImages={(images) => setComposer(m.id, { images })}
-          placeholder={m.kind === 'master' ? 'Message the master' : 'Message Claude'}
+          placeholder={m.kind === 'lead' ? 'Message the lead' : 'Message Claude'}
           onSubmit={send}
           onKey={slash.onKey}
           minRows={1}

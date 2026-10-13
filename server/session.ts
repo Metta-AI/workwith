@@ -218,7 +218,7 @@ export class Session {
   // ---- input ------------------------------------------------------------
 
   // `hidden` is appended to what Claude sees but left out of the transcript
-  // (the master's board snapshot).
+  // (the lead's board snapshot).
   send(parts: Part[], opts: { from?: string; hidden?: string } = {}) {
     const { from, hidden } = opts
     // A message that is only a slash command goes in as one, as if typed at the claude prompt.
@@ -429,7 +429,10 @@ export class Session {
         return
       }
       case 'result': {
-        this.outstanding = Math.max(0, this.outstanding - 1)
+        // Messages sent mid-turn are often taken into the running turn, which then ends with one
+        // result for all of them: a result means nothing is left in flight. A queued message that
+        // starts a turn of its own is caught when its output arrives (top of handle).
+        this.outstanding = 0
         m.compacting = false
         const mu = msg.modelUsage ?? {}
         for (const [model, u] of Object.entries(mu)) if ((u as any)?.contextWindow) learnWindow(model, (u as any).contextWindow)
@@ -512,7 +515,7 @@ export class Session {
     return n
   }
 
-  // A plain-text rendering of the recent transcript, for the master agent.
+  // A plain-text rendering of the recent transcript, for the lead agent.
   digest(maxChars: number, turns: number): string {
     const ev = this.getEvents()
     let start = ev.length
