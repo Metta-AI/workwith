@@ -1,0 +1,47 @@
+// The lead's drafts for a session (SessionMeta.inbox), and the questions and
+// items they can reply to. Both the server (auto-send, the lead's tools) and
+// the browser (the reply tray) turn drafts into the parts of one message.
+
+import { itemsOf, type Item } from './blocks.ts'
+import type { Event, InboxItem, Part } from './types.ts'
+
+export type OpenItem = Item & { key: string }
+
+// Questions and items in Claude's text since the user last spoke, keyed like
+// the browser keys them ("<seq>.<block>:<id>").
+export function openItemsOf(events: Event[]): OpenItem[] {
+  const out: OpenItem[] = []
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i]
+    if (e.t === 'user') break
+    if (e.t !== 'assistant' || e.synthetic) continue
+    const here: OpenItem[] = []
+    e.blocks.forEach((b, j) => { if (b.type === 'text') for (const it of itemsOf(b.text)) here.push({ ...it, key: `${e.seq}.${j}:${it.id}` }) })
+    out.unshift(...here)
+  }
+  return out
+}
+
+// The parts of one message, in the order the browser sends your own replies:
+// answers and replies, then done, then set aside, then plain text.
+export function inboxParts(items: InboxItem[]): Part[] {
+  const parts: Part[] = []
+  for (const i of items) {
+    if (i.kind === 'answer' && i.key) parts.push({ kind: 'answer', askKey: i.key, question: i.label ?? '', choices: i.choices ?? [], text: i.text })
+    // No anchor pieces: the reply is to the whole item, not to a passage in it.
+    else if (i.kind === 'reply' && i.key) parts.push({ kind: 'note', quote: i.label ?? '', text: i.text, itemKey: i.key, whole: true, anchor: { msg: i.key.split(':')[0], pieces: [] } })
+  }
+  const done = items.filter((i) => i.kind === 'done' && i.key).map((i) => ({ key: i.key!, label: i.label ?? '', ...(i.text.trim() ? { text: i.text.trim() } : {}) }))
+  if (done.length) parts.push({ kind: 'done', text: '', items: done })
+  const dismissed = items.filter((i) => i.kind === 'dismiss' && i.key).map((i) => ({ key: i.key!, label: i.label ?? '' }))
+  if (dismissed.length) parts.push({ kind: 'dismiss', text: '', items: dismissed })
+  const text = items.filter((i) => !i.kind || i.kind === 'text').map((i) => i.text.trim()).filter(Boolean).join('\n\n')
+  if (text) parts.push({ kind: 'text', text })
+  return parts
+}
+
+// One line per draft, for the lead and for card labels.
+export function inboxLabel(i: InboxItem): string {
+  const on = i.label ? ` "${i.label.slice(0, 80)}"` : ''
+  return i.kind === 'answer' ? `answer to${on}` : i.kind === 'reply' ? `reply to${on}` : i.kind === 'done' ? `done:${on}` : i.kind === 'dismiss' ? `set aside:${on}` : 'message'
+}

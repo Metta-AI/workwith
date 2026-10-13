@@ -6,6 +6,9 @@ import { Sidebar } from './components/Sidebar.tsx'
 import { SessionView } from './components/SessionView.tsx'
 import { LeadView } from './components/LeadView.tsx'
 import { Splitter, useWidth } from './components/Splitter.tsx'
+import { AppearanceDialog } from './components/AppearanceDialog.tsx'
+import { useFavicon } from './favicon.tsx'
+import { initTooltips } from './tooltip.ts'
 import './styles.css'
 
 function App() {
@@ -17,6 +20,11 @@ function App() {
   // A tab title that says when something needs you.
   const needs = st.sessions.filter((s) => ['permission', 'asking', 'waiting'].includes(s.status)).length
   useEffect(() => { document.title = needs ? `(${needs}) Codiner` : 'Codiner' }, [needs])
+  useFavicon(st.sessions, st.settings.appearance)
+
+  // The first load asks for a colour; the welcome stays until you close it.
+  const [welcome, setWelcome] = useState(false)
+  useEffect(() => { if (st.loaded && !st.settings.appearance) setWelcome(true) }, [st.loaded])
 
   return (
     <div className="app">
@@ -30,6 +38,7 @@ function App() {
           : sel ? <SessionView key={sel.id} id={sel.id} />
           : <div className="empty">Pick a session.</div>}
       </main>
+      {welcome && <AppearanceDialog welcome onClose={() => setWelcome(false)} />}
       {st.lightbox && <div className="lightbox" onClick={() => { state.lightbox = null; changed() }}><img src={st.lightbox} alt="" /></div>}
       {st.error && <div className="toast" onClick={() => { state.error = null; changed() }}>{st.error}</div>}
     </div>
@@ -85,4 +94,5 @@ document.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && state.lightbox) { state.lightbox = null; changed() } })
 
 connect()
+initTooltips()
 createRoot(document.getElementById('root')!).render(<App />)

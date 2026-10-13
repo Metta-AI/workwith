@@ -8,6 +8,7 @@ import { RichInput, Thumbs } from './Inputs.tsx'
 import { foldItems, revealItem, trackItems, type TrackedItem } from '../items.ts'
 import { itemsOf } from '../../../shared/blocks.ts'
 import { isReaction } from '../emoji.ts'
+import { splitQuote } from '../../../shared/asks.ts'
 import { highlight, langOfPath } from '../highlight.ts'
 import { CARD_W, GUTTER_GAP, Margin, focusPassage, rangesOfNote } from './Margin.tsx'
 import { AgentsIcon, BlockIcon, CheckIcon, ChevronIcon, DashIcon, XIcon, FileIcon, GlobeIcon, ListIcon, PencilIcon, SearchIcon, TerminalIcon, ToolIcon, TrashIcon } from './Icons.tsx'
@@ -376,9 +377,23 @@ function repliesSummary(parts: Part[]): string {
   return out.join(', ')
 }
 
+// Claude gets only the first words of a long quote; the "…" shows the rest, dimmed.
+function SentQuote({ quote }: { quote: string }) {
+  const [open, setOpen] = useState(false)
+  const { head, rest } = splitQuote(quote)
+  return (
+    <div className={`sent-quote${open ? ' open' : ''}`}>
+      {head}
+      {rest && (open
+        ? <span className="quote-rest" title="The agent did not get this part">{rest}</span>
+        : <button className="quote-more" title="The agent got only these words. Show the rest" onClick={(ev) => { ev.stopPropagation(); setOpen(true) }}>…</button>)}
+    </div>
+  )
+}
+
 function PartHead({ p }: { p: Part }) {
   return <>
-    {p.kind === 'note' && p.quote.trim() && <div className="sent-quote">{p.quote.trim()}</div>}
+    {p.kind === 'note' && p.quote.trim() && <SentQuote quote={p.quote} />}
     {p.kind === 'dismiss' && <div className="sent-dismiss"><XIcon size={11} /> {p.items.map((i) => i.label).join(' · ')}</div>}
     {p.kind === 'done' && <div className="sent-dismiss sent-done"><CheckIcon size={11} /> {p.items.map((i) => i.text ? `${i.label} (${i.text})` : i.label).join(' · ')}</div>}
     {p.kind === 'answer' && <div className="answer-q" dangerouslySetInnerHTML={{ __html: renderInline(p.question.split('\n')[0]) }} />}

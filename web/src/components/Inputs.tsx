@@ -168,7 +168,7 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
           {images.map((im, i) => (
             <span className="thumb" key={im.url + i}>
               <img src={im.url} alt="" />
-              <button title="Remove image" onClick={() => onImages(images.filter((_, j) => j !== i))}><XIcon size={10} /></button>
+              <button type="button" title="Remove image" onClick={() => onImages(images.filter((_, j) => j !== i))}><XIcon size={10} /></button>
             </span>
           ))}
         </div>

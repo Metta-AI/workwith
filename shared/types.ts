@@ -2,6 +2,7 @@
 // append-only event log per session; the browser folds it into a transcript.
 
 import type { Look } from './looks.ts'
+import type { Appearance } from './appearance.ts'
 
 export type Status =
   | 'new'        // never sent anything
@@ -14,7 +15,15 @@ export type Status =
 
 export type PermissionMode = 'auto' | 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions'
 
-export type InboxItem = { id: string; text: string; from: string; ts: number }
+// What the lead drafted for a session, in the shape of your own replies: a
+// message, an answer to an <ask>, a reply to a <consider> item, or one marked
+// done or set aside. key: the item ("<msg>:<id>"); label: its question or title.
+// Drafts from before October 2026 have no kind: they are messages.
+export type InboxItem = {
+  id: string; text: string; from: string; ts: number
+  kind?: 'text' | 'answer' | 'reply' | 'done' | 'dismiss'
+  key?: string; label?: string; choices?: string[]
+}
 
 export type SessionMeta = {
   id: string
@@ -37,14 +46,42 @@ export type SessionMeta = {
   lastText: string        // the tail of the last thing Claude said, for overviews
   error: string | null
   archived: boolean
-  inbox: InboxItem[]      // messages the lead agent drafted for this session
+  inbox: InboxItem[]      // replies the lead agent drafted for this session
+  drafting?: boolean      // you have a reply in progress here (the browser says so), so the lead's wait
   look?: Look             // what its critter wears; Claude picks it (shared/looks.ts)
   titleByUser?: boolean   // you named it at some point
   // Claude renamed a session you had named: your name, to undo to; and a name of Claude's you undid.
   titleBefore?: string
   titleUndone?: string
+  order?: number          // its place among its siblings in the sidebar, once dragged there
+  // The prompt cache: when the last API call started (at the latest), and its TTL (ms). See shared/cache.ts.
+  cache?: { at: number; ttl: number }
+  notes?: NotesState
+  // What its API calls cost (notes and keep-warm included), in dollars at API prices,
+  // each priced when it was made (shared/prices.ts); since: when Codiner began to count.
+  // keep: the part notes and keep-warm calls cost; hours: [hour start, dollars] for the last 6 hours.
+  spend?: { usd: number; since: number; keep?: number; hours?: [number, number][] }
+  // The first API call's prompt: Claude Code's system prompt and tools, and how much of
+  // it other sessions had already cached. What a new session would start from.
+  base?: { total: number; read: number }
+  // The model it will probably run, until Claude Code reports the real one into model.
+  expectedModel?: string
   // Set by a rewind: the next start resumes claudeSessionId cut at this entry, as a fork.
   resumeAt?: string | null
+}
+
+// Rolling notes on a session, and the keep-warm calls that keep its prompt cache
+// alive while it waits for you (server/notes.ts).
+export type NotesState = {
+  at?: number              // when the notes file was last written
+  upTo?: number            // the session's lastActivity that those notes cover
+  running?: 'notes' | 'ping'
+  quiet?: number           // the lastActivity this spell of quiet started at
+  spent?: number           // dollars at API prices (shared/prices.ts) the calls cost in this spell
+  calls?: number
+  end?: { reason: string; at: number }  // keep-warm stopped for this spell; at: when the cache expires
+  off?: string             // keep-warm stopped for this session until you turn it on again
+  size?: number            // tokens in the notes, roughly
 }
 
 export type ImageRef = { url: string; mediaType: string }
@@ -87,10 +124,18 @@ export type Event =
 // Claude Code's login: 'pending' while `claude auth login` waits for you (url: its sign-in page).
 export type AuthState = { state: 'ok' | 'needed' | 'pending' | 'failed'; url?: string; error?: string }
 
-export type Usage = { fiveHour?: number; sevenDay?: number; resetsAt?: number; status?: string }
+// rate: how much of each window a dollar of spend (at API prices) uses, as server/meter.ts estimates it.
+export type Usage = { fiveHour?: number; sevenDay?: number; resetsAt?: number; status?: string; rate?: { fiveHour?: number; sevenDay?: number; pairs: number } }
 // trackedFiles: files whose history Codiner keeps, besides AGENTS.md, CLAUDE.md and NOTES.md.
 // selfRestart: offer to restart when Codiner's own code changes (for working on Codiner); off by default.
-export type Settings = { leadAutoSend: boolean; autoModeMigrated?: boolean; trackedFiles?: string[]; selfRestart?: boolean }
+// appearance: unset until you pick one, which the first load asks you to do.
+// groupOrder: the sidebar's folders, once you drag one. cacheGuard: tokens; see shared/cache.ts.
+// notes, keepWarmHours, keepWarmMax, keepWarmUsage: see server/notes.ts.
+export type Settings = {
+  leadAutoSend: boolean; autoModeMigrated?: boolean; trackedFiles?: string[]; selfRestart?: boolean
+  appearance?: Appearance; groupOrder?: string[]; cacheGuard?: number
+  notes?: boolean; keepWarmHours?: number; keepWarmMax?: number; keepWarmUsage?: number
+}
 
 export type ServerMsg =
   | { type: 'hello'; sessions: SessionMeta[]; settings: Settings; usage: Usage; platform: string; home: string; auth: AuthState; stale?: boolean }

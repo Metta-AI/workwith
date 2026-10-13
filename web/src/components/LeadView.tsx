@@ -1,17 +1,28 @@
 // The overview: every session as a card, grouped by directory, beside a chat
 // with the lead agent that can read them and route messages to them.
 
+import { useState } from 'react'
 import { api, select, useStore } from '../store.ts'
 import { fatigue } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
-import { ContextGauge, SessionView } from './SessionView.tsx'
+import { CachePill, ContextGauge, SessionView } from './SessionView.tsx'
 import { groupSessions, treeOf } from './Sidebar.tsx'
 import { Splitter, useWidth } from './Splitter.tsx'
 
 export function LeadView({ id }: { id: string }) {
   const st = useStore()
   const [board, setBoard] = useWidth('board', 420)
-  const groups = groupSessions(st.sessions, false)
+  const groups = groupSessions(st.sessions, false, st.settings.groupOrder)
+  const drafts = st.sessions.filter((s) => s.kind === 'worker' && !s.archived).reduce((n, s) => n + s.inbox.length, 0)
+  const [sentNote, setSentNote] = useState<{ text: string; title: string } | null>(null)
+  const sendDrafts = async () => {
+    const r = await api<{ sent: string[]; held: { id: string; title: string; why: string[] }[] }>('/api/lead/send-drafts')
+    setSentNote({
+      text: `Sent to ${r.sent.length}${r.held.length ? `, ${r.held.length} held` : ''}`,
+      title: r.held.map((h) => `${h.title}: ${h.why.join('; ')}`).join('\n'),
+    })
+    setTimeout(() => setSentNote(null), 8000)
+  }
   const needsYou = st.sessions.filter((s) => s.kind === 'worker' && !s.archived && ['permission', 'asking', 'waiting', 'error'].includes(s.status))
 
   return (
@@ -36,7 +47,7 @@ export function LeadView({ id }: { id: string }) {
                     {s.inbox.length > 0 && <span className="count" title="Drafts from the lead">{s.inbox.length}</span>}
                   </div>
                   {s.lastText && <div className="card-text">{s.lastText.slice(-220)}</div>}
-                  <ContextGauge m={s} />
+                  <div className="card-gauges"><ContextGauge m={s} /><CachePill m={s} /></div>
                 </button>
               ))}
             </div>
@@ -49,7 +60,9 @@ export function LeadView({ id }: { id: string }) {
         <SessionView
           id={id}
           extra={<>
-            <label className="toggle" title="When on, the lead's messages go straight to sessions instead of waiting in their inbox for you">
+            {drafts > 0 && <button title="Send the lead's drafts to every session that has no open questions, no reply of yours in progress, and is between turns" onClick={() => void sendDrafts()}>Send {drafts} {drafts === 1 ? 'draft' : 'drafts'}</button>}
+            {sentNote && <span className="muted" title={sentNote.title}>{sentNote.text}</span>}
+            <label className="toggle" title="When on, the lead's drafts go to a session on their own once nothing there waits for you: no open questions, no reply of yours in progress, not mid-turn">
               <input type="checkbox" checked={st.settings.leadAutoSend} onChange={(e) => void api('/api/settings', 'PUT', { leadAutoSend: e.target.checked })} />
               Auto-send
             </label>

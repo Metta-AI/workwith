@@ -2,7 +2,9 @@
 // Components re-render on any change; at this scale that's plenty.
 
 import { useSyncExternalStore } from 'react'
-import type { Anchor, AuthState, Event, ImageRef, Part, ServerMsg, SessionMeta, Settings, Usage } from '../../shared/types.ts'
+import type { Anchor, AuthState, Event, ImageRef, InboxItem, Part, ServerMsg, SessionMeta, Settings, Usage } from '../../shared/types.ts'
+import { inboxParts } from '../../shared/inbox.ts'
+import { applyAppearance, holdingAppearance } from './appearance.ts'
 
 // reaction: an emoji alone, shown at the left of its passage, not as a card;
 // whole: on a whole paragraph or list item (the reaction button), so not highlighted.
@@ -35,16 +37,19 @@ type State = {
   auth: AuthState
   lightbox: string | null     // an image shown full size
   showSteps: boolean          // keep Claude's in-between messages out of the activity rows
+  money: 'pct' | 'usd' | 'both'   // costs as a share of the 5-hour limit, in dollars, or both (web/src/cache.ts)
   runs: Record<string, Run>
   fileTick: Record<string, number>   // bumped when a tracked file gets a new version
   stale: boolean                     // the server's code on disk is newer than the server
   restarting: boolean
+  loaded: boolean                    // the server's hello came: sessions and settings are real
 }
 
 const saved = <T,>(k: string, d: T): T => { try { return JSON.parse(localStorage.getItem(k) ?? '') ?? d } catch { return d } }
 
 export const state: State = {
   connected: false,
+  loaded: false,
   sessions: [],
   settings: { leadAutoSend: false },
   usage: {},
@@ -61,6 +66,7 @@ export const state: State = {
   auth: { state: 'ok' },
   lightbox: null,
   showSteps: saved('codiner.showSteps', false),
+  money: saved('codiner.money', 'pct'),
   runs: {},
   fileTick: {},
   stale: false,
@@ -73,6 +79,7 @@ let persistTimer = 0
 export function changed() {
   version++
   for (const l of listeners) l()
+  reportDrafting()
   clearTimeout(persistTimer)
   persistTimer = window.setTimeout(() => {
     localStorage.setItem('codiner.drafts', JSON.stringify(state.drafts))
@@ -81,6 +88,26 @@ export function changed() {
     localStorage.setItem('codiner.showSteps', JSON.stringify(state.showSteps))
   }, 300)
 }
+// Tell the server which sessions you are writing a reply in, so the lead's
+// drafts wait for yours instead of going ahead of them.
+const drafting = new Map<string, boolean>()
+let draftingTimer: number | undefined
+function reportDrafting() {
+  if (draftingTimer) return
+  draftingTimer = window.setTimeout(() => {
+    draftingTimer = undefined
+    if (!state.loaded) return
+    for (const m of state.sessions) {
+      if (m.kind !== 'worker') continue
+      const c = composerOf(m.id)
+      const on = draftsOf(m.id).some(hasContent) || !!c.text.trim() || c.images.length > 0
+      if (on === (drafting.get(m.id) ?? !!m.drafting)) continue
+      drafting.set(m.id, on)
+      void api(`/api/sessions/${m.id}/drafting`, 'POST', { on }).catch(() => drafting.delete(m.id))
+    }
+  }, 600)
+}
+
 export function useStore(): State {
   useSyncExternalStore((l) => { listeners.add(l); return () => listeners.delete(l) }, () => version)
   return state
@@ -121,12 +148,15 @@ export function connect() {
 function onServer(m: ServerMsg) {
   switch (m.type) {
     case 'hello':
-      state.sessions = m.sessions; state.settings = m.settings; state.usage = m.usage
+      state.sessions = m.sessions; state.settings = m.settings; state.usage = m.usage; state.loaded = true
+      applyAppearance(m.settings.appearance)
       state.platform = m.platform; state.home = m.home; state.auth = m.auth ?? { state: 'ok' }; state.stale = !!m.stale; state.restarting = false
       if (!m.sessions.some((s) => s.id === state.selected)) state.selected = 'lead'
       break
     case 'sessions': state.sessions = m.sessions; break
-    case 'settings': state.settings = m.settings; break
+    case 'settings':
+      if (holdingAppearance()) { state.settings = { ...m.settings, appearance: state.settings.appearance }; break }
+      state.settings = m.settings; applyAppearance(m.settings.appearance); break
     case 'usage': state.usage = m.usage; break
     case 'auth': state.auth = m.auth; break
     case 'stale': state.stale = m.stale; break
@@ -262,27 +292,43 @@ export function setDoneText(sid: string, key: string, text: string) {
 
 // Everything queued for a session, in reading order: notes and answers in the
 // order their passages appear, then whatever is in the composer.
+// The lead's drafts (shared/inbox.ts) go with yours: its replies in reading
+// order among your own, its message after yours.
+export const inboxOf = (sid: string): InboxItem[] => state.sessions.find((s) => s.id === sid)?.inbox ?? []
+
 export function queuedParts(sid: string, alsoDismiss: { key: string; label: string }[] = []): Part[] {
-  const dismissed = [...draftsOf(sid).flatMap((d) => d.kind === 'dismiss' ? [{ key: d.key, label: d.label }] : []), ...alsoDismiss]
-  const done = draftsOf(sid).flatMap((d) => d.kind === 'done' ? [{ key: d.key, label: d.label, ...(d.text.trim() ? { text: d.text.trim() } : {}), ...(d.result ? { result: d.result } : {}) }] : [])
-  const keyed = draftsOf(sid).filter((d): d is NoteDraft | AnswerDraft => (d.kind === 'note' || d.kind === 'answer') && hasContent(d)).map((d) => {
-    const k = d.kind === 'note' ? [...order(d.anchor.msg), d.anchor.pieces.at(-1)?.block ?? 0] : [...order(d.askKey.split(':')[0]), 9999]
-    return { d, k }
-  }).sort((a, b) => cmp(a.k, b.k) || a.d.createdAt - b.d.createdAt)
-  const parts: Part[] = keyed.map(({ d }) => d.kind === 'note'
-    ? { kind: 'note', text: d.text, quote: d.quote, anchor: d.anchor, images: d.images, ...(d.itemKey ? { itemKey: d.itemKey } : {}), ...(d.whole ? { whole: true } : {}) }
-    : { kind: 'answer', text: d.text, askKey: d.askKey, question: d.question, choices: d.choices, images: d.images })
+  const mine = draftsOf(sid)
+  // Your own reply to an item wins over the lead's.
+  const yours = new Set(mine.flatMap((d) => d.kind === 'note' && d.itemKey && hasContent(d) ? [d.itemKey] : d.kind === 'answer' && hasContent(d) ? [d.askKey] : d.kind === 'dismiss' || d.kind === 'done' ? [d.key] : []))
+  const lead = inboxOf(sid).filter((i) => !i.key || !yours.has(i.key))
+  const leadKeys = new Set(lead.flatMap((i) => i.key ? [i.key] : []))
+  const dismissed = [
+    ...mine.flatMap((d) => d.kind === 'dismiss' ? [{ key: d.key, label: d.label }] : []),
+    ...lead.flatMap((i) => i.kind === 'dismiss' && i.key ? [{ key: i.key, label: i.label ?? '' }] : []),
+    ...alsoDismiss.filter((i) => !leadKeys.has(i.key)),
+  ]
+  const done = [
+    ...mine.flatMap((d) => d.kind === 'done' ? [{ key: d.key, label: d.label, ...(d.text.trim() ? { text: d.text.trim() } : {}), ...(d.result ? { result: d.result } : {}) }] : []),
+    ...lead.flatMap((i) => i.kind === 'done' && i.key ? [{ key: i.key, label: i.label ?? '', ...(i.text.trim() ? { text: i.text.trim() } : {}) }] : []),
+  ]
+  const keyed: { p: Part; k: number[]; t: number }[] = mine.filter((d): d is NoteDraft | AnswerDraft => (d.kind === 'note' || d.kind === 'answer') && hasContent(d)).map((d) => d.kind === 'note'
+    ? { p: { kind: 'note', text: d.text, quote: d.quote, anchor: d.anchor, images: d.images, ...(d.itemKey ? { itemKey: d.itemKey } : {}), ...(d.whole ? { whole: true } : {}) }, k: [...order(d.anchor.msg), d.anchor.pieces.at(-1)?.block ?? 0], t: d.createdAt }
+    : { p: { kind: 'answer', text: d.text, askKey: d.askKey, question: d.question, choices: d.choices, images: d.images }, k: [...order(d.askKey.split(':')[0]), 9999], t: d.createdAt })
+  for (const i of lead) if ((i.kind === 'answer' || i.kind === 'reply') && i.key) keyed.push({ p: inboxParts([i])[0], k: [...order(i.key.split(':')[0]), 9999], t: i.ts })
+  keyed.sort((a, b) => cmp(a.k, b.k) || a.t - b.t)
+  const parts: Part[] = keyed.map((x) => x.p)
   if (done.length) parts.push({ kind: 'done', text: '', items: done })
   if (dismissed.length) parts.push({ kind: 'dismiss', text: '', items: dismissed })
   const c = composerOf(sid)
   if (c.text.trim() || c.images.length) parts.push({ kind: 'text', text: c.text, images: c.images })
+  parts.push(...inboxParts(lead.filter((i) => !i.kind || i.kind === 'text')))
   return parts
 }
 
 export async function sendQueued(sid: string, alsoDismiss: { key: string; label: string }[] = []) {
   const parts = queuedParts(sid, alsoDismiss)
   if (!parts.length) return
-  await api(`/api/sessions/${sid}/send`, 'POST', { parts })
+  await api(`/api/sessions/${sid}/send`, 'POST', { parts, inbox: inboxOf(sid).map((i) => i.id) })
   state.drafts[sid] = []
   state.composer[sid] = { text: '', images: [] }
   changed()

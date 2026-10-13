@@ -11,19 +11,25 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer, type WebSocket } from 'ws'
-import type { Part, PermissionMode, ServerMsg, SessionMeta, Settings, Usage } from '../shared/types.ts'
+import type { InboxItem, Part, PermissionMode, ServerMsg, SessionMeta, Settings, Usage } from '../shared/types.ts'
+import { inboxLabel, inboxParts, openItemsOf } from '../shared/inbox.ts'
 import { execFile, execFileSync, spawn } from 'node:child_process'
 import os from 'node:os'
 import { Session, type Hooks, type Launch, type SlashCommand } from './session.ts'
-import { findHistory, importTranscript, listDirs, listHistory } from './history.ts'
+import { findHistory, importTranscript, lastCache, listDirs, listHistory } from './history.ts'
 import { LEAD_PROMPT, WORKER_PROMPT, lookPrompt } from './prompts.ts'
 import { LOOK_OPTIONS, LOOK_SLOTS, cleanLook, describeLook } from '../shared/looks.ts'
+import { cleanAppearance } from '../shared/appearance.ts'
+import * as meter from './meter.ts'
+import { notesNow, notesPath, readNotes, resumeKeepWarm, startNotes } from './notes.ts'
+import { notesFile } from '../shared/notes.ts'
+import { DEFAULT_CACHE_GUARD, cacheLeft, knownTtl } from '../shared/cache.ts'
 import { AGENTS_FILE, agentsPrompt, readAgentsMd, writeAgentsMd } from './agentsmd.ts'
 import { handleMcp, type Tool } from './mcp.ts'
 import { blame, initFileHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
-import { authState, cancelLogin, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
+import { authState, cancelLogin, childEnv, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
 import {
-  DATA, LEAD_DIR, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, leadRenamed, loadSessions, loadSettings, saveImage, saveSessions, saveSettings,
+  DATA, LEAD_DIR, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, leadRenamed, resolveModel, loadSessions, loadSettings, saveImage, saveSessions, saveSettings,
 } from './store.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -37,7 +43,9 @@ const MODES: PermissionMode[] = ['auto', 'default', 'acceptEdits', 'plan', 'bypa
 
 const sessions = new Map<string, Session>()
 let settings: Settings = loadSettings()
-let usage: Usage = {}
+meter.poll()
+setInterval(meter.poll, 60_000).unref()
+let usage: Usage = { rate: meter.rate() }
 const sockets = new Set<WebSocket>()
 // Slash commands differ by directory (project skills), so keep each session's
 // list, and the last one seen for sessions that haven't started yet.
@@ -99,6 +107,7 @@ const hooks: Hooks = {
   event: (s, event) => {
     broadcast({ type: 'event', sessionId: s.meta.id, event })
     metaChanged()
+    if (event.t === 'result') setImmediate(() => autoSend(s))
     // A tool call that finished may have changed a tracked file: record it with this message.
     if (event.t === 'tool_result') {
       const ev = s.getEvents()
@@ -112,7 +121,7 @@ const hooks: Hooks = {
   delta: (s, text, reset) => broadcast({ type: 'delta', sessionId: s.meta.id, text, reset }),
   authFailed: () => authNeeded(),
   truncate: (s, seq) => { broadcast({ type: 'truncate', sessionId: s.meta.id, seq }); metaChanged() },
-  usage: (u) => { usage = u; broadcast({ type: 'usage', usage }) },
+  usage: (u) => { meter.limit(u); usage = { ...u, rate: meter.rate() }; broadcast({ type: 'usage', usage }) },
   commands: (s, list) => {
     commands.set(s.meta.id, list)
     if (s.meta.kind === 'worker') { lastCommands = list; fs.writeFile(COMMANDS_FILE, JSON.stringify(list), () => {}) }
@@ -146,20 +155,32 @@ function adopt(meta: SessionMeta): Session {
   return s
 }
 
+// The model a session will run before Claude Code says: what its alias (or the
+// default) resolved to last time, else the model the newest session ran.
+function expectModel(model: string | null | undefined): string | null {
+  const known = resolveModel(model)
+  if (known?.includes('-')) return known
+  if (model) return model
+  return [...sessions.values()].map((s) => s.meta).filter((m) => m.model?.includes('-')).sort((a, b) => b.createdAt - a.createdAt)[0]?.model ?? null
+}
+
 function newMeta(o: Partial<SessionMeta> & { cwd: string; title: string }): SessionMeta {
   const now = Date.now()
+  const expected = expectModel(o.model)
   return {
     id: randomUUID().slice(0, 8), kind: 'worker', parentId: null, model: null, permissionMode: 'auto',
     claudeSessionId: randomUUID(), started: false, createdAt: now, lastActivity: now, status: 'new',
-    running: false, unread: false, compacting: false, context: { used: 0, window: knownWindow(o.model) }, pendingAsks: 0,
-    lastText: '', error: null, archived: false, inbox: [], ...o,
+    running: false, unread: false, compacting: false, context: { used: 0, window: knownWindow(expected) }, pendingAsks: 0,
+    lastText: '', error: null, archived: false, inbox: [], ...(expected ? { expectedModel: expected } : {}), ...o,
   }
 }
 
 for (const m of loadSessions()) {
   const meta = { ...newMeta(m), ...m }
   // The window used to default to 200k until a turn finished; trust what the model reports.
-  if (meta.context.window === 200_000 || meta.context.used > meta.context.window) meta.context.window = Math.max(knownWindow(meta.model), meta.context.used)
+  if (meta.context.window === 200_000 || meta.context.used > meta.context.window) meta.context.window = Math.max(knownWindow(meta.model ?? meta.expectedModel), meta.context.used)
+  // Sessions from before Codiner kept a cache record: the transcript has one.
+  if (!meta.cache && meta.started) meta.cache = lastCache(meta.cwd, meta.claudeSessionId) ?? undefined
   adopt(meta)
 }
 if (!sessions.has(LEAD_ID)) {
@@ -178,6 +199,7 @@ if (!settings.autoModeMigrated) {
   saveSettings(settings)
   metaChanged()
 }
+startNotes({ sessions: () => sessions.values(), settings: () => settings, usage: () => usage, changed: metaChanged })
 
 function get(id: string): Session {
   const s = sessions.get(id)
@@ -209,6 +231,7 @@ function resumeHistory(claudeId: string): Session {
   const meta = newMeta({ cwd: item.cwd, title: item.title, claudeSessionId: claudeId, started: true, model, lastActivity: item.mtime })
   meta.context.used = contextUsed
   meta.context.window = Math.max(knownWindow(model), contextUsed)
+  meta.cache = lastCache(item.cwd, claudeId) ?? undefined
   meta.status = 'idle'
   for (const e of events) appendEvent(meta.id, e)
   const s = adopt(meta)
@@ -243,14 +266,61 @@ function board(): string {
 
 // ---- lead tools -----------------------------------------------------------
 
-function deliver(s: Session, text: string): string {
-  if (settings.leadAutoSend) {
-    s.send([{ kind: 'text', text }], { from: 'lead' })
-    return `Sent to ${s.meta.id}.`
-  }
-  s.meta.inbox.push({ id: randomUUID().slice(0, 8), text, from: 'lead', ts: Date.now() })
+// The lead's drafts wait in the session's reply tray, beside yours, and go with
+// your next message. They go on their own only when nothing there waits for
+// you: auto-send is on, the worker is not mid-turn, every question and item
+// Claude left has a reply, and you are not writing one. `now` is your yes, given
+// to the lead, to send past all that. A big, expired cache always waits for you.
+// approved: you said yes to the lead's drafts (Send drafts, in the lead view), so auto-send need not be on.
+function holdReasons(s: Session, now = false, approved = false): string[] {
+  const guard = settings.cacheGuard ?? DEFAULT_CACHE_GUARD
+  const left = cacheLeft(s.meta, Date.now(), knownTtl(metas()))
+  const why: string[] = []
+  if (guard && left != null && left <= 0 && s.meta.context.used >= guard) why.push('its prompt cache has expired, so a send would write its whole context to the cache again; that is the user\'s call')
+  if (now) return why
+  if (!settings.leadAutoSend && !approved) why.push('auto-send is off')
+  if (s.meta.status === 'working' || s.meta.status === 'permission') why.push('it is mid-turn (the drafts go when the turn ends, if nothing else holds them)')
+  const open = openItemsOf(s.getEvents()).filter((i) => !s.meta.inbox.some((d) => d.key === i.key))
+  if (open.length) why.push(`Claude left questions or items the user has not replied to: ${open.map((i) => `${i.id} ("${i.label.slice(0, 60)}")`).join(', ')}`)
+  if (s.meta.drafting) why.push('the user is writing a reply there')
+  return why
+}
+
+function flushInbox(s: Session): void {
+  const parts = inboxParts(s.meta.inbox)
+  s.meta.inbox = []
   metaChanged()
-  return `Held as a draft in ${s.meta.id}'s inbox; the user will review and send it (auto-send is off).`
+  if (parts.length) s.send(parts, { from: 'lead', ...hiddenFor(s) })
+}
+
+// A turn ended: drafts that waited only for it may go now.
+function autoSend(s: Session): void {
+  if (s.meta.kind === 'worker' && s.meta.inbox.length && !holdReasons(s).length) flushInbox(s)
+}
+
+type Draft = Omit<InboxItem, 'id' | 'from' | 'ts'>
+
+function deliver(s: Session, drafts: Draft[], opts: { now?: boolean; urgent?: boolean } = {}): string {
+  const id = s.meta.id
+  // Urgent: stop the worker and send just this message. The rest wait as usual.
+  if (opts.urgent) {
+    const text = drafts.filter((d) => !d.kind || d.kind === 'text').map((d) => d.text.trim()).filter(Boolean).join('\n\n')
+    if (!text) throw new Error('An urgent send needs a message')
+    if (s.meta.status === 'working' || s.meta.status === 'permission') s.interrupt()
+    s.send([{ kind: 'text', text }], { from: 'lead', ...hiddenFor(s) })
+    drafts = drafts.filter((d) => d.kind && d.kind !== 'text')
+    if (!drafts.length) return `Stopped ${id}'s turn, if it was in one, and sent the message.`
+  }
+  // A newer draft for the same item replaces the older one.
+  const keys = new Set(drafts.flatMap((d) => d.key ? [d.key] : []))
+  s.meta.inbox = [...s.meta.inbox.filter((i) => !i.key || !keys.has(i.key)), ...drafts.map((d) => ({ ...d, id: randomUUID().slice(0, 8), from: 'lead', ts: Date.now() }))]
+  metaChanged()
+  const why = holdReasons(s, opts.now)
+  if (!why.length) { flushInbox(s); return `${opts.urgent ? 'Sent the urgent message; then sent' : 'Sent'} the drafts to ${id}.` }
+  const n = s.meta.inbox.length
+  const ask = !opts.now && why.some((w) => w.startsWith('Claude left')) && !why[0].startsWith('its prompt cache')
+  return `Held in ${id}'s reply tray (${n} draft${n === 1 ? '' : 's'} there now); they go with the user's next message there. Held because: ${why.join('; ')}.`
+    + (ask ? ' If this should go now anyway, ask the user; with their yes, call again with send_now.' : '')
 }
 
 // The critter's look, chosen by the Claude in that session.
@@ -304,12 +374,13 @@ function lookTool(id: string): Tool {
 const tools: Tool[] = [
   {
     name: 'list_sessions',
-    description: 'List the worker sessions: id, title, directory, status, context use, open questions and the tail of the last thing Claude said in each.',
+    description: "List the worker sessions: id, title, directory, status, context use, the questions and items Claude left open (with ids, for send_to_session's replies), your drafts waiting in each, whether the user is writing a reply there, and the tail of the last thing Claude said.",
     inputSchema: { type: 'object', properties: { include_archived: { type: 'boolean' } } },
     run: ({ include_archived }) => metas().filter((m) => m.kind === 'worker' && (include_archived || !m.archived)).map((m) => ({
       id: m.id, title: m.title, cwd: m.cwd, parent: m.parentId, status: m.status,
       context: `${Math.round(m.context.used / 1000)}k of ${Math.round(m.context.window / 1000)}k`,
-      open_questions: m.pendingAsks, drafts_waiting: m.inbox.length, last_said: m.lastText.slice(-240),
+      open_items: openItemsOf(get(m.id).getEvents()).map((i) => ({ id: i.id, kind: i.kind, label: i.label.slice(0, 120), ...(i.kind === 'ask' && i.ask.options.length ? { choices: i.ask.options } : {}) })),
+      your_drafts: m.inbox.map(inboxLabel), user_drafting: !!m.drafting, last_said: m.lastText.slice(-240),
     })),
   },
   {
@@ -323,12 +394,44 @@ const tools: Tool[] = [
   },
   {
     name: 'send_to_session',
-    description: 'Send a message to a worker session, written as if from the user. A message that is just a slash command (/compact, /model sonnet, /clear, /code-review, any skill) runs it, exactly as if typed at the claude prompt. Unless the user enabled auto-send, it is held as a draft for them to approve.',
-    inputSchema: { type: 'object', required: ['id', 'message'], properties: { id: { type: 'string' }, message: { type: 'string' } } },
-    run: ({ id, message }) => {
+    description: "Draft a reply to a worker session, written as if from the user: replies to its open questions and items (ids from list_sessions' open_items), a message, or both. The drafts go into the session's reply tray beside the user's own, where the user can edit them, and go with the user's next message there. They go on their own only when auto-send is on, the worker is between turns, every open question and item has a reply, and the user is not writing one. A message that is just a slash command (/compact, /model sonnet, /code-review, any skill) runs it, as if typed at the claude prompt.",
+    inputSchema: {
+      type: 'object', required: ['id'],
+      properties: {
+        id: { type: 'string' },
+        message: { type: 'string', description: 'Plain text, sent after the replies' },
+        replies: {
+          type: 'array',
+          items: {
+            type: 'object', required: ['item', 'action'],
+            properties: {
+              item: { type: 'string', description: 'The id of an open question or item, from open_items' },
+              action: { type: 'string', enum: ['answer', 'done', 'dismiss'], description: 'answer: reply to it (a question or an item); done: the user did the task it asked for; dismiss: set it aside without a reply' },
+              text: { type: 'string', description: 'The answer, or for done, a problem the user hit' },
+              choices: { type: 'array', items: { type: 'string' }, description: "For a question: the choices picked, word for word" },
+            },
+          },
+        },
+        send_now: { type: 'boolean', description: 'Send now, past open questions, a reply the user is writing, or auto-send being off. Only with the user\'s yes, asked in this conversation.' },
+        urgent: { type: 'boolean', description: 'Stop the worker\'s turn and send `message` at once. Very rare: only to prevent harm the user would not want to wait on, such as a commit or a deletion about to go wrong.' },
+      },
+    },
+    run: ({ id, message, replies, send_now, urgent }) => {
       const s = get(id)
       if (s.meta.kind !== 'worker') throw new Error('You can only message worker sessions')
-      return deliver(s, String(message))
+      const open = openItemsOf(s.getEvents())
+      const drafts: Draft[] = (Array.isArray(replies) ? replies : []).map((r: any) => {
+        const it = open.find((i) => i.id === String(r.item) || i.key === String(r.item))
+        if (!it) throw new Error(`No open question or item "${r.item}" in ${id}. Open now: ${open.map((i) => i.id).join(', ') || 'none'}`)
+        const text = String(r.text ?? '')
+        if (r.action === 'done') return { kind: 'done', key: it.key, label: it.label, text }
+        if (r.action === 'dismiss') return { kind: 'dismiss', key: it.key, label: it.label, text: '' }
+        if (it.kind === 'ask') return { kind: 'answer', key: it.key, label: it.ask.question, text, choices: Array.isArray(r.choices) ? r.choices.map(String) : [] }
+        return { kind: 'reply', key: it.key, label: it.label, text }
+      })
+      if (message != null && String(message).trim()) drafts.push({ kind: 'text', text: String(message) })
+      if (!drafts.length) throw new Error('Give a message, replies, or both')
+      return deliver(s, drafts, { now: !!send_now, urgent: !!urgent })
     },
   },
   {
@@ -345,7 +448,7 @@ const tools: Tool[] = [
     },
     run: ({ cwd, title, prompt, parent, model }) => {
       const s = createSession({ cwd, title, parentId: parent, model })
-      return `Created ${s.meta.id}.` + (prompt ? ' ' + deliver(s, String(prompt)) : '')
+      return `Created ${s.meta.id}.` + (prompt ? ' ' + deliver(s, [{ kind: 'text', text: String(prompt) }]) : '')
     },
   },
   {
@@ -431,6 +534,26 @@ async function json(req: http.IncomingMessage): Promise<any> {
   return s ? JSON.parse(s) : {}
 }
 
+// Claude Code's /context for a new worker session in `cwd`, with a worker's own
+// arguments (system prompt, Codiner's tools), so it counts what Codiner adds too.
+// It makes no API call: Claude Code estimates the sizes itself. Kept 10 minutes.
+const contexts = new Map<string, { at: number; text: string }>()
+function startContext(cwd: string, fresh: boolean): Promise<string> {
+  const hit = contexts.get(cwd)
+  if (hit && !fresh && Date.now() - hit.at < 600_000) return Promise.resolve(hit.text)
+  const { args, prompt } = launchFor(newMeta({ cwd, title: 'context' }))()
+  return new Promise((resolve, reject) => {
+    execFile(process.env.CODINER_CLAUDE ?? 'claude', ['-p', '--output-format', 'json', '--no-session-persistence', '--append-system-prompt', prompt, ...args, '--', '/context'],
+      { cwd, env: childEnv(), timeout: 120_000, maxBuffer: 8 << 20 }, (err, out) => {
+        let text = ''
+        try { text = String(JSON.parse(out).result ?? '') } catch { /* reported below */ }
+        if (!text) return reject(new Error(err?.message ?? 'Claude Code gave no answer'))
+        contexts.set(cwd, { at: Date.now(), text })
+        resolve(text)
+      })
+  })
+}
+
 function send(res: http.ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body))
 }
@@ -497,11 +620,26 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       ...settings,
       ...(typeof body.leadAutoSend === 'boolean' ? { leadAutoSend: body.leadAutoSend } : {}),
       ...(typeof body.selfRestart === 'boolean' ? { selfRestart: body.selfRestart } : {}),
+      ...(body.appearance ? { appearance: cleanAppearance(body.appearance) } : {}),
+      ...(Array.isArray(body.groupOrder) ? { groupOrder: body.groupOrder.map(String) } : {}),
+      ...(Number.isFinite(body.cacheGuard) && body.cacheGuard >= 0 ? { cacheGuard: Math.round(body.cacheGuard) } : {}),
+      ...(typeof body.notes === 'boolean' ? { notes: body.notes } : {}),
+      ...(Number.isFinite(body.keepWarmHours) && body.keepWarmHours >= 0 ? { keepWarmHours: Math.min(48, body.keepWarmHours) } : {}),
+      ...(Number.isFinite(body.keepWarmMax) && body.keepWarmMax > 0 ? { keepWarmMax: Math.round(body.keepWarmMax) } : {}),
+      ...(Number.isFinite(body.keepWarmUsage) && body.keepWarmUsage > 0 ? { keepWarmUsage: Math.min(100, body.keepWarmUsage) } : {}),
     }
     saveSettings(settings)
     broadcast({ type: 'settings', settings })
     return send(res, 200, settings)
   }
+  // What the usage meter has measured, to see how steady its estimate is.
+  // What a new session in a folder starts with, by category.
+  if (a === 'context' && method === 'GET') {
+    const cwd = path.resolve(expandHome(url.searchParams.get('cwd') || '~'))
+    if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new HttpError(400, `Not a directory: ${cwd}`)
+    try { return send(res, 200, { cwd, text: await startContext(cwd, url.searchParams.get('fresh') === '1') }) } catch (e) { throw new HttpError(500, (e as Error).message) }
+  }
+  if (a === 'meter' && method === 'GET') return send(res, 200, { rate: meter.rate(), five: meter.pairs('five'), seven: meter.pairs('seven') })
   if (a === 'history' && !id && method === 'GET') {
     const byClaude = new Map(metas().map((m) => [m.claudeSessionId, m.id]))
     const q = (url.searchParams.get('q') ?? '').toLowerCase()
@@ -561,6 +699,17 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     else throw new HttpError(404, 'Not found')
     return send(res, 200, authState())
   }
+  // Send the lead's drafts to every worker where nothing else holds them.
+  if (a === 'lead' && id === 'send-drafts' && method === 'POST') {
+    const sent: string[] = [], held: { id: string; title: string; why: string[] }[] = []
+    for (const s of sessions.values()) {
+      if (s.meta.kind !== 'worker' || s.meta.archived || !s.meta.inbox.length) continue
+      const why = holdReasons(s, false, true)
+      if (why.length) held.push({ id: s.meta.id, title: s.meta.title, why })
+      else { flushInbox(s); sent.push(s.meta.id) }
+    }
+    return send(res, 200, { sent, held })
+  }
   if (a === 'lead' && id === 'reset' && method === 'POST') {
     const s = get(LEAD_ID)
     s.stop()
@@ -571,6 +720,23 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   if (a !== 'sessions') throw new HttpError(404, 'Not found')
 
   if (!id && method === 'POST') return send(res, 200, createSession(await json(req)).meta)
+  // The sidebar's order for a set of siblings, top first.
+  if (id === 'order' && method === 'PUT') {
+    const { ids } = await json(req)
+    if (!Array.isArray(ids)) throw new HttpError(400, 'ids must be a list')
+    ids.forEach((x, i) => { const m = sessions.get(String(x))?.meta; if (m) m.order = i })
+    metaChanged()
+    return send(res, 200, { ok: true })
+  }
+  // Back to the default order: folders by latest activity, sessions by age.
+  if (id === 'order' && method === 'DELETE') {
+    for (const x of sessions.values()) delete x.meta.order
+    settings = { ...settings, groupOrder: [] }
+    saveSettings(settings)
+    broadcast({ type: 'settings', settings })
+    metaChanged()
+    return send(res, 200, { ok: true })
+  }
   const s = get(id)
   if (!b && method === 'PATCH') {
     const body = await json(req)
@@ -596,14 +762,20 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   }
   if (b === 'events' && method === 'GET') return send(res, 200, s.getEvents())
   if (b === 'commands' && method === 'GET') return send(res, 200, commands.get(id) ?? lastCommands)
+  if (b === 'notes' && !c && method === 'GET') return send(res, 200, { path: notesPath(s.meta), text: readNotes(s.meta) })
   if (method !== 'POST') throw new HttpError(404, 'Not found')
   const body = await json(req)
   switch (b) {
     case 'send': {
       const p: Part[] = Array.isArray(body.parts) ? body.parts : []
+      // The lead's drafts that went with your reply.
+      if (Array.isArray(body.inbox) && body.inbox.length) { s.meta.inbox = s.meta.inbox.filter((i) => !body.inbox.includes(i.id)); metaChanged() }
       s.send(p, hiddenFor(s))
       return send(res, 200, { ok: true })
     }
+    case 'drafting':
+      if (s.meta.drafting !== !!body.on) { s.meta.drafting = !!body.on; metaChanged() }
+      return send(res, 200, { ok: true })
     case 'rewind': {
       // Delete from a message on; with parts, send them in its place (an edit).
       try { s.rewind(Number(body.seq)) } catch (e) { throw new HttpError(400, (e as Error).message) }
@@ -644,6 +816,18 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       if (!/^\/[\w:.-]+/.test(body.cmd ?? '')) throw new HttpError(400, 'Not a slash command')
       s.command(body.cmd)
       return send(res, 200, { ok: true })
+    case 'notes': {
+      // Write the notes now; keep-warm on again; or a new session that starts from them.
+      if (c === 'keep-warm') { resumeKeepWarm(s.meta); return send(res, 200, { ok: true }) }
+      if (c === 'continue') {
+        if (!readNotes(s.meta)) throw new HttpError(400, 'This session has no notes yet')
+        const n = createSession({ cwd: s.meta.cwd, title: `${s.meta.title} (continued)`, model: s.meta.model, permissionMode: s.meta.permissionMode, parentId: s.meta.parentId })
+        return send(res, 200, { meta: n.meta, text: `Read \`${notesFile(s.meta.id)}\`: notes from an earlier session. Continue the work from there.` })
+      }
+      const err = notesNow(s, !!body.force)
+      if (err) throw new HttpError(err === 'cold' ? 409 : 400, err === 'cold' ? 'The prompt cache has expired or is about to' : err)
+      return send(res, 200, { ok: true })
+    }
     case 'interrupt': s.interrupt(); return send(res, 200, { ok: true })
     case 'seen': s.markSeen(); return send(res, 200, { ok: true })
     case 'permission':
@@ -651,6 +835,15 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       return send(res, 200, { ok: true })
     case 'inbox':
       if (d === 'dismiss') { s.meta.inbox = s.meta.inbox.filter((i) => i.id !== c); metaChanged(); return send(res, 200, { ok: true }) }
+      // Your edit of one of the lead's drafts.
+      if (d === 'edit') {
+        const i = s.meta.inbox.find((x) => x.id === c)
+        if (!i) throw new HttpError(404, 'No such draft')
+        if (typeof body.text === 'string') i.text = body.text
+        if (Array.isArray(body.choices)) i.choices = body.choices.map(String)
+        metaChanged()
+        return send(res, 200, { ok: true })
+      }
   }
   throw new HttpError(404, 'Not found')
 }

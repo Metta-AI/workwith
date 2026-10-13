@@ -4,7 +4,7 @@
 import { useMemo } from 'react'
 import type { Event, Part } from '../../shared/types.ts'
 import { itemsOf, type Item } from '../../shared/blocks.ts'
-import { draftsOf, hasContent, useStore } from './store.ts'
+import { draftsOf, hasContent, inboxOf, useStore } from './store.ts'
 
 export type ItemStatus =
   | 'open'        // in Claude's latest turn, nothing done yet
@@ -41,7 +41,9 @@ export function draftStatus(sid: string, key: string): ItemStatus | null {
     if (d.kind === 'answer' && d.askKey === key && hasContent(d)) return 'drafted'
     if (d.kind === 'note' && d.itemKey === key && hasContent(d)) return 'drafted'
   }
-  return null
+  // A draft of the lead's counts as one of yours.
+  const i = inboxOf(sid).find((x) => x.key === key)
+  return !i ? null : i.kind === 'dismiss' ? 'dismissing' : i.kind === 'done' ? 'completing' : 'drafted'
 }
 
 export function trackItems(sid: string, events: Event[], fold: ItemFold): TrackedItem[] {

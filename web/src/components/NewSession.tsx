@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import type { PermissionMode, SessionMeta } from '../../../shared/types.ts'
+import type { ImageRef, PermissionMode, SessionMeta } from '../../../shared/types.ts'
 import { api, select, setComposer, state } from '../store.ts'
 import { DirPicker } from './DirPicker.tsx'
+import { RichInput } from './Inputs.tsx'
 
 export function NewSession({ cwd: initial, onClose }: { cwd: string; onClose(): void }) {
   const [cwd, setCwd] = useState(initial)
@@ -10,6 +11,7 @@ export function NewSession({ cwd: initial, onClose }: { cwd: string; onClose(): 
   const [mode, setMode] = useState<PermissionMode>('auto')
   const [parentId, setParentId] = useState('')
   const [prompt, setPrompt] = useState('')
+  const [images, setImages] = useState<ImageRef[]>([])
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -17,7 +19,7 @@ export function NewSession({ cwd: initial, onClose }: { cwd: string; onClose(): 
     setBusy(true); setErr(null)
     try {
       const m = await api<SessionMeta>('/api/sessions', 'POST', { cwd, title, model: model || null, permissionMode: mode, parentId: parentId || null })
-      if (prompt.trim()) await api(`/api/sessions/${m.id}/send`, 'POST', { parts: [{ kind: 'text', text: prompt }] })
+      if (prompt.trim() || images.length) await api(`/api/sessions/${m.id}/send`, 'POST', { parts: [{ kind: 'text', text: prompt, images }] })
       else setComposer(m.id, { text: '' })
       select(m.id)
       onClose()
@@ -53,9 +55,9 @@ export function NewSession({ cwd: initial, onClose }: { cwd: string; onClose(): 
             {state.sessions.filter((s) => s.kind === 'worker' && !s.archived).map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
           </select>
         </label>
-        <label>First message (optional)
-          <textarea rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void create() } }} />
-        </label>
+        <div className="field">First message (optional)
+          <RichInput value={prompt} onChange={setPrompt} images={images} onImages={setImages} onSubmit={() => void create()} minRows={4} />
+        </div>
         {err && <div className="notice error">{err}</div>}
         <div className="modal-actions">
           <button type="button" onClick={onClose}>Cancel</button>

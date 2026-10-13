@@ -41,12 +41,19 @@ export function formatAnswer(id: string, question: string, choices: string[] | u
   return lines.join('\n')
 }
 
-// A long passage goes to Claude as its first words and "…": Claude has the text
-// already, and the prompt says such a quote stands for the whole passage.
+// A quote of more than `words` words goes to Claude as its first words and "…":
+// Claude has the text already, and the prompt says such a quote stands for the
+// whole passage. `head` keeps the line breaks of the quote, for the UI; `rest` is
+// the part that is not sent ('' when the quote goes in full).
+export function splitQuote(quote: string, words = 8): { head: string; rest: string } {
+  const q = quote.trim()
+  const m = q.match(new RegExp(`^(\\S+\\s+){${words - 1}}\\S+(?=\\s+\\S)`))
+  return m ? { head: m[0], rest: q.slice(m[0].length) } : { head: q, rest: '' }
+}
+
 export function shortQuote(quote: string, words = 8): string {
-  const q = quote.trim().replace(/\s+/g, ' ')
-  if (q.length <= 100) return quote.trim()
-  return q.split(' ').slice(0, words).join(' ') + ' …'
+  const { head, rest } = splitQuote(quote, words)
+  return rest ? head.replace(/\s+/g, ' ') + ' …' : head
 }
 
 export function formatNote(quote: string, text: string): string {

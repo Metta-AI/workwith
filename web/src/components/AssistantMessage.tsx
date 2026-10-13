@@ -274,7 +274,8 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
   }
 
   const all = target && !rows.some((r) => r.top === target.top) ? [...rows, { top: target.top, items: [] }] : rows
-  const on = new Set(target ? mine().map((d) => d.text.trim()) : [])
+  // Only reactions that draw something: a stray variation selector or skin tone would show as an empty ring.
+  const on = new Set(target ? mine().map((d) => d.text.trim()).filter((e) => /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(e)) : [])
   return <>{all.map((r) => {
     const here = target?.top === r.top
     const own = here ? r.items.find((it) => it.key === target!.key) : undefined

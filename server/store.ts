@@ -73,6 +73,20 @@ export function learnWindow(model: string, w: number) {
   fs.writeFile(WINDOWS, JSON.stringify(windows, null, 1), () => {})
 }
 
+// What the default model ('') and each alias (opus, sonnet...) turned out to be, as
+// Claude Code reported when a session started, so a new session can show it at once.
+const MODELS = path.join(DATA, 'models.json')
+const models: Record<string, string> = (() => { try { return JSON.parse(fs.readFileSync(MODELS, 'utf8')) } catch { return {} } })()
+const isAlias = (model: string | null | undefined) => !model || !model.includes('-')
+export function resolveModel(model: string | null | undefined): string | null {
+  return isAlias(model) ? models[model ?? ''] ?? model ?? null : model!
+}
+export function learnModel(asked: string | null | undefined, got: string) {
+  if (!isAlias(asked) || !got || models[asked ?? ''] === got) return
+  models[asked ?? ''] = got
+  fs.writeFile(MODELS, JSON.stringify(models, null, 1), () => {})
+}
+
 const eventsFile = (id: string) => path.join(EVENTS, `${id}.jsonl`)
 
 export function readEvents(id: string): Event[] {

@@ -46,7 +46,8 @@ function sentEntries(events: Event[], gutter: boolean): Entry[] {
   for (const e of events) {
     if (e.t !== 'user') continue
     e.parts.forEach((p, i) => {
-      if (p.kind !== 'note') return
+      // A reply to a whole item (the lead's) has no passage to sit beside.
+      if (p.kind !== 'note' || !p.anchor.pieces.length) return
       // Reactions show beside their passage (AssistantMessage); without a gutter, sent cards would sit over the text.
       if (isReaction(p.text) && !p.images?.length || !gutter) return
       out.push({ id: `s${e.seq}.${i}`, anchor: p.anchor, kind: 'sent', text: p.text, images: p.images })

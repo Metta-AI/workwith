@@ -14,7 +14,8 @@ import { mediaTypeOf, splitImages, withoutImages } from '../shared/images.ts'
 import type { Block, Event, Part, PermissionMode, SessionMeta, Status, Usage } from '../shared/types.ts'
 import { AUTH_ERROR, childEnv } from './auth.ts'
 import { entryBefore } from './history.ts'
-import { appendEvent, imageFile, knownWindow, learnWindow, readEvents, writeEvents } from './store.ts'
+import { addSpend, costOf } from '../shared/prices.ts'
+import { appendEvent, imageFile, knownWindow, learnModel, learnWindow, readEvents, writeEvents } from './store.ts'
 
 export type Hooks = {
   meta(s: Session): void
@@ -49,6 +50,12 @@ export class Session {
   private authRetry: number | null = null  // a message that failed for want of a login, to send again
   private terminalOnly = new Set(['doctor', 'color', 'focus', 'reload-plugins', 'heapdump'])
   private pending = new Map<string, { input: any; suggestions: any[] }>()
+  // The prompt cache's clock starts when an API call starts, which the stream doesn't
+  // say. callFrom: the last moment Claude Code got input or gave output, so the next
+  // call starts after it; callStart: that moment, for the call now replying.
+  private callFrom = 0
+  private callStart = 0
+  private costSeen = new Map<string, number>()  // message id → dollars counted, as its lines come in
   private hooks: Hooks
   private launch: () => Launch
 
@@ -195,6 +202,26 @@ export class Session {
     this.proc!.stdin!.write(JSON.stringify(obj) + '\n')
   }
 
+  // A one-off call on this conversation that leaves it as it is (server/notes.ts):
+  // the same model, system prompt and tools as the session's own process, so it
+  // reads the same prompt cache; forked, and not saved. The prompt goes on stdin.
+  forkCommand() {
+    const m = this.meta
+    const { args, prompt } = this.launch()
+    return {
+      cmd: process.env.CODINER_CLAUDE ?? 'claude',
+      args: [
+        '-p', '--output-format', 'json', '--permission-mode', m.permissionMode,
+        ...(m.model ? ['--model', m.model] : []),
+        '--resume', m.claudeSessionId, '--fork-session', '--no-session-persistence', '--max-turns', '1',
+        '--append-system-prompt', prompt,
+        ...args,
+      ],
+      cwd: m.cwd,
+      env: childEnv(),
+    }
+  }
+
   stop() {
     if (!this.proc) return
     this.stopping = true
@@ -247,6 +274,7 @@ export class Session {
     if (!content.length) throw new Error('Nothing to send')
     if (hidden) addText(hidden)
     const uuid = randomUUID()
+    this.callFrom = Date.now()
     this.write({ type: 'user', uuid, message: { role: 'user', content } })
     this.outstanding++
     this.meta.unread = false
@@ -259,6 +287,7 @@ export class Session {
   // Slash commands (/compact, /context, ...) go in as plain user text.
   command(cmd: string, from?: string) {
     const uuid = randomUUID()
+    this.callFrom = Date.now()
     this.write({ type: 'user', uuid, message: { role: 'user', content: cmd } })
     this.outstanding++
     this.meta.unread = false
@@ -367,7 +396,7 @@ export class Session {
           // /clear starts a new conversation under a new id, and so does a fork after a rewind; resume that one next time.
           if (msg.session_id) { m.claudeSessionId = msg.session_id; m.resumeAt = null }
           if (Array.isArray(msg.terminal_slash_commands)) this.terminalOnly = new Set(msg.terminal_slash_commands)
-          if (msg.model && msg.model !== m.model) { m.model = msg.model; m.context.window = knownWindow(m.model) }
+          if (msg.model && msg.model !== m.model) { learnModel(m.model, msg.model); m.model = msg.model; m.context.window = knownWindow(m.model) }
           if (msg.apiKeySource && msg.apiKeySource !== 'none') this.notice(`Claude is authenticating with ${msg.apiKeySource}, which may bill per token.`, 'warn')
           this.refresh()
         } else if (msg.subtype === 'background_tasks_changed') {
@@ -386,6 +415,7 @@ export class Session {
       case 'stream_event': {
         if (msg.parent_tool_use_id) return
         const ev = msg.event
+        if (ev?.type === 'message_start') this.callStart = this.callFrom || Date.now()
         if (ev?.type === 'content_block_start' || ev?.type === 'message_start') this.hooks.delta(this, '', true)
         else if (ev?.type === 'content_block_delta' && ev.delta?.type === 'text_delta') this.hooks.delta(this, ev.delta.text, false)
         return
@@ -403,8 +433,21 @@ export class Session {
         if (synthetic && blocks.some((b) => b.type === 'text' && AUTH_ERROR.test(b.text))) this.authError()
         if (!synthetic && a.usage) {
           const u = a.usage
+          // The first call of a conversation: how big a new session starts.
+          if (!m.context.used && !m.base) {
+            const read = u.cache_read_input_tokens ?? 0
+            m.base = { total: (u.input_tokens ?? 0) + read + (u.cache_creation_input_tokens ?? 0), read }
+          }
           m.context.used = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.output_tokens ?? 0)
+          // What it wrote to the cache says the TTL; a call that only read keeps the last one.
+          const cc = u.cache_creation ?? {}
+          const ttl = cc.ephemeral_1h_input_tokens > 0 ? 3_600_000 : cc.ephemeral_5m_input_tokens > 0 ? 300_000 : m.cache?.ttl ?? 300_000
+          m.cache = { at: this.callStart || Date.now(), ttl }
+          // A message's blocks come as separate lines with the usage so far: count only what grew.
+          const id = a.id ?? msg.uuid, usd = costOf(u, a.model ?? m.model), prev = this.costSeen.get(id) ?? 0
+          if (usd > prev) { this.costSeen.set(id, usd); addSpend(m, usd - prev) }
         }
+        this.callFrom = Date.now()
         this.hooks.delta(this, '', true)
         if (!blocks.length) return
         const plain = overview(blocks.filter((b) => b.type === 'text').map((b) => (b as { text: string }).text).join('\n'))
@@ -422,6 +465,7 @@ export class Session {
         }
         for (const b of c ?? []) {
           if (b.type !== 'tool_result') continue
+          this.callFrom = Date.now()
           const text = typeof b.content === 'string' ? b.content
             : (b.content ?? []).map((x: any) => x.type === 'text' ? x.text : `[${x.type}]`).join('\n')
           this.record('tool_result', { toolUseId: b.tool_use_id, text: text.length > MAX_RESULT ? text.slice(0, MAX_RESULT) + '\n… (truncated)' : text, isError: !!b.is_error })

@@ -111,6 +111,33 @@ export function findHistory(id: string): { file: string; item: HistoryItem } | n
   return null
 }
 
+// The prompt cache as a transcript last left it: when its last API call ran, and
+// the TTL it wrote (see shared/cache.ts). For sessions with no record of their own.
+export function lastCache(cwd: string, csid: string): { at: number; ttl: number } | null {
+  let file = path.join(PROJECTS, cwd.replace(/[^A-Za-z0-9]/g, '-'), `${csid}.jsonl`)
+  if (!fs.existsSync(file)) file = findHistory(csid)?.file ?? ''
+  let tail = ''
+  try {
+    const fd = fs.openSync(file, 'r')
+    const size = fs.fstatSync(fd).size, n = Math.min(size, SLICE * 4)
+    const buf = Buffer.alloc(n)
+    fs.readSync(fd, buf, 0, n, size - n)
+    fs.closeSync(fd)
+    tail = buf.toString('utf8')
+  } catch { return null }
+  const lines = tail.split('\n')
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!lines[i].includes('"cache_creation"')) continue
+    let m: any
+    try { m = JSON.parse(lines[i]) } catch { continue }
+    const cc = m.message?.usage?.cache_creation
+    // A call that only read the cache says nothing of its TTL; look further back.
+    if (m.type !== 'assistant' || !cc || !m.timestamp || !(cc.ephemeral_1h_input_tokens || cc.ephemeral_5m_input_tokens)) continue
+    return { at: Date.parse(m.timestamp), ttl: cc.ephemeral_1h_input_tokens > 0 ? 3_600_000 : 300_000 }
+  }
+  return null
+}
+
 const MAX_RESULT = 8000
 const MAX_IMPORT_IMAGES = 40
 

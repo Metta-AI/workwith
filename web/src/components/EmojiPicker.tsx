@@ -1,6 +1,6 @@
 // Search every emoji by name. Opens as a small popover; Enter takes the first match.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { allEmoji, searchEmoji, topEmoji, type EmojiInfo } from '../emoji.ts'
 
 export function EmojiPicker({ onPick, onClose }: { onPick(e: string): void; onClose(): void }) {
@@ -10,6 +10,22 @@ export function EmojiPicker({ onPick, onClose }: { onPick(e: string): void; onCl
   const [at, setAt] = useState(-1)
   const box = useRef<HTMLDivElement>(null)
   useEffect(() => { void allEmoji().then(setList) }, [])
+  // Opens below its button, unless that runs past the bottom of the pane that scrolls it
+  // (the composer sits under the transcript): then above, or if there's no room there either,
+  // scroll the pane until it fits.
+  const [up, setUp] = useState(false)
+  useLayoutEffect(() => {
+    const el = box.current, anchor = el?.offsetParent
+    if (!el || !anchor) return
+    let pane: HTMLElement | null = el.parentElement
+    while (pane && !/(auto|scroll)/.test(getComputedStyle(pane).overflowY)) pane = pane.parentElement
+    const lim = pane ? pane.getBoundingClientRect() : { top: 0, bottom: innerHeight }
+    const a = anchor.getBoundingClientRect(), h = el.offsetHeight, gap = 20
+    const fitsDown = a.bottom + 4 + h <= lim.bottom - gap
+    const fitsUp = a.top - 4 - h >= lim.top + gap
+    setUp(!fitsDown && fitsUp)
+    if (!fitsDown && !fitsUp && pane) pane.scrollTop += a.bottom + 4 + h - (lim.bottom - gap)
+  }, [list.length > 0])
   useEffect(() => {
     const down = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) onClose() }
     document.addEventListener('mousedown', down)
@@ -28,7 +44,7 @@ export function EmojiPicker({ onPick, onClose }: { onPick(e: string): void; onCl
       ref={i === at ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>{e}</button>
   )
   return (
-    <div className="emoji-picker" ref={box} onMouseDown={(e) => { if (e.target !== e.currentTarget.querySelector('input')) e.preventDefault() }}>
+    <div className="emoji-picker" ref={box} style={up ? { top: 'auto', bottom: 'calc(100% + 4px)' } : undefined} onMouseDown={(e) => { if (e.target !== e.currentTarget.querySelector('input')) e.preventDefault() }}>
       <input autoFocus placeholder="Search emoji" value={q} onChange={(e) => { setQ(e.target.value); setAt(-1) }} onKeyDown={(e) => {
         const grid = at >= 0
         if (e.key === 'ArrowDown') { e.preventDefault(); setAt((i) => i < 0 ? 0 : Math.min(flat.length - 1, i + COLS)) }

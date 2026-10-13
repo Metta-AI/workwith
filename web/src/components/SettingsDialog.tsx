@@ -1,4 +1,4 @@
-// Settings: display options, and the notes files you and Claude keep (AGENTS.md,
+// Settings, in tabs: general options, appearance, and the notes files you and Claude keep (AGENTS.md,
 // CLAUDE.md, the lead's NOTES.md, and any you add), each with its history.
 // Read shows a file rendered, every block marked by when it last changed and
 // by whom (server/filehistory.ts); clicking a block lists its changes, with
@@ -11,6 +11,17 @@ import { api, changed, revealEvent, select, state, useStore } from '../store.ts'
 import { marked, timeAgo } from '../util.ts'
 import { shortPath } from './DirPicker.tsx'
 import { XIcon } from './Icons.tsx'
+import { AppearancePanel } from './AppearanceDialog.tsx'
+import { StartContext } from './StartContext.tsx'
+import { DEFAULT_CACHE_GUARD } from '../../../shared/cache.ts'
+import { KEEP_WARM } from '../../../shared/notes.ts'
+
+const GUARDS = [0, 20_000, 50_000, 100_000, 250_000, 500_000]
+const WARM_HOURS = [0, 1, 2, 4, 6, 8, 12]
+const WARM_MAX = [200_000, 300_000, 500_000, 750_000, 1_000_000]
+const WARM_USAGE = [50, 70, 80, 90, 100]
+const PAGES = [['general', 'General'], ['appearance', 'Appearance'], ['context', 'Start-up context'], ['files', 'Notes files']] as const
+type Page = typeof PAGES[number][0]
 
 type FileRow = { path: string; builtIn: boolean; exists: boolean; versions: number; last: number | null }
 type By =
@@ -38,6 +49,9 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
   const [adding, setAdding] = useState('')
   const tick = sel ? st.fileTick[sel] ?? 0 : 0
 
+  const [page, setPage] = useState<Page>(() => PAGES.find(([p]) => p === localStorage.getItem('codiner.settingsPage'))?.[0] ?? 'general')
+  const go = (p: Page) => { localStorage.setItem('codiner.settingsPage', p); setPage(p) }
+  const guard = st.settings.cacheGuard ?? DEFAULT_CACHE_GUARD
   const [stale, setStale] = useState(false)   // the server predates file history: it needs a restart
   const loadFiles = () => api<FileRow[]>('/api/files', 'GET')
     .then((f) => { setFiles(f); setSel((s) => s || f[0]?.path || '') })
@@ -80,48 +94,87 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
       }}>
         <div className="files-head">
           <h2>Settings</h2>
-          <label className="settings-check">
-            <input type="checkbox" checked={st.showSteps} onChange={(e) => { state.showSteps = e.target.checked; changed() }} />
-            Show Claude's in-between messages
-          </label>
-          <label className="settings-check" title="For working on Codiner itself: a banner offers to restart the server when its code changes">
-            <input type="checkbox" checked={!!st.settings.selfRestart} onChange={(e) => void api('/api/settings', 'PUT', { selfRestart: e.target.checked })} />
-            Offer to restart when Codiner's code changes
-          </label>
           <button className="icon-btn" title="Close" onClick={() => { if (!dirty || confirm('Discard your changes?')) onClose() }}><XIcon size={14} /></button>
         </div>
-        <div className="files-body">
-          <nav className="files-list">
-            {files.map((f) => (
-              <div key={f.path} className={`file-row${f.path === sel ? ' on' : ''}`} onClick={() => pick(f.path)} title={f.path}>
-                <span className="file-name">{f.path.split('/').pop()}</span>
-                <span className="file-dir muted">{shortPath(f.path.split('/').slice(0, -1).join('/'))}</span>
-                <span className="file-meta muted">{!f.exists ? 'no file yet' : f.last ? `changed ${timeAgo(f.last)}` : ''}</span>
-                {!f.builtIn && <button className="icon-btn file-x" title="Stop tracking" onClick={(e) => { e.stopPropagation(); void untrack(f.path) }}><XIcon size={11} /></button>}
-              </div>
-            ))}
-            <div className="file-add">
-              <input placeholder="Track another file…" value={adding} onChange={(e) => setAdding(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void add() }} />
-            </div>
+        <div className="settings-body">
+          <nav className="settings-tabs">
+            {PAGES.map(([p, label]) => <button key={p} className={page === p ? 'on' : ''} onClick={() => go(p)}>{label}</button>)}
           </nav>
-          <section className="file-pane">
-            {stale && <div className="empty">Codiner's server is older than this page, so it has no file history yet. Restart Codiner, then open Settings again.</div>}
-            {blame && <>
-              <div className="file-tabs">
-                {(['read', 'edit', 'history'] as const).map((t) => <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</button>)}
-                <span className="muted mono file-path">{shortPath(blame.path)}</span>
-              </div>
-              {tab === 'read' && (blame.exists ? <BlameView b={blame} open={open} /> : <div className="empty">This file does not exist yet. Write it in Edit.</div>)}
-              {tab === 'edit' && <>
-                <textarea className="agents-md mono" value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />
-                <div className="modal-actions">
-                  <button disabled={!dirty} onClick={() => setText(blame.text)}>Discard</button>
-                  <button className="primary" disabled={!dirty || busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</button>
+          {page === 'general' && <section className="settings-page">
+            <label className="settings-check">
+              <input type="checkbox" checked={st.showSteps} onChange={(e) => { state.showSteps = e.target.checked; changed() }} />
+              Show Claude's in-between messages
+            </label>
+            <label className="settings-check" title="For working on Codiner itself: a banner offers to restart the server when its code changes">
+              <input type="checkbox" checked={!!st.settings.selfRestart} onChange={(e) => void api('/api/settings', 'PUT', { selfRestart: e.target.checked })} />
+              Offer to restart when Codiner's code changes
+            </label>
+            <label className="settings-check" title="Once a session's prompt cache expires, the next message writes its whole context to the cache again, at full price">
+              Ask before re-caching more than
+              <select value={guard} onChange={(e) => void api('/api/settings', 'PUT', { cacheGuard: Number(e.target.value) })}>
+                {[...new Set([...GUARDS, guard])].sort((x, y) => x - y).map((g) => <option key={g} value={g}>{g ? `${g / 1000}k tokens` : 'never ask'}</option>)}
+              </select>
+            </label>
+            <label className="settings-check" title="After 20 quiet minutes, a call on the conversation writes compact notes to .codiner/notes/ in its folder, to start a new session from">
+              <input type="checkbox" checked={st.settings.notes !== false} onChange={(e) => void api('/api/settings', 'PUT', { notes: e.target.checked })} />
+              Write notes on quiet sessions
+            </label>
+            <label className="settings-check" title="A short call before the 1-hour cache expires keeps it warm. It reads the context at the cache price, so a later message does not write it all again">
+              Keep the cache warm for
+              <select value={st.settings.keepWarmHours ?? KEEP_WARM.hours} onChange={(e) => void api('/api/settings', 'PUT', { keepWarmHours: Number(e.target.value) })}>
+                {[...new Set([...WARM_HOURS, st.settings.keepWarmHours ?? KEEP_WARM.hours])].sort((x, y) => x - y).map((h) => <option key={h} value={h}>{h ? `${h} ${h === 1 ? 'hour' : 'hours'}` : 'no time (off)'}</option>)}
+              </select>
+              after the last activity
+            </label>
+            <label className="settings-check" title="A large context is slow and costly even with a warm cache. The Notes chip turns amber past this size">
+              Suggest a new session from the notes past
+              <select value={st.settings.keepWarmMax ?? KEEP_WARM.max} onChange={(e) => void api('/api/settings', 'PUT', { keepWarmMax: Number(e.target.value) })}>
+                {[...new Set([...WARM_MAX, st.settings.keepWarmMax ?? KEEP_WARM.max])].sort((x, y) => x - y).map((t) => <option key={t} value={t}>{t / 1000}k tokens</option>)}
+              </select>
+            </label>
+            <label className="settings-check" title="Codiner makes no notes or keep-warm calls when one would take your 5-hour usage past this">
+              Stop the calls at
+              <select value={st.settings.keepWarmUsage ?? KEEP_WARM.usage} onChange={(e) => void api('/api/settings', 'PUT', { keepWarmUsage: Number(e.target.value) })}>
+                {[...new Set([...WARM_USAGE, st.settings.keepWarmUsage ?? KEEP_WARM.usage])].sort((x, y) => x - y).map((u) => <option key={u} value={u}>{u === 100 ? 'never' : `${u}%`}</option>)}
+              </select>
+              of the 5-hour limit
+            </label>
+          </section>}
+          {page === 'appearance' && <section className="settings-page"><AppearancePanel /></section>}
+          {page === 'context' && <section className="settings-page"><StartContext /></section>}
+          {page === 'files' && <div className="files-body">
+            <nav className="files-list">
+              {files.map((f) => (
+                <div key={f.path} className={`file-row${f.path === sel ? ' on' : ''}`} onClick={() => pick(f.path)} title={f.path}>
+                  <span className="file-name">{f.path.split('/').pop()}</span>
+                  <span className="file-dir muted">{shortPath(f.path.split('/').slice(0, -1).join('/'))}</span>
+                  <span className="file-meta muted">{!f.exists ? 'no file yet' : f.last ? `changed ${timeAgo(f.last)}` : ''}</span>
+                  {!f.builtIn && <button className="icon-btn file-x" title="Stop tracking" onClick={(e) => { e.stopPropagation(); void untrack(f.path) }}><XIcon size={11} /></button>}
                 </div>
+              ))}
+              <div className="file-add">
+                <input placeholder="Track another file…" value={adding} onChange={(e) => setAdding(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void add() }} />
+              </div>
+            </nav>
+            <section className="file-pane">
+              {stale && <div className="empty">Codiner's server is older than this page, so it has no file history yet. Restart Codiner, then open Settings again.</div>}
+              {blame && <>
+                <div className="file-tabs">
+                  {(['read', 'edit', 'history'] as const).map((t) => <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</button>)}
+                  <span className="muted mono file-path">{shortPath(blame.path)}</span>
+                </div>
+                {tab === 'read' && (blame.exists ? <BlameView b={blame} open={open} /> : <div className="empty">This file does not exist yet. Write it in Edit.</div>)}
+                {tab === 'edit' && <>
+                  <textarea className="agents-md mono" value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />
+                  <div className="modal-actions">
+                    <button disabled={!dirty} onClick={() => setText(blame.text)}>Discard</button>
+                    <button className="primary" disabled={!dirty || busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</button>
+                  </div>
+                </>}
+                {tab === 'history' && <History b={blame} open={open} />}
               </>}
-              {tab === 'history' && <History b={blame} open={open} />}
-            </>}
-          </section>
+            </section>
+          </div>}
         </div>
       </div>
     </div>
