@@ -224,6 +224,18 @@ export function activate(el: HTMLElement) {
     }
   }
   for (const x of el.querySelectorAll('.md-x')) x.classList.toggle('md-active', on.has(x))
+  // A quote shows its "> " only while the caret is at it: in it, or just after it.
+  const at = new Set<Element>()
+  if (s?.rangeCount && el.contains(s.anchorNode)) {
+    const r = s.getRangeAt(0)
+    for (const [n, off] of [[r.startContainer, r.startOffset], [r.endContainer, r.endOffset]] as const) {
+      const p = n.parentElement
+      if (p?.classList.contains('md-mark') && p.parentElement?.classList.contains('md-quote')) at.add(p.parentElement)
+      const prev = n.nodeType === Node.TEXT_NODE && off === 0 ? n.previousSibling : n instanceof Element && n.classList.contains('md-quote') && off <= 1 ? n.firstChild : null
+      if (prev instanceof Element && prev.classList.contains('md-mark') && prev.parentElement?.classList.contains('md-quote')) at.add(prev.parentElement)
+    }
+  }
+  for (const x of el.querySelectorAll('.md-quote')) x.classList.toggle('md-at-mark', at.has(x))
 }
 
 // ---- markdown keys ----------------------------------------------------------------

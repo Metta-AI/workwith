@@ -459,8 +459,9 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .ri-edit .md-cols { display: inline-block; width: calc(var(--n) * var(--col)); text-indent: 0; white-space: pre; overflow: hidden; vertical-align: top; }
 .ri-edit .md-li:not(.md-active) > .md-ul { position: relative; color: transparent; }
 .ri-edit .md-li:not(.md-active) > .md-ul::before { content: '•'; position: absolute; left: .1em; color: var(--muted); }
-/* A quote shows its bar, or, while the caret is on it, its "> " in the bar's place. */
-.ri-edit .md-quote.md-active { border-left-color: transparent; padding-left: 0; }
+/* A quote shows its bar, or, while the caret is at its "> " (mdlive.ts), the "> " in the bar's place. */
+.ri-edit .md-quote:not(.md-at-mark) > .md-mark { display: none; }
+.ri-edit .md-quote.md-at-mark { border-left-color: transparent; padding-left: 0; }
 .ri-edit .md-quote { display: inline-block; width: 100%; box-sizing: border-box; vertical-align: top; padding-left: 10px; border-left: 3px solid color-mix(in srgb, var(--text) 18%, transparent); color: color-mix(in srgb, var(--text) 75%, transparent); }
 .ri-edit:focus { outline: 2px solid var(--blue); outline-offset: -1px; }
 .ri-edit[data-empty]::before { content: attr(data-placeholder); color: var(--muted); pointer-events: none; position: absolute; }
