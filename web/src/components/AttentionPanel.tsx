@@ -49,7 +49,7 @@ function PanelConsider({ sid, item }: { sid: string; item: TrackedItem }) {
   // Commenting happens on the item itself, so its margin card sits beside it.
   const comment = () => {
     revealItem(item.key)
-    document.querySelector<HTMLButtonElement>(`[data-item="${CSS.escape(item.key)}"] > .consider-foot > .reply-btn`)?.click()
+    document.querySelector<HTMLButtonElement>(`[data-item="${CSS.escape(item.key)}"] > .consider-foot > .item-reply`)?.click()
   }
   return (
     <div className={`panel-item consider st-${item.status}`}>
@@ -57,7 +57,7 @@ function PanelConsider({ sid, item }: { sid: string; item: TrackedItem }) {
         <button className="link panel-title" onClick={() => revealItem(item.key)} dangerouslySetInnerHTML={{ __html: renderInline(item.label) }} />
         <span className="item-actions">
           {item.status === 'open' && <button className="icon-btn" title="Dismiss" onClick={() => dismissItem(sid, item.key, item.label)}><XIcon size={13} /></button>}
-          {(item.status === 'dismissing' || item.status === 'completing') && <button className="icon-btn" title="Undo" onClick={() => undismissItem(sid, item.key)}><UndoIcon size={14} /></button>}
+          {(item.status === 'dismissing' || item.status === 'completing') && <button className="icon-btn pop-in" title="Undo" onClick={() => undismissItem(sid, item.key)}><UndoIcon size={14} /></button>}
         </span>
       </div>
       {(item.status === 'open' || item.status === 'drafted') && (
@@ -66,7 +66,7 @@ function PanelConsider({ sid, item }: { sid: string; item: TrackedItem }) {
           <button className="reply-btn" onClick={comment}><CommentIcon size={13} /> Reply</button>
         </div>
       )}
-      {item.status === 'completing' && <div className="consider-foot"><span className="done-mark"><CheckIcon size={12} /> Done</span></div>}
+      {item.status === 'completing' && <div className="consider-foot"><button className="done-mark pop-in" title="Undo" onClick={() => undismissItem(sid, item.key)}><CheckIcon size={12} /> Done</button></div>}
     </div>
   )
 }

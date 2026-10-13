@@ -35,9 +35,12 @@ export function foldItems(events: Event[]): ItemFold {
 }
 
 export function draftStatus(sid: string, key: string): ItemStatus | null {
+  // Set aside or done wins over a reply, which can come first (a reaction in the item).
   for (const d of draftsOf(sid)) {
     if (d.kind === 'dismiss' && d.key === key) return 'dismissing'
     if (d.kind === 'done' && d.key === key) return 'completing'
+  }
+  for (const d of draftsOf(sid)) {
     if (d.kind === 'answer' && d.askKey === key && hasContent(d)) return 'drafted'
     if (d.kind === 'note' && d.itemKey === key && hasContent(d)) return 'drafted'
   }

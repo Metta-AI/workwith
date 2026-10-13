@@ -184,7 +184,8 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
         // The innermost one level with the pointer; between two, keep the last.
         let best: HTMLElement | null = null, h = Infinity
         for (const c of el.querySelectorAll<HTMLElement>('li, [data-block]')) {
-          if (c.closest('.ask-card, .run-card')) continue
+          // A passage in a closed <details> is laid out on top of what follows it.
+          if (c.closest('.ask-card, .run-card, details:not([open])')) continue
           const b = c.getBoundingClientRect()
           if (e.clientY >= b.top - 2 && e.clientY <= b.bottom + 2 && b.height < h) { best = c; h = b.height }
         }
@@ -363,7 +364,8 @@ function ConsiderCard({ c, p }: { c: Ctx; p: SectionPiece }) {
 
   // Comment on the item: a margin card on its title, tied to the item.
   const comment = (e: React.MouseEvent) => {
-    const existing = draftsOf(c.sid).find((d): d is NoteDraft => d.kind === 'note' && d.itemKey === key)
+    // A reaction in the item has no card to go to.
+    const existing = draftsOf(c.sid).find((d): d is NoteDraft => d.kind === 'note' && d.itemKey === key && !d.reaction)
     if (existing) { document.querySelector<HTMLElement>(`.note-card[data-id="${existing.id}"] .ri-edit`)?.focus(); return }
     const card = (e.currentTarget as HTMLElement).closest('.consider')!
     const head = card.querySelector<HTMLElement>('.consider-title')!
@@ -381,14 +383,14 @@ function ConsiderCard({ c, p }: { c: Ctx; p: SectionPiece }) {
       <div className="consider-head">
         <div data-block={p.block} className="md-block consider-title" dangerouslySetInnerHTML={{ __html: renderInline(title) }} />
         {status === 'open' && <span className="item-actions"><button className="icon-btn" title="Dismiss" onClick={() => dismissItem(c.sid, key, title)}><XIcon size={13} /></button></span>}
-        {(status === 'dismissing' || status === 'completing') && <span className="item-actions"><button className="icon-btn" title="Undo" onClick={() => undismissItem(c.sid, key)}><UndoIcon size={14} /></button></span>}
+        {(status === 'dismissing' || status === 'completing') && <span className="item-actions"><button className="icon-btn pop-in" title="Undo" onClick={() => undismissItem(c.sid, key)}><UndoIcon size={14} /></button></span>}
         <Done status={status} />
       </div>
       <div className="consider-body"><Pieces c={{ ...c, within: { key, label: title, status } }} pieces={p.pieces} /></div>
       {(status === 'open' || status === 'drafted') && (
         <div className="consider-foot">
           {p.task && <button className="reply-btn" onClick={() => markDone(c.sid, key, title)}><CheckIcon size={13} /> Done</button>}
-          <button className="reply-btn" onMouseDown={(e) => e.preventDefault()} onClick={comment}><CommentIcon size={13} /> Reply</button>
+          <button className="reply-btn item-reply" onMouseDown={(e) => e.preventDefault()} onClick={comment}><CommentIcon size={13} /> Reply</button>
         </div>
       )}
       {status === 'completing' && <DoneProblem sid={c.sid} itemKey={key} />}
@@ -402,7 +404,7 @@ function DoneProblem({ sid, itemKey }: { sid: string; itemKey: string }) {
   if (!d) return null
   return (
     <div className="done-problem">
-      <span className="done-mark"><CheckIcon size={12} /> Done</span>
+      <button className="done-mark pop-in" title="Undo" onClick={() => undismissItem(sid, itemKey)}><CheckIcon size={12} /> Done</button>
       <input placeholder="Any problem?" value={d.text} onChange={(e) => setDoneText(sid, itemKey, e.target.value)} />
     </div>
   )
@@ -466,7 +468,7 @@ function DraftCard({ c, ask, compact }: { c: Ctx; ask: Ask & { draft: string }; 
       <div className={`ask-card draft-card ${answer ? 'answered' : `st-${status}`}`} {...attrs} onMouseUp={(e) => e.stopPropagation()}>
         {head(<>
           {answer && <span className="muted draft-how">{answer.draft === 'edited' ? 'Edited' : 'Approved'}</span>}
-          {status === 'dismissing' && <button className="icon-btn" title="Undo" onClick={() => undismissItem(c.sid, askKey)}><UndoIcon size={14} /></button>}
+          {status === 'dismissing' && <button className="icon-btn pop-in" title="Undo" onClick={() => undismissItem(c.sid, askKey)}><UndoIcon size={14} /></button>}
           <Done status={answer ? 'answered' : status} />
         </>)}
         {!compact && status !== 'dismissing' && status !== 'dismissed' && <div className="draft-text md" dangerouslySetInnerHTML={{ __html: renderText(text) }} />}
@@ -537,7 +539,7 @@ function QuestionCard({ c, ask, compact }: { c: Ctx; ask: Ask; compact?: boolean
       <div className={`ask-card st-${status}`} {...attrs} onMouseUp={(e) => e.stopPropagation()}>
         <div className="ask-row">
           <div className="ask-q" dangerouslySetInnerHTML={{ __html: question }} />
-          {status === 'dismissing' && <button className="icon-btn" title="Undo" onClick={() => undismissItem(c.sid, askKey)}><UndoIcon size={14} /></button>}
+          {status === 'dismissing' && <button className="icon-btn pop-in" title="Undo" onClick={() => undismissItem(c.sid, askKey)}><UndoIcon size={14} /></button>}
           <Done status={status} />
         </div>
         {status === 'live' && ask.options.length > 0 && <div className="ask-options">{ask.options.map((o) => <span key={o} className="chip static">{o}</span>)}</div>}
