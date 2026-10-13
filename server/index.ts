@@ -1004,6 +1004,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     }
     case 'interrupt': s.interrupt(); return send(res, 200, { ok: true })
     case 'seen': s.markSeen(); return send(res, 200, { ok: true })
+    case 'unread': s.markUnread(); return send(res, 200, { ok: true })
     case 'permission':
       s.answerPermission(String(body.requestId), body.decision, body.message)
       return send(res, 200, { ok: true })

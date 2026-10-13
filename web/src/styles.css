@@ -191,8 +191,9 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .head-actions .icon-tall.busy { color: var(--bad); }
 .menu-wrap { position: relative; }
 .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 140px; display: flex; flex-direction: column; padding: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, .18); }
-.head-actions .menu button { border: none; background: none; text-align: left; height: auto; padding: 6px 10px; border-radius: 5px; font-size: calc(13px * var(--fs, 1)); }
-.head-actions .menu button:hover { background: rgba(127, 127, 127, .12); }
+.head-actions .menu button, .ctx-menu button { border: none; background: none; text-align: left; height: auto; padding: 6px 10px; border-radius: 5px; font-size: calc(13px * var(--fs, 1)); }
+.head-actions .menu button:hover, .ctx-menu button:hover { background: rgba(127, 127, 127, .12); }
+.ctx-menu { position: fixed; right: auto; z-index: 60; }
 .toggle { display: flex; align-items: center; gap: 4px; font-size: calc(12.5px * var(--fs, 1)); }
 .status-pill { font-size: calc(11.5px * var(--fs, 1)); border-radius: 9px; padding: 0 7px; background: rgba(127, 127, 127, .12); display: inline-block; }
 .status-pill.st-working { background: rgba(212, 167, 44, .18); }

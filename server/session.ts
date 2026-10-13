@@ -394,6 +394,12 @@ export class Session {
     this.refresh()
   }
 
+  markUnread() {
+    if (this.meta.unread) return
+    this.meta.unread = true
+    this.refresh()
+  }
+
   // ---- output -----------------------------------------------------------
 
   private handle(msg: any) {
