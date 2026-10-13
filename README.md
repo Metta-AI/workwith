@@ -1,5 +1,7 @@
 # Codiner
 
+**[codiner.app](https://codiner.app)**
+
 A web UI over Claude Code where you reply the way you'd mark up a draft: select any
 passage of Claude's answer and comment on it in the margin, answer its questions
 where it asks them, and send everything you've queued in one go. Several sessions run
@@ -244,6 +246,7 @@ server/prompts.ts   what workers and the master are told
 server/agentsmd.ts  the global AGENTS.md: defaults, reading, editing
 shared/             types and ask-block parsing used by both sides
 web/src/            React UI: store.ts (state + socket), anchoring.ts (Marginer), components/
+site/               the codiner.app landing page (static; `npx wrangler deploy` from site/)
 ```
 
 ## License

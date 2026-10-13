@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codiner — reply to Claude Code the way you mark up a draft</title>
+<meta name="description" content="A web UI over Claude Code. Select any passage of Claude's answer and comment on it in the margin, answer its questions where it asks them, and run many sessions side by side. Runs on your own Claude Code login.">
+<meta property="og:title" content="Codiner">
+<meta property="og:description" content="Reply to Claude Code the way you mark up a draft. Comments in the margin, questions answered in place, many sessions side by side.">
+<meta property="og:image" content="https://codiner.app/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 -6 18 20' shape-rendering='crispEdges'><rect x='2' y='3' width='12' height='7' fill='%23D97757'/><rect x='0' y='5' width='2' height='2' fill='%23D97757'/><rect x='14' y='5' width='2' height='2' fill='%23D97757'/><rect x='5' y='4' width='1' height='2' fill='%232a1f1a'/><rect x='10' y='4' width='1' height='2' fill='%232a1f1a'/><rect x='3' y='10' width='1' height='2' fill='%23D97757'/><rect x='5' y='10' width='1' height='2' fill='%23D97757'/><rect x='10' y='10' width='1' height='2' fill='%23D97757'/><rect x='12' y='10' width='1' height='2' fill='%23D97757'/></svg>">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #faf9f6; --fg: #23201c; --muted: #7a746a; --line: #e3dfd6; --panel: #f2f0eb; --card: #fff;
+    --accent: #c96442; --accent-ink: #fff; --accent-soft: #f6e3da;
+    --hl: rgba(255, 196, 0, .38); --warn: #d4a72c; --warn-soft: #fbf3dc; --blue: #4c8dff; --ok: #3fb950;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1d1c1a; --fg: #ebe7df; --muted: #9a948a; --line: #3a3732; --panel: #252420; --card: #2c2a26;
+      --accent: #e08a6a; --accent-ink: #1a1a1a; --accent-soft: #3d2a22; --hl: rgba(255, 196, 0, .30); --warn-soft: #3a3220;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  a { color: var(--accent); }
+  .wrap { max-width: 64rem; margin: 0 auto; padding: 0 1.5rem; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 1.2rem 0; }
+  .brand { display: flex; align-items: center; gap: .5rem; font-weight: 700; text-decoration: none; color: var(--fg); font-size: 1.05rem; }
+  nav a { color: var(--muted); text-decoration: none; margin-left: 1.4rem; font-size: .95rem; }
+  nav a:hover { color: var(--fg); }
+
+  .hero { padding: 3rem 0 1rem; max-width: 42rem; }
+  h1 { font-size: clamp(2rem, 5vw, 3rem); line-height: 1.1; margin: 0 0 1rem; letter-spacing: -.01em; }
+  mark { background: var(--hl); color: inherit; padding: 0 .12em; border-radius: .2em; }
+  .lede { font-size: 1.2rem; color: var(--muted); margin: 0 0 1.6rem; }
+  .cta { display: flex; flex-wrap: wrap; gap: .7rem; align-items: center; }
+  .btn { display: inline-flex; align-items: center; gap: .5rem; background: var(--accent); color: var(--accent-ink); text-decoration: none; font-weight: 600; padding: .75rem 1.2rem; border-radius: .7rem; }
+  .btn.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+  .note { font-size: .9rem; color: var(--muted); }
+
+  section { padding: 2.5rem 0; border-top: 1px solid var(--line); }
+  h2 { font-size: 1.55rem; margin: 0 0 1rem; letter-spacing: -.01em; }
+  h3 { font-size: 1.05rem; margin: 0 0 .4rem; }
+  p { margin: 0 0 1rem; }
+  pre { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.2rem; overflow-x: auto; font: 14px/1.6 var(--mono); }
+  code { font: .92em var(--mono); background: rgba(128,128,128,.14); padding: .05em .35em; border-radius: .3em; }
+  pre code { background: none; padding: 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1.4rem; margin-top: 1.4rem; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 1.2rem 1.3rem; }
+  .tile p:last-child { margin: 0; }
+  .tile .tag { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  figcaption { font-size: .9rem; color: var(--muted); margin: .7rem 0 0; }
+  table { border-collapse: collapse; margin-top: 1.2rem; font-size: .95rem; width: 100%; }
+  th, td { border-bottom: 1px solid var(--line); padding: .55rem .6rem; text-align: left; vertical-align: top; }
+  td:first-child { white-space: nowrap; }
+
+  /* The drawn copy of the app */
+  .app { margin: 2.2rem 0 0; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; box-shadow: 0 18px 50px rgba(0,0,0,.12); background: var(--bg); display: grid; grid-template-columns: 13rem 1fr; font-size: 15px; line-height: 1.55; }
+  .side { background: var(--panel); border-right: 1px solid var(--line); padding: .9rem .7rem; display: flex; flex-direction: column; gap: .2rem; }
+  .side .dir { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: .6rem .4rem .2rem; }
+  .sess { display: flex; align-items: center; gap: .5rem; padding: .3rem .4rem; border-radius: 8px; font-size: .88rem; }
+  .sess.on { background: var(--card); box-shadow: 0 1px 0 var(--line); }
+  .sess span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .main { display: grid; grid-template-columns: 1fr 15rem; gap: 1.2rem; padding: 1.2rem 1.4rem 1.4rem; min-width: 0; }
+  .msg { min-width: 0; }
+  .you { background: var(--panel); border-radius: 10px; padding: .55rem .8rem; margin-bottom: 1rem; font-size: .92rem; }
+  .answer { border-left: 3px solid var(--accent); padding: .1rem 0 .1rem .8rem; margin-bottom: .9rem; }
+  .answer p { margin: 0; }
+  .consider { background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); border-radius: 10px; padding: .6rem .8rem; margin-bottom: .9rem; position: relative; }
+  .consider b { display: block; margin-bottom: .2rem; }
+  .consider p { margin: 0 0 .5rem; font-size: .92rem; }
+  .consider .x, .ask .x { position: absolute; top: .45rem; right: .6rem; color: var(--muted); font-size: .9rem; }
+  .small-btn { display: inline-block; font-size: .8rem; border: 1px solid var(--line); background: var(--card); border-radius: 6px; padding: .1rem .55rem; margin-right: .3rem; }
+  .ask { border: 1px solid color-mix(in srgb, var(--blue) 45%, transparent); border-radius: 10px; padding: .6rem .8rem; margin-bottom: .9rem; position: relative; }
+  .ask p { margin: 0 0 .45rem; font-weight: 600; font-size: .95rem; }
+  .chip { display: inline-block; font-size: .85rem; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: .15rem .7rem; margin: 0 .3rem .3rem 0; }
+  .chip.picked { border-color: var(--blue); color: var(--blue); }
+  .details { color: var(--muted); font-size: .92rem; margin-bottom: .9rem; }
+  .run { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .run .head { display: flex; justify-content: space-between; align-items: center; padding: .4rem .7rem; font-size: .88rem; font-weight: 600; background: var(--panel); }
+  .run code { display: block; padding: .5rem .7rem; background: none; font-size: .82rem; }
+  .react { position: relative; }
+  .react::before { content: "💪"; position: absolute; left: -2.1rem; top: 0; font-size: .95rem; }
+  .margin { position: relative; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: .55rem .7rem; font-size: .88rem; box-shadow: 0 6px 18px rgba(0,0,0,.08); }
+  .card .q { color: var(--muted); border-left: 2px solid var(--hl); padding-left: .5rem; margin-bottom: .35rem; font-size: .82rem; }
+  .card.c1 { margin-top: 4.4rem; }
+  .card.c2 { margin-top: 1rem; }
+  .caret { display: inline-block; width: 1px; height: 1em; background: var(--fg); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .composer { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--line); border-radius: 10px; padding: .5rem .5rem .5rem .8rem; background: var(--card); color: var(--muted); font-size: .9rem; }
+  .composer .btn { padding: .35rem .9rem; font-size: .85rem; border-radius: .5rem; }
+  @media (max-width: 52rem) {
+    .app { grid-template-columns: 1fr; }
+    .side { display: none; }
+    .main { grid-template-columns: 1fr; }
+    .card.c1, .card.c2 { margin-top: .6rem; }
+    .react::before { display: none; }
+  }
+
+  /* Critters */
+  .crowd { display: flex; flex-wrap: wrap; gap: 1.2rem 1.6rem; align-items: flex-end; margin: 1.6rem 0 .4rem; }
+  .crowd figure { margin: 0; text-align: center; font-size: .8rem; color: var(--muted); }
+  .crowd svg { display: block; margin: 0 auto .3rem; image-rendering: pixelated; }
+  .walk .leg-a { animation: step .5s steps(1) infinite; }
+  .walk .leg-b { animation: step .5s steps(1) infinite .25s; }
+  @keyframes step { 50% { transform: translateY(-1px); } }
+  .badge-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .8rem; margin-top: 1rem; }
+  .badge-row div { display: flex; align-items: center; gap: .6rem; font-size: .92rem; }
+
+  .faq details { border-bottom: 1px solid var(--line); padding: .8rem 0; }
+  .faq summary { cursor: pointer; font-weight: 600; }
+  .faq details p { margin: .6rem 0 0; color: var(--muted); }
+  .sibling { display: flex; gap: 1.2rem; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 1.2rem 1.4rem; }
+  .sibling .em { font-size: 2.2rem; }
+  .sibling p { margin: 0; }
+  footer { padding: 2.5rem 0 3rem; color: var(--muted); font-size: .92rem; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; }
+</style>
+
+<div class="wrap">
+  <header>
+    <a class="brand" href="/"><span data-critter='{"size":26}'></span> Codiner</a>
+    <nav><a href="#replying">Replying</a><a href="#sessions">Sessions</a><a href="#install">Install</a><a href="https://github.com/huttj/codiner">GitHub</a></nav>
+  </header>
+
+  <div class="hero">
+    <h1>Reply to Claude Code the way you <mark>mark up a draft</mark>.</h1>
+    <p class="lede">Codiner is a web UI over Claude Code. Select any passage of Claude's answer and comment on it in the margin. Answer its questions where it asks them. Send everything in one go. Run many sessions side by side, each with a small critter that shows what it is doing.</p>
+    <div class="cta">
+      <a class="btn" href="#install">Install</a>
+      <a class="btn ghost" href="https://github.com/huttj/codiner">Source on GitHub</a>
+      <span class="note">Free and open source. Runs on your own Claude Code login.</span>
+    </div>
+  </div>
+
+  <figure>
+    <div class="app" aria-label="A drawing of the Codiner window: a sidebar of sessions, a reply from Claude with a highlighted passage, and a comment card in the margin">
+      <aside class="side">
+        <div class="dir">~/Projects/site</div>
+        <div class="sess on"><span data-critter='{"color":"ocean","hat":"beret","held":"pencil","status":"asking","size":22}'></span><span>Landing page</span></div>
+        <div class="sess"><span data-critter='{"color":"moss","hat":"hard-hat","walk":true,"size":22}'></span><span>Fix the build</span></div>
+        <div class="dir">~/Projects/api</div>
+        <div class="sess"><span data-critter='{"color":"grape","hat":"wizard","eyewear":"round-glasses","status":"permission","size":22}'></span><span>Migrate to Postgres</span></div>
+        <div class="sess"><span data-critter='{"color":"gold","face":"moustache","neck":"bowtie","status":"waiting","size":22}'></span><span>Rate limits</span></div>
+        <div class="sess"><span data-critter='{"color":"slate","held":"coffee","tired":true,"size":22}'></span><span>Long refactor</span></div>
+      </aside>
+      <div class="main">
+        <div class="msg">
+          <div class="you">Can we ship the pricing page today?</div>
+          <div class="answer"><p>Yes. The page builds and the tests pass. <mark>I left the annual plan out, because the checkout cannot take it yet.</mark></p></div>
+          <div class="consider"><span class="x">✕</span><b>The prices on the page are from June</b><p class="react">Sales changed the Team price in August. Check the new figure with them before you publish.</p><span class="small-btn">Reply</span><span class="small-btn">Done</span></div>
+          <div class="ask"><span class="x">✕</span><p>Where should the page go?</p><span class="chip picked">/pricing</span><span class="chip">/plans</span><span class="chip">Somewhere else…</span></div>
+          <div class="details">▸ Every file changed</div>
+          <div class="run"><div class="head">Restart the dev server <span><span class="small-btn">Run in Terminal</span><span class="small-btn">Copy</span></span></div><code>npm run dev</code></div>
+        </div>
+        <div class="margin">
+          <div class="card c1"><div class="q">I left the annual plan out…</div>Fine for today. Put it behind a flag so we can turn it on next week.<span class="caret"></span></div>
+          <div class="card c2"><div class="q">Sales changed the Team price</div>💪</div>
+        </div>
+        <div class="composer"><span>2 comments, 1 answer, 1 reaction</span><span class="btn">Send</span></div>
+      </div>
+    </div>
+    <figcaption>A drawing, not a screenshot. Comments sit in the margin, level with their passage. Items to consider, questions and commands each look different. Everything goes out in one message.</figcaption>
+  </figure>
+
+  <section id="replying">
+    <h2>Reply in the margin</h2>
+    <p>A chat box makes you quote by hand. Codiner lets you select a passage of Claude's answer and type your note beside it, the way you review a draft. Each note goes to Claude as the quoted passage with your words under it:</p>
+<pre><code>&gt; I left the annual plan out, because the checkout cannot take it yet.
+
+Fine for today. Put it behind a flag so we can turn it on next week.
+
+&gt; Sales changed the Team price in August.
+
+💪</code></pre>
+    <div class="grid">
+      <div class="tile"><span class="tag">Comments</span><h3>Select, then type</h3><p>A comment card opens in the right margin, level with the passage. Cards stack so they never overlap. Sent comments stay as read-only cards.</p></div>
+      <div class="tile"><span class="tag">Reactions</span><h3>An emoji on any paragraph</h3><p>Move the pointer to a paragraph and click the faint emoji at its left. Press and hold for your most used ones. A reaction on an item counts as a reply to it.</p></div>
+      <div class="tile"><span class="tag">One send</span><h3>Nothing slips past</h3><p>A panel lists the open questions and items. If you send while some are still open, Codiner tells you first. Claude gets one line for the items you set aside.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Five kinds of content</h2>
+    <p>Codiner tells Claude to mark each part of its reply. Each kind looks different, so you can see at a glance what needs you.</p>
+    <table>
+      <tr><td><b>Answer</b></td><td>The direct answer, first, marked in the accent colour.</td></tr>
+      <tr><td><b>Details</b></td><td>Supporting detail, folded to its title until you open it.</td></tr>
+      <tr><td><b>Consider</b></td><td>A problem, risk or trade-off, as an amber card with Reply and Dismiss. Tasks for you get a Done button.</td></tr>
+      <tr><td><b>Ask</b></td><td>A question in place, with suggested answers to click and a box for your own.</td></tr>
+      <tr><td><b>Run</b></td><td>A command you must run yourself, with <b>Run in Terminal</b> and <b>Copy</b>. The exit code and output go back to Claude.</td></tr>
+    </table>
+  </section>
+
+  <section id="sessions">
+    <h2>Many sessions, one critter each</h2>
+    <p>Run sessions side by side, grouped by folder. Each Claude dresses its own critter, so you can tell them apart. The pose shows the status. The face shows how full the context is: the eyes droop, it sweats, then it falls asleep.</p>
+    <div class="crowd" id="crowd"></div>
+    <div class="badge-row">
+      <div><span data-critter='{"walk":true,"size":30}'></span> Working</div>
+      <div><span data-critter='{"status":"permission","size":30}'></span> Needs permission</div>
+      <div><span data-critter='{"status":"asking","size":30}'></span> Has a question</div>
+      <div><span data-critter='{"status":"waiting","size":30}'></span> Your turn</div>
+      <div><span data-critter='{"tired":true,"size":30}'></span> Context filling</div>
+      <div><span data-critter='{"spent":true,"size":30}'></span> Time to compact</div>
+    </div>
+    <div class="grid">
+      <div class="tile"><span class="tag">Master agent</span><h3>One Claude to watch the rest</h3><p>The Master view shows every session as a card, beside a chat with a separate Claude. It can read, message, start and compact the other sessions. Its messages land in an inbox for you to send, unless you turn on Auto-send.</p></div>
+      <div class="tile"><span class="tag">History</span><h3>Pick up any conversation</h3><p><b>Resume…</b> lists every Claude Code conversation on your machine, including the ones you started in a terminal. Edit or delete a sent message, and Claude forgets everything after it.</p></div>
+      <div class="tile"><span class="tag">Slash commands</span><h3>Your skills, your commands</h3><p>Type <code>/</code> for the commands of the session, with descriptions. A message that is only a slash command runs as if you typed it at the <code>claude</code> prompt.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>It runs on your Claude Code login</h2>
+    <p>Each session is a real <code>claude</code> process, driven with the same headless protocol as the Agent SDK. It uses your subscription, your settings, your <code>CLAUDE.md</code>, your skills and your MCP servers. Codiner removes API keys from the environment of the process, so it cannot bill per token by accident. The sidebar shows your 5-hour and 7-day usage.</p>
+    <p>The server listens on <code>127.0.0.1</code> only and rejects requests from other origins. A web page you visit cannot reach it.</p>
+  </section>
+
+  <section id="install">
+    <h2>Install</h2>
+    <p>You need Node 23.6 or later and the <code>claude</code> CLI, logged in.</p>
+<pre><code>git clone https://github.com/huttj/codiner
+cd codiner
+npm install
+npm start          # then open http://localhost:4545</code></pre>
+    <p class="note">Use <code>npm run dev</code> to work on Codiner itself. The UI reloads as you edit.</p>
+  </section>
+
+  <section>
+    <div class="sibling">
+      <span class="em">✍️</span>
+      <p><b>From the maker of <a href="https://marginer.app">Marginer</a>.</b> Codiner's comments use Marginer's text anchoring and its <code>&gt; quote</code> + note format. Marginer does the same for any web page: highlight, add a note or a reaction, and paste the notes anywhere.</p>
+    </div>
+  </section>
+
+  <section class="faq">
+    <h2>Questions</h2>
+    <details><summary>Does it cost anything?</summary><p>Codiner is free and MIT licensed. It uses your own Claude Code plan, the same as the terminal does.</p></details>
+    <details><summary>Is my code sent anywhere new?</summary><p>No. Codiner runs on your machine and talks only to the <code>claude</code> processes it starts. Claude Code talks to Anthropic as it always does.</p></details>
+    <details><summary>Can I still use the terminal?</summary><p>Yes. Claude Code keeps its own transcripts, so <code>claude --resume</code> picks up any Codiner session, and Codiner can open any terminal session.</p></details>
+    <details><summary>Can I tell every session how to write?</summary><p>Yes. <code>~/.codiner/AGENTS.md</code> goes into the system prompt of every session. Edit it in Settings. By default it asks Claude to write in Simplified Technical English.</p></details>
+    <details><summary>Does it work on Windows or Linux?</summary><p>The server is plain Node, so it should. <b>Run in Terminal</b> and the native folder dialog are macOS only.</p></details>
+  </section>
+
+  <footer>
+    <span>Open source: <a href="https://github.com/huttj/codiner">github.com/huttj/codiner</a> · MIT</span>
+    <span>Also: <a href="https://marginer.app">Marginer</a>, notes in the margin of any page.</span>
+  </footer>
+</div>
+
+<script>
+// The critter, as in web/src/components/Mascot.tsx and looks.tsx (a subset of the looks).
+const BODY = { classic: '#D97757', ocean: '#3f8fd6', moss: '#5e9e4f', grape: '#8a5cc7', bubblegum: '#e57aa8', slate: '#7d8a99', gold: '#d9a521', midnight: '#3b4a7a' }
+const K = '#222', BROWN = '#3a2a1f', RED = '#e5534b', BLUE = '#4c8dff', YELLOW = '#ffd54a', GREEN = '#3fb950', PINK = '#ff6fae', WHITE = '#ffffff', GOLD = '#f2c230'
+const D = {
+  hat: {
+    'top-hat': [[1, 2, 14, 1, K], [4, -3, 8, 5, K], [4, 0, 8, 1, '#c0392b']],
+    beret: [[2, 1, 12, 2, '#c0392b'], [4, 0, 9, 1, '#c0392b'], [8, -1, 1, 1, '#c0392b']],
+    wizard: [[7, -6, 2, 1, '#6c4bd1'], [6, -5, 4, 2, '#6c4bd1'], [5, -3, 6, 2, '#6c4bd1'], [4, -1, 8, 3, '#6c4bd1'], [2, 2, 12, 1, '#5a3cb8'], [6, -2, 1, 1, YELLOW], [9, 0, 1, 1, YELLOW]],
+    crown: [[3, 1, 10, 2, GOLD], [3, -1, 2, 2, GOLD], [7, -2, 2, 3, GOLD], [11, -1, 2, 2, GOLD], [5, 1, 1, 1, RED], [7, 1, 2, 1, BLUE], [10, 1, 1, 1, GREEN]],
+    party: [[7, -5, 2, 1, YELLOW], [7, -4, 2, 1, PINK], [6, -3, 4, 2, PINK], [5, -1, 6, 2, PINK], [4, 1, 8, 2, PINK], [6, -2, 4, 1, YELLOW], [4, 1, 8, 1, YELLOW]],
+    'hard-hat': [[5, -1, 6, 1, '#f5b400'], [4, 0, 8, 2, '#f5b400'], [2, 2, 12, 1, '#d99a00'], [7, -1, 2, 1, '#d99a00']],
+    headphones: [[2, -1, 12, 1, '#333'], [1, 0, 1, 2, '#333'], [14, 0, 1, 2, '#333'], [1, 2, 2, 3, RED], [13, 2, 2, 3, RED]],
+    viking: [[5, -1, 6, 1, '#9aa3ad'], [4, 0, 8, 2, '#9aa3ad'], [3, 2, 10, 1, '#6b737c'], [2, 0, 1, 2, '#f1e6c8'], [1, -2, 1, 2, '#f1e6c8'], [13, 0, 1, 2, '#f1e6c8'], [14, -2, 1, 2, '#f1e6c8']],
+    flower: [[7, -1, 1, 1, PINK], [6, 0, 1, 1, PINK], [8, 0, 1, 1, PINK], [7, 1, 1, 1, PINK], [7, 0, 1, 1, YELLOW], [7, 2, 1, 1, GREEN]],
+  },
+  hair: {
+    mohawk: [[7, -2, 2, 5, RED]],
+    afro: [[3, -2, 10, 1, '#2b1d14'], [2, -1, 12, 1, '#2b1d14'], [1, 0, 14, 3, '#2b1d14']],
+    pigtails: [[3, 2, 10, 1, '#e5a050'], [4, 1, 8, 1, '#e5a050'], [0, 2, 2, 2, '#e5a050'], [14, 2, 2, 2, '#e5a050'], [2, 2, 1, 1, PINK], [13, 2, 1, 1, PINK]],
+  },
+  eyewear: {
+    'round-glasses': [[4, 3, 3, 1, K], [4, 6, 3, 1, K], [3, 4, 1, 2, K], [7, 4, 1, 2, K], [9, 3, 3, 1, K], [9, 6, 3, 1, K], [8, 4, 1, 2, K], [12, 4, 1, 2, K]],
+    shades: [[3, 4, 10, 2, '#111'], [2, 4, 1, 1, '#111'], [13, 4, 1, 1, '#111'], [4, 4, 1, 1, '#555'], [9, 4, 1, 1, '#555']],
+    monocle: [[9, 3, 3, 1, '#c9a227'], [9, 6, 3, 1, '#c9a227'], [8, 4, 1, 2, '#c9a227'], [12, 4, 1, 2, '#c9a227'], [12, 7, 1, 2, '#c9a227']],
+  },
+  face: {
+    moustache: [[5, 7, 6, 1, BROWN]],
+    blush: [[3, 6, 2, 1, '#ff9a9a'], [11, 6, 2, 1, '#ff9a9a']],
+    smile: [[6, 7, 1, 1, '#2a1f1a'], [7, 8, 2, 1, '#2a1f1a'], [9, 7, 1, 1, '#2a1f1a']],
+  },
+  neck: {
+    bowtie: [[5, 8, 2, 2, RED], [7, 8, 2, 2, '#b83b34'], [9, 8, 2, 2, RED]],
+    scarf: [[2, 8, 12, 2, GREEN], [4, 8, 1, 2, WHITE], [8, 8, 1, 2, WHITE], [11, 10, 2, 2, GREEN]],
+    cape: { back: [[1, 3, 14, 9, '#c0392b']] },
+  },
+  held: {
+    coffee: [[16, 4, 2, 3, BLUE], [16, 2, 1, 1, '#c8c8c8'], [17, 1, 1, 1, '#c8c8c8']],
+    wand: [[16, 5, 1, 1, '#5c3317'], [17, 4, 1, 1, '#5c3317'], [17, 2, 1, 1, YELLOW], [16, 1, 1, 1, YELLOW]],
+    balloon: [[15, -3, 3, 3, RED], [16, 0, 1, 5, '#999']],
+    pencil: [[16, 1, 1, 1, '#ff9a9a'], [16, 2, 1, 4, '#f5b400'], [16, 6, 1, 1, '#333']],
+    lightsaber: [[16, -2, 1, 6, '#7fe3ff'], [16, 4, 1, 2, '#555']],
+    flag: [[16, -1, 1, 8, '#666'], [17, -1, 1, 2, RED]],
+  },
+}
+const BADGES = { permission: ['!', '#f5b400', '#2a1f1a'], asking: ['?', '#4c8dff', '#fff'], waiting: ['•', '#3fb950', '#fff'] }
+const r = ([x, y, w, h, f], cls = '') => `<rect${cls ? ` class="${cls}"` : ''} x="${x}" y="${y}" width="${w}" height="${h}" fill="${f}"/>`
+
+function critter(o) {
+  const body = BODY[o.color || 'classic'], ink = o.color === 'midnight' ? '#e8ecff' : '#2a1f1a', size = o.size || 48
+  const layers = ['face', 'hair', 'neck', 'eyewear', 'hat', 'held'].map((s) => o[s] && D[s][o[s]]).filter(Boolean)
+  const back = layers.flatMap((l) => Array.isArray(l) ? [] : l.back || [])
+  const front = layers.flatMap((l) => Array.isArray(l) ? l : l.front || [])
+  const eyes = o.spent ? [[4, 6, 3, 1, ink], [9, 6, 3, 1, ink]]
+    : o.tired ? [[4, 5, 3, 1, ink], [5, 6, 1, 1, ink], [9, 5, 3, 1, ink], [10, 6, 1, 1, ink]]
+    : [[5, 4, 1, 2, ink], [10, 4, 1, 2, ink]]
+  const b = BADGES[o.status]
+  return `<svg width="${size}" height="${size * 20 / 18}" viewBox="0 -6 18 20" shape-rendering="crispEdges" class="${o.walk ? 'walk' : ''}" style="filter:saturate(${o.spent ? .5 : o.tired ? .7 : 1})" aria-hidden="true">`
+    + back.map((p) => r(p)).join('')
+    + r([2, 3, 12, 7, body]) + r([0, 5, 2, 2, body]) + r([14, 5, 2, 2, body])
+    + eyes.map((p) => r(p)).join('') + front.map((p) => r(p)).join('')
+    + r([3, 10, 1, 2, body], 'leg-a') + r([5, 10, 1, 2, body], 'leg-b') + r([10, 10, 1, 2, body], 'leg-a') + r([12, 10, 1, 2, body], 'leg-b')
+    + (o.tired && !o.spent ? r([14, 2, 1, 2, '#7cc4ff']) : '')
+    + (o.spent ? '<text x="14" y="3" font-size="4" fill="#9aa">z</text>' : '')
+    + (b ? `<rect x="13" y="0" width="5" height="5" rx="1" fill="${b[1]}" shape-rendering="auto"/><text x="15.5" y="4" font-size="4.2" font-weight="700" text-anchor="middle" fill="${b[2]}" font-family="system-ui">${b[0]}</text>` : '')
+    + '</svg>'
+}
+
+const CROWD = [
+  { color: 'classic', hat: 'top-hat', neck: 'bowtie', held: 'wand' },
+  { color: 'ocean', hat: 'beret', held: 'pencil' },
+  { color: 'moss', hat: 'hard-hat', face: 'smile', walk: true },
+  { color: 'grape', hat: 'wizard', eyewear: 'round-glasses' },
+  { color: 'bubblegum', hair: 'pigtails', face: 'blush', held: 'balloon' },
+  { color: 'gold', hat: 'crown', neck: 'cape', held: 'flag' },
+  { color: 'slate', hat: 'headphones', eyewear: 'shades', held: 'coffee' },
+  { color: 'midnight', hat: 'viking', face: 'moustache', held: 'lightsaber' },
+  { color: 'classic', hair: 'afro', eyewear: 'monocle', neck: 'scarf' },
+  { color: 'moss', hat: 'party', face: 'smile', walk: true },
+  { color: 'ocean', hair: 'mohawk', eyewear: 'shades' },
+  { color: 'grape', hat: 'flower', face: 'blush' },
+]
+document.getElementById('crowd').innerHTML = CROWD.map((o) => `<figure>${critter({ ...o, size: 54 })}</figure>`).join('')
+for (const el of document.querySelectorAll('[data-critter]')) el.innerHTML = critter(JSON.parse(el.dataset.critter))
+</script>
+</html>
