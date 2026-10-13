@@ -226,9 +226,6 @@ function createSession(o: { cwd: string; title?: string; model?: string | null; 
     // Your MCP servers start off, except the ones you keep always on.
     ...(settings.mcpStartOff !== false ? { mcp: { strict: true as const, on: [...(settings.mcpAlways ?? [])] } } : {}),
   }))
-  // Learn this folder's servers before Claude needs their names.
-  // The ones always on reach a process that started before the probe ended.
-  if (s.meta.mcp) probe(cwd).then(() => { if (s.meta.mcp?.on.length) s.setMcp(configsFor(cwd, s.meta.mcp.on)) }).catch(() => {})
   metaChanged()
   return s
 }
@@ -353,7 +350,7 @@ function mcpPrompt(meta: SessionMeta): string {
   const names = serversFor(meta.cwd).map((s) => s.name)
   const may = settings.mcpClaude !== false
   return `\n\n## MCP servers\nThis session started with the user's MCP servers off, to keep its context small.`
-    + (names.length ? ` These are available: ${names.join(', ')}.` : ' Their names are not known yet; use_mcp_server lists them.')
+    + (names.length ? ` These are available: ${names.join(', ')}.` : ' Codiner does not know their names yet: call use_mcp_server with no name.')
     + (meta.mcp.on.length ? ` Turned on: ${meta.mcp.on.join(', ')}.` : '')
     + ` When the task needs one, turn it on with the use_mcp_server tool${may ? '' : ', which asks the user first'}, then use its tools (they may come as deferred tools: load them with ToolSearch). Do not turn on a server the task does not need.\n`
 }
@@ -368,11 +365,16 @@ function mcpTool(id: string): Tool {
       if (!m.mcp) return 'This session has all of the user\'s MCP servers on already.'
       const want = String(args?.name ?? '').trim().toLowerCase().replace(/^claude\.ai /, '')
       const find = () => serversFor(m.cwd).find((x) => x.name.toLowerCase().replace(/^claude\.ai /, '') === want)
-      let server = want ? find() : undefined
-      if (want && !server) { await probe(m.cwd).catch(() => {}); server = find() }
+      const server = want ? find() : undefined
       const list = serversFor(m.cwd).map((x) => `${x.name}${m.mcp!.on.includes(x.name) ? ' (on)' : ''}${x.status === 'needs-auth' ? ' (needs sign-in)' : ''}`).join(', ')
-      if (!want) return list ? `Servers: ${list}.` : 'The user has no other MCP servers.'
-      if (!server) return `There is no server called "${args.name}". Servers: ${list || 'none'}.`
+      // Codiner looks for servers only when the user presses Refresh: an unknown one may be new.
+      const refresh = 'Codiner may not know about it yet: its MCP chip, at the top of this session, now asks the user to press Refresh. Ask them to, then try again.'
+      if (!want && list) return `Servers: ${list}.`
+      if (!server) {
+        m.mcp.missing = want ? String(args.name) : 'a list of servers'
+        metaChanged()
+        return want ? `There is no server called "${args.name}" that Codiner knows (it knows: ${list || 'none'}). ${refresh}` : `Codiner knows no MCP servers yet. ${refresh}`
+      }
       if (server.status === 'needs-auth') return `${server.name} needs the user to sign in first, in their claude.ai connector settings. Ask them to do that.`
       if (!m.mcp.on.includes(server.name)) m.mcp.on.push(server.name)
       s.setMcp(configsFor(m.cwd, m.mcp.on))
@@ -691,7 +693,15 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   // Your MCP servers in a folder, found by a probe (server/mcpservers.ts).
   if (a === 'mcp' && method === 'POST') {
     const cwd = path.resolve(expandHome(String((await json(req)).cwd ?? '~')))
-    try { return send(res, 200, await probe(cwd, true)) } catch (e) { throw new HttpError(500, (e as Error).message) }
+    let found
+    try { found = await probe(cwd) } catch (e) { throw new HttpError(500, (e as Error).message) }
+    // Sessions there stop asking, and get the configs of servers turned on before Codiner knew them.
+    for (const x of sessions.values()) if (x.meta.cwd === cwd && x.meta.mcp) {
+      delete x.meta.mcp.missing
+      if (x.meta.mcp.on.length) x.setMcp(configsFor(cwd, x.meta.mcp.on))
+    }
+    metaChanged()
+    return send(res, 200, found)
   }
   if (a === 'context' && method === 'GET') {
     const cwd = path.resolve(expandHome(url.searchParams.get('cwd') || '~'))
@@ -822,7 +832,6 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   if (b === 'events' && method === 'GET') return send(res, 200, s.getEvents())
   if (b === 'commands' && method === 'GET') return send(res, 200, commands.get(id) ?? lastCommands)
   if (b === 'mcp' && method === 'GET') {
-    if (s.meta.kind === 'worker') probe(s.meta.cwd).catch(() => {})
     return send(res, 200, { servers: serversFor(s.meta.cwd), on: s.meta.mcp?.on ?? null })
   }
   if (b === 'notes' && !c && method === 'GET') return send(res, 200, { path: notesPath(s.meta), text: readNotes(s.meta) })

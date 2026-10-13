@@ -64,8 +64,9 @@ export type SessionMeta = {
   // The first API call's prompt: Claude Code's system prompt and tools, and how much of
   // it other sessions had already cached. What a new session would start from.
   base?: { total: number; read: number }
-  // Started with your MCP servers off (server/mcpservers.ts); on: the ones turned on since.
-  mcp?: { strict: true; on: string[] }
+  // Started with your MCP servers off (server/mcpservers.ts); on: the ones turned on since;
+  // missing: a server Claude asked for that Codiner doesn't know, until you press Refresh.
+  mcp?: { strict: true; on: string[]; missing?: string }
   // The model it will probably run, until Claude Code reports the real one into model.
   expectedModel?: string
   // Set by a rewind: the next start resumes claudeSessionId cut at this entry, as a fork.

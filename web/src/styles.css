@@ -675,3 +675,4 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .mcp-table { border-collapse: collapse; font-size: calc(13px * var(--fs, 1)); }
 .mcp-table th { text-align: left; font-weight: 500; color: var(--muted); padding: 2px 12px 4px 0; }
 .mcp-table td { padding: 3px 12px 3px 0; border-top: 1px solid var(--line); }
+.mcp-pill.ask { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }

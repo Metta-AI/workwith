@@ -12,12 +12,14 @@ type Server = { name: string; status: string; scope: string; tools: number }
 export function McpPill({ m }: { m: SessionMeta }) {
   const [open, setOpen] = useState(false)
   if (m.kind !== 'worker' || !m.mcp) return null
-  const on = m.mcp.on
-  const tip = on.length
+  const on = m.mcp.on, missing = m.mcp.missing
+  const tip = missing
+    ? `Claude asked for ${missing === 'a list of servers' ? 'your MCP servers' : `"${missing}"`}, and Codiner does not know it. Codiner looks for servers only when you ask it to: click, then press Refresh.`
+    : on.length
     ? `MCP servers on in this session: ${on.join(', ')}. The others are off, to keep the context small.\n\nClaude can turn one on when the task needs it. Click to turn them on or off yourself.`
     : 'Your MCP servers are off in this session, to keep the context small. Claude can turn one on when the task needs it.\n\nClick to turn them on or off yourself.'
   return <>
-    <button className="cache-pill mcp-pill" data-tip={tip} onClick={() => setOpen(true)}>MCP {on.length}</button>
+    <button className={`cache-pill mcp-pill${missing ? ' ask' : ''}`} data-tip={tip} onClick={() => setOpen(true)}>{missing ? 'MCP · Refresh?' : `MCP ${on.length}`}</button>
     {open && <McpDialog m={m} onClose={() => setOpen(false)} />}
   </>
 }
@@ -48,8 +50,9 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
           let Claude turn it on when the task needs it. A server you turn on adds its tools to the end of the conversation,
           so the prompt cache stays warm.
         </p>
+        {m.mcp?.missing && <div className="notice">Claude asked for {m.mcp.missing === 'a list of servers' ? 'your MCP servers' : <b>{m.mcp.missing}</b>}. Press Refresh so that Codiner looks for your servers again, then tell Claude to try again.</div>}
         {err && <div className="notice error">{err}</div>}
-        {!servers ? <div className="muted">Looking for your servers…</div> : !servers.length ? <div className="muted">No MCP servers found.</div> : (
+        {!servers ? <div className="muted">Loading…</div> : !servers.length ? <div className="muted">Codiner knows no MCP servers here yet. Press Refresh to look for them.</div> : (
           <table className="mcp-table">
             <thead><tr><th>Server</th><th>Tools</th><th>This session</th><th>Every new session</th></tr></thead>
             <tbody>
@@ -65,7 +68,7 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
           </table>
         )}
         <div className="modal-actions">
-          <button className="link" disabled={busy} onClick={() => void look()}>{busy ? 'Looking…' : 'Look again'}</button>
+          <button className={m.mcp?.missing || servers?.length === 0 ? 'primary' : 'link'} disabled={busy} onClick={() => void look()} data-tip="Codiner starts Claude Code for a few seconds to list your MCP servers. It makes no API call.">{busy ? 'Looking…' : 'Refresh'}</button>
         </div>
       </div>
     </div>

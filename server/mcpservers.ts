@@ -6,8 +6,10 @@
 // tools reach Claude as a message added to the end, not as a changed prompt.
 //
 // The list and each server's config come from a probe: a `claude -p` that starts
-// without the strict flag, answers mcp_status and ends, with no API call. Kept per
-// folder, since project servers differ, in mcp-servers.json.
+// without the strict flag, answers mcp_status and ends, with no API call. It runs
+// only when you press Refresh in the MCP dialog: servers seldom change, and a
+// session that needs one Codiner doesn't know asks you to (SessionMeta.mcp.missing).
+// Kept per folder, since project servers differ, in mcp-servers.json.
 
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
@@ -18,7 +20,6 @@ import { childEnv } from './auth.ts'
 export type McpServer = { name: string; status: string; scope: string; tools: number; config: Record<string, unknown> }
 
 const FILE = path.join(DATA, 'mcp-servers.json')
-const FRESH = 10 * 60_000
 let known: Record<string, { at: number; servers: McpServer[] }> = (() => { try { return JSON.parse(fs.readFileSync(FILE, 'utf8')) } catch { return {} } })()
 const probing = new Map<string, Promise<McpServer[]>>()
 
@@ -33,9 +34,8 @@ export function serversFor(cwd: string): McpServer[] {
   return [...seen.values()]
 }
 
-// Probe `cwd` again unless a recent probe is at hand.
-export function probe(cwd: string, force = false): Promise<McpServer[]> {
-  if (!force && known[cwd] && Date.now() - known[cwd].at < FRESH) return Promise.resolve(known[cwd].servers)
+// Look for the servers of `cwd` again (one probe at a time per folder).
+export function probe(cwd: string): Promise<McpServer[]> {
   const running = probing.get(cwd)
   if (running) return running
   const p = run(cwd).then((servers) => {
