@@ -27,7 +27,7 @@ export function openItemsOf(events: Event[]): OpenItem[] {
 export function inboxParts(items: InboxItem[]): Part[] {
   const parts: Part[] = []
   for (const i of items) {
-    if (i.kind === 'answer' && i.key) parts.push({ kind: 'answer', askKey: i.key, question: i.label ?? '', choices: i.choices ?? [], text: i.text })
+    if (i.kind === 'answer' && i.key) parts.push({ kind: 'answer', askKey: i.key, question: i.label ?? '', choices: i.choices ?? [], text: i.text, ...(i.draft ? { draft: i.draft } : {}) })
     // No anchor pieces: the reply is to the whole item, not to a passage in it.
     else if (i.kind === 'reply' && i.key) parts.push({ kind: 'note', quote: i.label ?? '', text: i.text, itemKey: i.key, whole: true, anchor: { msg: i.key.split(':')[0], pieces: [] } })
   }

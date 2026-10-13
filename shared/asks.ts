@@ -9,7 +9,9 @@
 //
 // Lines starting with "- " are choices; everything else is the question.
 
-export type Ask = { id: string; question: string; options: string[] }
+// draft: a <draft> (shared/blocks.ts): text Claude wrote for you to edit and send back.
+// Its title is the question, and your text is the answer.
+export type Ask = { id: string; question: string; options: string[]; draft?: string }
 
 const FENCE = /^```ask\b([^\n]*)\n([\s\S]*?)^```[ \t]*$/gm
 
@@ -32,9 +34,12 @@ export function parseAsks(markdown: string, start = 0): Ask[] {
   return out
 }
 
-// The text Claude receives for an answer.
-export function formatAnswer(id: string, question: string, choices: string[] | undefined, text: string): string {
+// The text Claude receives for an answer. A draft that comes back as Claude wrote
+// it goes without its text, which Claude has; an edited one goes in full.
+export function formatAnswer(id: string, question: string, choices: string[] | undefined, text: string, draft?: 'same' | 'edited'): string {
   const q = question.split('\n')[0].slice(0, 200)
+  if (draft === 'same') return `**Draft \`${id}\`** ("${q}"): the user approved it as you wrote it.`
+  if (draft === 'edited') { const f = '~'.repeat(Math.max(3, ...[...text.matchAll(/^~{3,}/gm)].map((m) => m[0].length + 1))); return `**Draft \`${id}\`** ("${q}"), as the user edited it:\n${f}\n${text.trim()}\n${f}` }
   const lines = [`**Answer to your question \`${id}\`** ("${q}"):`]
   if (choices?.length) lines.push(`Chose: ${choices.join('; ')}`)
   if (text.trim()) lines.push(text.trim())

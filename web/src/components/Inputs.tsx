@@ -70,6 +70,7 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
     render(el, snap.v)
     select(el, snap.s, snap.e)
     activate(el)
+    reveal(el, snap.e === snap.v.length)
     emit(snap.v)
   }
   const undo = () => { if (past.current.length > 1) { future.current.push(past.current.pop()!); apply(past.current.at(-1)!) } }
@@ -86,6 +87,7 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
       if (sel && document.activeElement === el) select(el, sel[0], sel[1])
     }
     activate(el)
+    if (sel) reveal(el, sel[1] === v.length)
     if (v !== last.current) record(v, sel)
     emit(v)
   }
@@ -208,6 +210,37 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
       </div>
     </div>
   )
+}
+
+// Keep the caret in view, in the field and in whatever scrolls around it. Drawing
+// the text again loses the browser's own scrolling, and a new empty last line
+// gives the caret no box: at the end, the caret is at the bottom of the field.
+function reveal(el: HTMLElement, atEnd: boolean) {
+  const s = getSelection()
+  if (!s?.rangeCount || !el.contains(s.focusNode) || document.activeElement !== el) return
+  const caret = () => {
+    const r = s.getRangeAt(0).cloneRange()
+    r.collapse(false)
+    const box = r.getClientRects()[0]
+    if (box?.height) return box
+    const e = el.getBoundingClientRect()
+    return atEnd ? new DOMRect(e.left, e.bottom - 25, 0, 20) : null
+  }
+  const PAD = 6
+  if (atEnd) el.scrollTop = el.scrollHeight
+  else {
+    const b = caret(), e = el.getBoundingClientRect()
+    if (b && b.bottom > e.bottom - PAD) el.scrollTop += b.bottom - e.bottom + PAD
+    else if (b && b.top < e.top + PAD) el.scrollTop -= e.top + PAD - b.top
+  }
+  const b = caret()
+  if (!b) return
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    if (p.scrollHeight <= p.clientHeight || !/auto|scroll/.test(getComputedStyle(p).overflowY)) continue
+    const pb = p.getBoundingClientRect()
+    if (b.bottom > pb.bottom - PAD) p.scrollTop += b.bottom - pb.bottom + PAD
+    break
+  }
 }
 
 function endOf(el: HTMLElement): Range {

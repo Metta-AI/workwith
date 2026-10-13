@@ -12,7 +12,7 @@ import { inboxLabel } from '../../../shared/inbox.ts'
 import { renderInline } from '../util.ts'
 import { isReaction } from '../emoji.ts'
 import { Splitter, useWidth } from './Splitter.tsx'
-import { cacheOf, minutes, money, moneyLong, ofFresh, pct, spendOf, toggleMoney, useNow, usd } from '../cache.ts'
+import { cacheOf, limitLeft, minutes, money, moneyLong, ofFresh, pct, shareOf, spendOf, toggleMoney, useNow, usd } from '../cache.ts'
 import { ttlLabel } from '../../../shared/cache.ts'
 import { NotesPill } from './NotesDialog.tsx'
 
@@ -49,10 +49,10 @@ export function CachePill({ m }: { m: SessionMeta }) {
   const f = c.fresh
   const fresh = `A new session from the notes would cost about ${usd(f.first)} for its first message, then about ${usd(f.next)} a message (it starts at about ${kTokens(f.tokens)} tokens).`
     + (f.after == null ? ' So the new session does not cost less.' : f.after <= 1 ? ' So the new session costs less from its first message.' : ` So the new session costs less after about ${f.after} messages.`)
-  const title = `${here}\n\n${fresh} Both leave out what each reply adds.${costWarm == null ? '\n\nCodiner is still measuring how much of your 5-hour limit a dollar uses.' : ''}\n\nClick to show costs as a percentage, in dollars, or both.`
+  const title = `${here}\n\n${fresh} Both leave out what each reply adds.${costWarm == null ? '\n\nCodiner is still measuring how much of your 5-hour limit a dollar uses.' : ''}`
   return (
     <button className={`cache-pill${c.cold ? ' cold' : soon ? ' soon' : ' warm'}${c.blocked ? ' blocked' : ''}`} data-tip={title} onClick={toggleMoney}>
-      {busy ? 'Cache warm' : c.cold ? `Cache expired · ${money(c.dollars.cold, costCold)}` : `Cache warm · ${minutes(c.left)} · ${money(c.dollars.warm, costWarm)}`}
+      {busy ? 'Cache warm' : c.cold ? `Cache expired · ${money(c.dollars.cold)}` : `Cache warm · ${minutes(c.left)} · ${money(c.dollars.warm)}`}
     </button>
   )
 }
@@ -291,9 +291,9 @@ export function Composer({ m }: { m: SessionMeta }) {
         <div key={nudge} className={`cache-guard${nudge ? ' nudge' : ''}`}>
           <span>
             <b>The prompt cache expired {minutes(-(cache.left ?? 0))} ago.</b> This message writes {kTokens(m.context.used)} tokens to the cache again.{' '}
-            That costs about <button className="link" title="Show as a percentage, in dollars, or both" onClick={toggleMoney}><b>{moneyLong(cache.dollars.cold, cache.limit.cold)}</b></button>
-            {cache.limit.cold != null && cache.limit.left != null && state.money !== 'usd' && <> ({pct(cache.limit.left)} left)</>}, about {cache.times}× a message sent while the cache is warm ({moneyLong(cache.dollars.warm, cache.limit.warm)}).
-            {cache.limit.cold == null && <> Codiner is still measuring how much of your usage limit that is.</>}
+            That costs about <button className="link" title="Show in dollars, or as a share of your 5-hour or weekly limit" onClick={toggleMoney}><b>{moneyLong(cache.dollars.cold)}</b></button>
+            {state.money !== 'usd' && shareOf(cache.dollars.cold) != null && limitLeft() != null && <> ({pct(limitLeft()!)} left)</>}, about {cache.times}× a message sent while the cache is warm ({moneyLong(cache.dollars.warm)}).
+            {state.money !== 'usd' && shareOf(cache.dollars.cold) == null && <> Codiner is still measuring how much of your usage limit that is.</>}
           </span>
           <button className="primary" disabled={sending} onClick={() => void send(true)}>Send anyway</button>
         </div>

@@ -10,7 +10,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'rea
 import type { Token, Tokens } from 'marked'
 import DOMPurify from 'dompurify'
 import { parseAskBody, type Ask } from '../../../shared/asks.ts'
-import { askOf, commandOf, isTask, segmentsOf, type Segment } from '../../../shared/blocks.ts'
+import { askOf, commandOf, draftOf, isTask, segmentsOf, type Segment } from '../../../shared/blocks.ts'
 import type { Anchor } from '../../../shared/types.ts'
 import { marked, renderInline } from '../util.ts'
 import { anchorFromRange, rangesFor, setHighlights } from '../anchoring.ts'
@@ -39,10 +39,11 @@ type Piece =
 
 function piecesOf(text: string): Piece[] {
   // Block numbers run through the whole message; without sections they are the token indices.
-  let base = 0, asks = 0, considers = 0
+  let base = 0, asks = 0, considers = 0, drafts = 0
   const walk = (segs: Segment[]): Piece[] => segs.flatMap((s): Piece[] => {
     if (!('text' in s)) {
       if (s.kind === 'ask') return [{ kind: 'ask', block: base++, ask: askOf(s, asks++) }]
+      if (s.kind === 'draft') return [{ kind: 'ask', block: base++, ask: draftOf(s, drafts++) }]
       if (s.kind === 'run') return [{ kind: 'run', block: base++, title: s.title, command: commandOf(s), closed: s.closed }]
       const id = s.kind === 'consider' ? `c${++considers}` : ''
       return [{ kind: s.kind, title: s.title, id, block: base++, closed: s.closed, task: s.kind === 'consider' && isTask(s), pieces: walk(s.body) }]
@@ -95,6 +96,7 @@ export const AssistantMessage = memo(function AssistantMessage({ sid, msg, text,
     setHighlights(`s:${sid}:${msg}`, 'sent', sentAll.flatMap((a) => rangesFor(a, el)))
     return () => { setHighlights(`d:${sid}:${msg}`, 'draft', []); setHighlights(`s:${sid}:${msg}`, 'sent', []) }
   }, [noteKey, sentKey, pieces, sid, msg, live])
+  useCodeCopy(root, live)
 
   return (
     <div className={`assistant-text md${live ? ' streaming' : ''}`} ref={root} {...(live ? {} : { 'data-msg': msg, 'data-sid': sid })}>
@@ -314,6 +316,27 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
   })}</>
 }
 
+// A selection here starts a comment, so inline code (a URL, a password, an id) is
+// hard to copy by hand: a click copies it. Its cursor says so (styles.css).
+function useCodeCopy(root: React.RefObject<HTMLDivElement | null>, live: boolean) {
+  useEffect(() => {
+    const el = root.current
+    if (!el || live) return
+    const click = (e: MouseEvent) => {
+      const code = (e.target as Element).closest<HTMLElement>('code')
+      // Not code blocks, not code in a link, and not the end of a drag that selected some of it.
+      if (!code || code.closest('pre, a') || !el.contains(code) || !getSelection()?.isCollapsed) return
+      void navigator.clipboard.writeText(code.textContent ?? '').then(() => {
+        // A flash of the accent colour that fades.
+        code.classList.add('copied')
+        setTimeout(() => code.classList.remove('copied'), 150)
+      })
+    }
+    el.addEventListener('click', click)
+    return () => el.removeEventListener('click', click)
+  }, [root, live])
+}
+
 function Pieces({ c, pieces }: { c: Ctx; pieces: Piece[] }) {
   return <>{pieces.map((p) => {
     switch (p.kind) {
@@ -417,7 +440,75 @@ function RunCard({ c, card, title, command, ready }: { c: Ctx; card: string; tit
   )
 }
 
+// Text Claude drafted for you (a commit message, an email). Untouched, it stays
+// open: Approve sends it back as it is (and greys it out), or edit it, and your
+// edits go back. Edited, it offers only Restore (two clicks), which returns it
+// to untouched.
+function DraftCard({ c, ask, compact }: { c: Ctx; ask: Ask & { draft: string }; compact?: boolean }) {
+  const askKey = `${c.msg}:${ask.id}`
+  const item = c.items.get(askKey)
+  const status = c.live ? 'live' : item?.status ?? 'open'
+  const draft = draftsOf(c.sid).find((d): d is AnswerDraft => d.kind === 'answer' && d.askKey === askKey)
+  const answer = item?.reply?.kind === 'answer' ? item.reply : undefined
+  const attrs = compact ? {} : { 'data-item': askKey }
+  const [confirm, setConfirm] = useState(false)
+  useEffect(() => { if (!confirm) return; const t = setTimeout(() => setConfirm(false), 4000); return () => clearTimeout(t) }, [confirm])
+  const head = (mark: React.ReactNode) => (
+    <div className="ask-row">
+      <div className="ask-q draft-title" dangerouslySetInnerHTML={{ __html: renderInline(ask.question) }} />
+      {mark}
+    </div>
+  )
+
+  if (answer || (status !== 'open' && status !== 'drafted')) {
+    const text = answer?.text ?? ask.draft
+    return (
+      <div className={`ask-card draft-card ${answer ? 'answered' : `st-${status}`}`} {...attrs} onMouseUp={(e) => e.stopPropagation()}>
+        {head(<>
+          {answer && <span className="muted draft-how">{answer.draft === 'edited' ? 'Edited' : 'Approved'}</span>}
+          {status === 'dismissing' && <button className="icon-btn" title="Undo" onClick={() => undismissItem(c.sid, askKey)}><UndoIcon size={14} /></button>}
+          <Done status={answer ? 'answered' : status} />
+        </>)}
+        {!compact && status !== 'dismissing' && status !== 'dismissed' && <div className="draft-text">{text}</div>}
+      </div>
+    )
+  }
+
+  const patch = (p: Partial<AnswerDraft>) => {
+    if (draft) updateDraft(c.sid, draft.id, p)
+    else { state.drafts[c.sid] = [...draftsOf(c.sid), { id: uid(), kind: 'answer', askKey, question: ask.question, choices: [], text: ask.draft, images: [], createdAt: Date.now(), original: ask.draft, ...p }]; changed() }
+  }
+  const text = draft?.text ?? ask.draft
+  const edited = text.trim() !== ask.draft.trim()
+  const approved = !edited && !!draft?.approved
+  return (
+    <div className={`ask-card draft-card${approved || edited ? ' queued' : ''}${approved ? ' approved' : ''}`} {...attrs} onMouseUp={(e) => e.stopPropagation()}>
+      {head(status === 'open' && <button className="icon-btn" title="Dismiss" onClick={() => dismissItem(c.sid, askKey, ask.question)}><XIcon size={13} /></button>)}
+      {/* An edit ends an approval: the edits are what goes back. */}
+      <RichInput value={text} onChange={(t) => patch({ text: t, approved: false })} images={[]} onImages={() => {}} placeholder="Draft" minRows={2} />
+      <div className="draft-actions">
+        {!edited && (
+          <button className={`reply-btn draft-approve${approved ? ' on' : ''}`} title={approved ? 'Goes back with your next message, as it is. Click to undo.' : 'Send it back as it is, with your next message'} onClick={() => patch({ approved: !approved })}>
+            <CheckIcon size={13} /> {approved ? 'Approved' : 'Approve'}
+          </button>
+        )}
+        {edited && (
+          <button className={`reply-btn${confirm ? ' draft-confirm' : ''}`} title="Put back the text as Claude wrote it" onClick={() => {
+            if (!confirm) return setConfirm(true)
+            setConfirm(false)
+            if (draft) removeDraft(c.sid, draft.id)
+          }}><UndoIcon size={13} /> {confirm ? 'Restore the original?' : 'Restore'}</button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function AskCard({ c, ask, compact }: { c: Ctx; ask: Ask; compact?: boolean }) {
+  return ask.draft != null ? <DraftCard c={c} ask={ask as Ask & { draft: string }} compact={compact} /> : <QuestionCard c={c} ask={ask} compact={compact} />
+}
+
+function QuestionCard({ c, ask, compact }: { c: Ctx; ask: Ask; compact?: boolean }) {
   const askKey = `${c.msg}:${ask.id}`
   const item = c.items.get(askKey)
   const status = c.live ? 'live' : item?.status ?? 'open'

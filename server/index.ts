@@ -17,19 +17,19 @@ import { execFile, execFileSync, spawn } from 'node:child_process'
 import os from 'node:os'
 import { Session, type Hooks, type Launch, type SlashCommand } from './session.ts'
 import { findHistory, importTranscript, lastCache, listDirs, listHistory } from './history.ts'
-import { LEAD_PROMPT, WORKER_PROMPT, lookPrompt } from './prompts.ts'
+import { LEAD_PROMPT, WORKER_PROMPT, lookPrompt, workerNotesPrompt } from './prompts.ts'
 import { LOOK_OPTIONS, LOOK_SLOTS, cleanLook, describeLook } from '../shared/looks.ts'
 import { cleanAppearance } from '../shared/appearance.ts'
 import * as meter from './meter.ts'
-import { notesNow, notesPath, readNotes, resumeKeepWarm, startNotes } from './notes.ts'
+import { notesDir, notesNow, notesPath, readNotes, resumeKeepWarm, startNotes } from './notes.ts'
 import { notesFile } from '../shared/notes.ts'
 import { DEFAULT_CACHE_GUARD, cacheLeft, knownTtl } from '../shared/cache.ts'
 import { AGENTS_FILE, agentsPrompt, readAgentsMd, writeAgentsMd } from './agentsmd.ts'
 import { handleMcp, type Tool } from './mcp.ts'
-import { blame, initFileHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
+import { blame, initFileHistory, moveHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
 import { authState, cancelLogin, childEnv, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
 import {
-  DATA, LEAD_DIR, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, leadRenamed, resolveModel, loadSessions, loadSettings, saveImage, saveSessions, saveSettings,
+  DATA, LEAD_DIR, LEAD_NOTES, OLD_LEAD_NOTES, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, leadRenamed, resolveModel, loadSessions, loadSettings, saveImage, saveSessions, saveSettings,
 } from './store.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -130,13 +130,18 @@ const hooks: Hooks = {
 
 function launchFor(meta: SessionMeta): () => Launch {
   // Every session gets Codiner's set_look tool, pre-approved; workers keep their own MCP servers too.
-  if (meta.kind === 'worker') return () => ({
-    args: [
-      '--mcp-config', JSON.stringify({ mcpServers: { codiner: { type: 'http', url: `http://127.0.0.1:${PORT}/mcp/${MCP_TOKEN}/look/${meta.id}` } } }),
-      '--allowedTools', 'mcp__codiner__set_look,mcp__codiner__set_title',
-    ],
-    prompt: WORKER_PROMPT + lookPrompt(meta.look) + titlePrompt(meta) + agentsPrompt(),
-  })
+  if (meta.kind === 'worker') return () => {
+    const notes = settings.notes !== false
+    // The worker writes its own notes: their folder (and its .gitignore) is there first.
+    if (notes) notesDir(meta)
+    return {
+      args: [
+        '--mcp-config', JSON.stringify({ mcpServers: { codiner: { type: 'http', url: `http://127.0.0.1:${PORT}/mcp/${MCP_TOKEN}/look/${meta.id}` } } }),
+        '--allowedTools', 'mcp__codiner__set_look,mcp__codiner__set_title',
+      ],
+      prompt: WORKER_PROMPT + lookPrompt(meta.look) + titlePrompt(meta) + (notes ? workerNotesPrompt(notesFile(meta.id)) : '') + agentsPrompt(),
+    }
+  }
   return () => ({
     prompt: LEAD_PROMPT + lookPrompt(meta.look) + agentsPrompt(),
     args: [
@@ -188,7 +193,7 @@ if (!sessions.has(LEAD_ID)) {
   metaChanged()
 }
 if (leadRenamed) {
-  get(LEAD_ID).notice('The master is now called the lead. It starts a new conversation and keeps its NOTES.md.')
+  get(LEAD_ID).notice('The master is now called the lead. It starts a new conversation and keeps its LEAD_NOTES.md.')
   saveSettings(settings)
   metaChanged()
 }
@@ -407,7 +412,7 @@ const tools: Tool[] = [
             properties: {
               item: { type: 'string', description: 'The id of an open question or item, from open_items' },
               action: { type: 'string', enum: ['answer', 'done', 'dismiss'], description: 'answer: reply to it (a question or an item); done: the user did the task it asked for; dismiss: set it aside without a reply' },
-              text: { type: 'string', description: 'The answer, or for done, a problem the user hit' },
+              text: { type: 'string', description: 'The answer, or for done, a problem the user hit. For a draft: the edited text in full; leave it out to approve the draft as written' },
               choices: { type: 'array', items: { type: 'string' }, description: "For a question: the choices picked, word for word" },
             },
           },
@@ -426,6 +431,8 @@ const tools: Tool[] = [
         const text = String(r.text ?? '')
         if (r.action === 'done') return { kind: 'done', key: it.key, label: it.label, text }
         if (r.action === 'dismiss') return { kind: 'dismiss', key: it.key, label: it.label, text: '' }
+        // A draft: the lead's text is the edited draft; none approves it as written.
+        if (it.kind === 'ask' && it.ask.draft != null) return { kind: 'answer', key: it.key, label: it.ask.question, text: text.trim() ? text : it.ask.draft, draft: !text.trim() || text.trim() === it.ask.draft.trim() ? 'same' : 'edited' }
         if (it.kind === 'ask') return { kind: 'answer', key: it.key, label: it.ask.question, text, choices: Array.isArray(r.choices) ? r.choices.map(String) : [] }
         return { kind: 'reply', key: it.key, label: it.label, text }
       })
@@ -714,7 +721,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     const s = get(LEAD_ID)
     s.stop()
     Object.assign(s.meta, { claudeSessionId: randomUUID(), started: false, context: { used: 0, window: s.meta.context.window }, error: null, unread: false, pendingAsks: 0 })
-    s.notice('Fresh start: the lead forgot this conversation. It keeps NOTES.md.')
+    s.notice('Fresh start: the lead forgot this conversation. It keeps LEAD_NOTES.md.')
     return send(res, 200, { ok: true })
   }
   if (a !== 'sessions') throw new HttpError(404, 'Not found')
@@ -903,7 +910,8 @@ if (DEV) {
 
 // A missing or expired login starts a sign-in; once signed in, what failed goes again.
 // Files whose history is kept: the notes every session reads, and any you add in Settings.
-const BUILT_IN = () => [AGENTS_FILE, path.join(os.homedir(), '.claude', 'CLAUDE.md'), path.join(LEAD_DIR, 'NOTES.md')]
+const BUILT_IN = () => [AGENTS_FILE, path.join(os.homedir(), '.claude', 'CLAUDE.md'), LEAD_NOTES]
+moveHistory(OLD_LEAD_NOTES, LEAD_NOTES)
 const trackedFiles = () => [...new Set([...BUILT_IN(), ...(settings.trackedFiles ?? [])])]
 initFileHistory({
   files: trackedFiles,

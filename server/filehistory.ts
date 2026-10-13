@@ -1,5 +1,5 @@
 // Where the notes you and Claude keep came from. Each tracked file (AGENTS.md,
-// your global CLAUDE.md, the lead's NOTES.md, and any you add in Settings)
+// your global CLAUDE.md, the lead's LEAD_NOTES.md, and any you add in Settings)
 // keeps every version, with who made it: you in Settings, a Codiner session at
 // the message where Claude edited it, a Claude Code session elsewhere (found
 // in its transcript), or someone outside. Blame per line comes from diffing the
@@ -33,6 +33,11 @@ export function versions(p: string): Version[] {
   try { for (const l of fs.readFileSync(fileOf(p), 'utf8').split('\n')) if (l.trim()) try { v.push(JSON.parse(l)) } catch { /* torn */ } } catch { /* none yet */ }
   cache.set(p, v)
   return v
+}
+
+// A tracked file that moved keeps its history.
+export function moveHistory(from: string, to: string) {
+  if (fs.existsSync(fileOf(from)) && !fs.existsSync(fileOf(to))) fs.renameSync(fileOf(from), fileOf(to))
 }
 
 const read = (p: string) => { try { return fs.readFileSync(p, 'utf8') } catch { return null } }

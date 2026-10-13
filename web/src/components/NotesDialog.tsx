@@ -12,13 +12,13 @@ import { XIcon } from './Icons.tsx'
 const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
 // How keep-warm stands for this session, in one sentence.
-function keepWarm(m: SessionMeta, rate: number | undefined): string {
+function keepWarm(m: SessionMeta): string {
   const n = m.notes ?? {}
   if (n.off) return `Keep-warm is off for this session: ${n.off}.`
   if (n.running === 'ping') return 'A keep-warm call is running.'
   if (n.end) return `Keep-warm stopped: ${n.end.reason}. The cache ${n.end.at > Date.now() ? 'expires' : 'expired'} at ${clock(n.end.at)}.`
   if (!n.calls) return 'Keep-warm starts when the session is quiet.'
-  const share = n.spent ? `, about ${moneyLong(n.spent, rate != null ? n.spent * rate * 100 : null)}` : ''
+  const share = n.spent ? `, about ${moneyLong(n.spent)}` : ''
   return `Keep-warm is on: ${n.calls} ${n.calls === 1 ? 'call' : 'calls'} since the session went quiet${share}.`
 }
 
@@ -34,7 +34,7 @@ export function NotesPill({ m }: { m: SessionMeta }) {
   const warn = big(m, st.settings.keepWarmMax ?? KEEP_WARM.max)
   const label = n.running === 'notes' ? 'Writing notes…' : n.at ? `Notes ${clock(n.at)}` : 'Notes'
   return <>
-    <button className={`notes-pill${n.off ? ' off' : warn ? ' big' : ''}${n.running ? ' busy' : ''}`} data-tip={[warn, keepWarm(m, st.usage.rate?.fiveHour)].filter(Boolean).join(' ')} onClick={() => setOpen(true)}>{label}</button>
+    <button className={`notes-pill${n.off ? ' off' : warn ? ' big' : ''}${n.running ? ' busy' : ''}`} data-tip={[warn, keepWarm(m)].filter(Boolean).join(' ')} onClick={() => setOpen(true)}>{label}</button>
     {open && <NotesDialog m={m} onClose={() => setOpen(false)} />}
   </>
 }
@@ -75,7 +75,7 @@ function NotesDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
           {notes && <div className="mono">{notes.path.replace(/^\/Users\/[^/]+/, '~')}</div>}
           <div>{n.running === 'notes' ? 'Writing the notes now.' : n.at ? `Written ${timeAgo(n.at)}.` : 'No notes yet. They are written when the session has been quiet for 20 minutes.'}</div>
           <div>
-            {keepWarm(m, st.usage.rate?.fiveHour)}
+            {keepWarm(m)}
             {n.off && <> <button className="link" onClick={() => void api(`/api/sessions/${m.id}/notes/keep-warm`)}>Turn on again</button></>}
           </div>
           {m.spend && <div>

@@ -6,6 +6,8 @@
 //                                       with `done`, something to do, marked done when it is
 //   <ask id="…"> … </ask>               a question: its text, then "- " lines as choices
 //   <run title="…"> … </run>            a command for the user to run; the UI offers a button
+//   <draft id="…" title="…"> … </draft> text for the user to edit and send back (a commit
+//                                       message, an email); an item, answered like an <ask>
 //
 // Markdown works inside, and sections nest. Lines inside code fences are left
 // alone. A section still open at the end (a reply still streaming) holds what
@@ -14,11 +16,11 @@
 
 import { parseAskBody, parseAsks, type Ask } from './asks.ts'
 
-export type SectionKind = 'answer' | 'details' | 'consider' | 'ask' | 'run'
+export type SectionKind = 'answer' | 'details' | 'consider' | 'ask' | 'run' | 'draft'
 export type Section = { kind: SectionKind; title: string; attrs: Record<string, string>; body: Segment[]; closed: boolean }
 export type Segment = { text: string } | Section
 
-const TAGS = 'answer|details|consider|ask|run'
+const TAGS = 'answer|details|consider|ask|run|draft'
 const OPEN = new RegExp(`^\\s*<(${TAGS})((?:\\s+[\\w-]+(?:\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]+))?)*)\\s*>(.*)$`)
 const CLOSE = new RegExp(`^(.*?)</(${TAGS})>\\s*$`)
 const LEGACY = /^:::\s*(summary|more|consider)\b\s*(.*)$/
@@ -91,6 +93,14 @@ export function askOf(sec: Section, index: number): Ask {
   return parseAskBody(sec.attrs.id ? `id=${sec.attrs.id}` : '', body, index)
 }
 
+// A <draft> section as an Ask: the title is the question, the body the text to edit.
+// `index` counts the drafts before it in the message (they number d1, d2…).
+export function draftOf(sec: Section, index: number): Ask {
+  const body = sec.body.map((s) => ('text' in s ? s.text : '')).join('\n').replace(/^\n+|\s+$/g, '')
+  const id = /^[\w.-]+$/.test(sec.attrs.id ?? '') ? sec.attrs.id : `d${index + 1}`
+  return { id, question: sec.title || 'Draft', options: [], draft: body }
+}
+
 // The command in a <run> section, without a code fence around it.
 export function commandOf(sec: Section): string {
   const body = sec.body.map((s) => ('text' in s ? s.text : '')).join('\n').trim()
@@ -100,26 +110,29 @@ export function commandOf(sec: Section): string {
 // Things in a message that want a response: questions and items to consider.
 // Ids match what the UI renders: asks by their id (or q1, q2…), items c1, c2…
 // done: the item is something to do, so it can be marked done (`done`, or it holds a <run>).
-export type Item = { kind: 'ask'; id: string; label: string; ask: Ask } | { kind: 'consider'; id: string; label: string; done: boolean }
+// parent: the item to consider it sits in, if any.
+export type Item = ({ kind: 'ask'; id: string; label: string; ask: Ask } | { kind: 'consider'; id: string; label: string; done: boolean }) & { parent?: string }
 
 export const isTask = (sec: Section): boolean => 'done' in sec.attrs || sec.body.some((s) => !('text' in s) && (s.kind === 'run' || isTask(s)))
 
 export function itemsOf(text: string): Item[] {
   const out: Item[] = []
-  let asks = 0, considers = 0
-  const walk = (segs: Segment[]) => {
+  let asks = 0, considers = 0, drafts = 0
+  const walk = (segs: Segment[], parent?: string) => {
+    const under = parent ? { parent } : {}
     for (const s of segs) {
       if ('text' in s) {
         const found = parseAsks(s.text, asks)
         asks += found.length
-        for (const a of found) out.push({ kind: 'ask', id: a.id, label: a.question.split('\n')[0], ask: a })
-      } else if (s.kind === 'ask') {
-        const a = askOf(s, asks++)
-        out.push({ kind: 'ask', id: a.id, label: a.question.split('\n')[0], ask: a })
-      } else {
-        if (s.kind === 'consider') out.push({ kind: 'consider', id: `c${++considers}`, label: s.title || 'Item', done: isTask(s) })
-        walk(s.body)
-      }
+        for (const a of found) out.push({ kind: 'ask', id: a.id, label: a.question.split('\n')[0], ask: a, ...under })
+      } else if (s.kind === 'ask' || s.kind === 'draft') {
+        const a = s.kind === 'ask' ? askOf(s, asks++) : draftOf(s, drafts++)
+        out.push({ kind: 'ask', id: a.id, label: a.question.split('\n')[0], ask: a, ...under })
+      } else if (s.kind === 'consider') {
+        const id = `c${++considers}`
+        out.push({ kind: 'consider', id, label: s.title || 'Item', done: isTask(s), ...under })
+        walk(s.body, id)
+      } else walk(s.body, parent)
     }
   }
   walk(segmentsOf(text))

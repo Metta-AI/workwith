@@ -86,7 +86,9 @@ function inline(text: string): Node[] {
 function line(text: string): Node[] {
   let m: RegExpExecArray | null
   if ((m = /^(#{1,6} )(.*)$/.exec(text))) return [span(`md-x md-line md-h md-h${m[1].length - 1}`, mark(m[1], true), ...inline(m[2]))]
-  if ((m = /^(\s*(?:[-*+]|\d+[.)]) )(.*)$/.exec(text))) return [span('md-line md-li', span('md-bullet', m[1]), ...inline(m[2]))]
+  // An unordered marker is drawn as a bullet off its line (styles.css); its indent stays text.
+  if ((m = /^(\s*)([-*+] )(.*)$/.exec(text))) return [span('md-x md-line md-li', ...(m[1] ? [m[1]] : []), span('md-bullet md-ul', m[2]), ...inline(m[3]))]
+  if ((m = /^(\s*(?:\d+[.)]) )(.*)$/.exec(text))) return [span('md-line md-li', span('md-bullet', m[1]), ...inline(m[2]))]
   if ((m = /^(> ?)(.*)$/.exec(text))) return [span('md-x md-line md-quote', mark(m[1], true), ...inline(m[2]))]
   return inline(text)
 }

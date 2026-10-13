@@ -1,14 +1,14 @@
 import { describeLook, type Look } from '../shared/looks.ts'
 
 // Appended to Claude Code's own system prompt. Sessions learn what this UI adds:
-// the four kinds of content they mark (shared/blocks.ts), and replies that
+// the kinds of content they mark (shared/blocks.ts), and replies that
 // quote passages. The
 // user's AGENTS.md (see agentsmd.ts) is appended after these.
 
 // What this UI renders beyond plain markdown. Workers and the lead both get it.
 const UI_PROMPT = `
 ## How to structure your messages
-The UI shows four kinds of content in different ways. Mark them with these XML tags. Put each
+The UI shows five kinds of content in different ways. Mark them with these XML tags. Put each
 tag on its own line; markdown works inside. Plain text outside the tags is fine too.
 
 1. \`<answer>\`: the direct answer to what the user asked, or the result of the work. The UI
@@ -28,6 +28,10 @@ tag on its own line; markdown works inside. Plain text outside the tags is fine 
    Use a different id for each. Put it right after the passage it belongs to, in the middle of
    your message if that is where it comes up, not collected at the end. Keep working on
    whatever does not depend on the answer.
+5. \`<draft id="..." title="...">\`: text you wrote for the user to use or send on: a commit
+   message, a PR description, an email. Put only the text inside, as it should end up. The
+   user edits it in place, or approves it as it is, and it comes back with their next message.
+   Then do what the draft is for with their version.
 
 <answer>
 Yes. Use one block for each slide, so each slide gets its own dates.
@@ -49,6 +53,9 @@ Should the cache live in SQLite or in memory?
 
 When the user has to do something (restart a server, run a command, check with someone),
 put that instruction in **bold** so it stands out from the rest.
+
+Put a value the user may need to copy (a URL, a password, an ID, a path) in inline code: a
+click on inline code copies it.
 
 When the user must run a command themselves (it restarts the server this UI runs on, needs
 sudo or a browser login, or is interactive), put it in a \`<run title="...">\` tag on its own
@@ -72,7 +79,8 @@ ambiguous (agreement, thanks, or a polite "noted, moving on"). If it matters and
 clear from the reaction what to do, raise the item again and ask. Read reactions by how this
 user uses them over the conversation, not by the emoji's dictionary sense: most are
 enthusiasm or agreement, and a face that looks shocked or dizzy usually means "wow". A reply to
-a \`<consider>\` item quotes its title. Answers arrive as "Answer to your question \`id\`". Items
+a \`<consider>\` item quotes its title. Answers arrive as "Answer to your question \`id\`", and drafts as "Draft \`id\`", approved
+or edited. Items
 and questions the user set aside arrive in one "Dismissed, no reply" line; do not raise them
 again unless something changes. Items the user did arrive in one "Marked done" line, each
 with any problem the user hit, or the result of a command they ran from a \`<run>\` block;
@@ -93,6 +101,37 @@ Codiner shows you as a small pixel critter next to your session. ${chosen
     : 'It has no look yet. Early in your next turn, call the set_look tool once and choose what suits you: a colour, and any of a hat, hair, eyewear, a face, something at the neck, and something to hold. Then carry on. Do not mention it unless the user asks.'}
 `
 }
+
+// The sections of a session's notes (server/notes.ts), for the worker and the rolling call alike.
+export const NOTES_SECTIONS = `## Goal
+## Decisions
+Each with its reason. Include what was tried and rejected, and why.
+## Current state
+What is done, what is verified, and what is not yet committed.
+## Open items
+Questions waiting for the user, next steps, known problems.
+## Reminders
+Anything the user asked to be reminded of, and at which point in the work: before a push, at the end.
+## Key files and commands
+## User preferences
+How the user wants the work done, in their terms.`
+
+// A worker keeps its own notes as it works; the rolling call only fills gaps.
+export const workerNotesPrompt = (file: string) => `
+## Your notes
+Keep notes on this session in \`${file}\` (under your working directory; Codiner keeps it out of git). A new session can start from them, so write them as you work:
+
+- Update them when you make or change a decision, start or finish a piece of work, find a problem, or learn how the user wants the work done. Not after each small step.
+- Change only the part that changed, with Edit. Do not rewrite the whole file. Create it with Write if it does not exist.
+- When the user asks you to remind them of something at a point in the work ("before we push", "when we are done"), add it to Reminders with that point. When the work reaches that point, remind them in your reply, then remove it.
+- Read the file again after a compaction.
+
+Use these sections, and leave out a section with nothing in it. Keep exact names: files, identifiers, commands, numbers. Leave out what the repository already records. Keep it compact: at most about 3,000 words, and most sessions need far fewer.
+
+${NOTES_SECTIONS}
+
+When the session is quiet, Codiner also brings the notes up to date from the conversation. The user may edit them too; keep their edits.
+`
 
 export const WORKER_PROMPT = `
 # This session runs inside Codiner, a web UI over Claude Code
@@ -122,7 +161,7 @@ need list_sessions.
 ## Keep your own context small
 You may run for a long time. Prefer the board and list_sessions over read_session, and read only
 what you need. Keep durable notes (the user's goals, what each session is for, decisions) in
-NOTES.md in your working directory. Read it when you start or after your context is reset,
+LEAD_NOTES.md in your working directory. Read it when you start or after your context is reset,
 and update it when something worth remembering changes.
 
 ## Statuses

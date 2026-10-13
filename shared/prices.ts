@@ -51,7 +51,7 @@ const HOUR = 3_600_000
 export function addSpend(m: { spend?: Spend }, usd: number, keep = false) {
   const now = Date.now(), hour = Math.floor(now / HOUR) * HOUR
   const s = m.spend ?? { usd: 0, since: now }
-  const hours = (s.hours ?? []).filter(([t]) => t > now - 6 * HOUR)
+  const hours = (s.hours ?? []).filter(([t]) => t > now - WEEK - HOUR)
   const last = hours.at(-1)
   if (last?.[0] === hour) last[1] += usd
   else hours.push([hour, usd])
@@ -59,8 +59,11 @@ export function addSpend(m: { spend?: Spend }, usd: number, keep = false) {
 }
 
 // What a session spent in the last `ms` (whole hours, so a little more than that).
+// A session younger than that spent all it ever has: hours were kept for only 6 until October 2026.
+export const WEEK = 7 * 24 * HOUR
 export const recentSpend = (m: { spend?: Spend }, ms: number, now = Date.now()) =>
-  (m.spend?.hours ?? []).filter(([t]) => t + HOUR > now - ms).reduce((x, [, d]) => x + d, 0)
+  m.spend && m.spend.since > now - ms ? m.spend.usd
+  : (m.spend?.hours ?? []).filter(([t]) => t + HOUR > now - ms).reduce((x, [, d]) => x + d, 0)
 
 // The same tokens sent with no cache at all, at the model's input price.
 export const freshCost = (tokens: number, model: string | null | undefined) => tokens * priceOf(model, tokens).input / 1e6

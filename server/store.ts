@@ -2,7 +2,7 @@
 //   sessions.json        every session's metadata
 //   events/<id>.jsonl    each session's event log, append-only
 //   images/<sha>.<ext>   images pasted into replies (content-addressed)
-//   lead/              the lead agent's working directory (NOTES.md lives here)
+//   lead/              the lead agent's working directory (LEAD_NOTES.md lives here)
 
 import fs from 'node:fs'
 import os from 'node:os'
@@ -18,6 +18,10 @@ export const LEAD_DIR = path.join(DATA, 'lead')
 const OLD_LEAD_DIR = path.join(DATA, 'master')
 if (fs.existsSync(OLD_LEAD_DIR) && !fs.existsSync(LEAD_DIR)) fs.renameSync(OLD_LEAD_DIR, LEAD_DIR)
 for (const d of [DATA, EVENTS, IMAGES, LEAD_DIR]) fs.mkdirSync(d, { recursive: true })
+export const LEAD_NOTES = path.join(LEAD_DIR, 'LEAD_NOTES.md')
+// The lead's notes were NOTES.md until October 2026. Move them once (their history moves in index.ts).
+export const OLD_LEAD_NOTES = path.join(LEAD_DIR, 'NOTES.md')
+if (fs.existsSync(OLD_LEAD_NOTES) && !fs.existsSync(LEAD_NOTES)) fs.renameSync(OLD_LEAD_NOTES, LEAD_NOTES)
 
 const SESSIONS = path.join(DATA, 'sessions.json')
 const SETTINGS = path.join(DATA, 'settings.json')
@@ -30,7 +34,7 @@ export function loadSessions(): SessionMeta[] {
 
 // The old master session becomes the lead: new id, kind and directory. Claude Code
 // keeps a conversation under the directory it ran in, so the lead starts a new one
-// (its NOTES.md moved with the directory). Its event log keeps the old transcript.
+// (its notes moved with the directory). Its event log keeps the old transcript.
 export let leadRenamed = false
 function renameMaster(m: SessionMeta): SessionMeta {
   if ((m.kind as string) !== 'master') return m

@@ -218,6 +218,9 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .md ul, .md ol { margin: .55em 0; padding-left: 1.5em; }
 .md pre { background: var(--panel); padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
 .md :not(pre) > code { background: var(--panel); padding: 1px 4px; border-radius: 4px; }
+/* A click copies inline code in Claude's replies (AssistantMessage.tsx): a hand with a copy mark. */
+.assistant-text[data-msg] :not(pre, a) > code { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cpath d='M7 3a1.5 1.5 0 0 1 3 0v6.5a1.4 1.4 0 0 1 2.8 0v1a1.4 1.4 0 0 1 2.8 0v1a1.4 1.4 0 0 1 2.8 0V18c0 2.8-2 4.5-4.5 4.5H11c-1.6 0-2.7-.7-3.5-2L3.4 15a1.4 1.4 0 0 1 2.2-1.8L7 15z' fill='white' stroke='black' stroke-width='1.2' stroke-linejoin='round'/%3E%3Crect x='19' y='19' width='7' height='9' rx='1.5' fill='white' stroke='black' stroke-width='1.3'/%3E%3Crect x='22' y='22' width='7' height='8' rx='1.5' fill='white' stroke='black' stroke-width='1.3'/%3E%3C/svg%3E") 8 2, copy; transition: background .6s; }
+.assistant-text[data-msg] code.copied { background: color-mix(in srgb, var(--accent) 30%, transparent); transition: none; }
 .md table { border-collapse: collapse; } .md td, .md th { border: 1px solid var(--line); padding: 3px 8px; }
 .md blockquote { margin: .5em 0; padding-left: 12px; border-left: 3px solid var(--line); color: var(--muted); }
 .md h1, .md h2, .md h3 { line-height: 1.3; margin: 1.7em 0 .5em; } .md h1 { font-size: 1.3em; } .md h2 { font-size: 1.15em; } .md h3 { font-size: 1.05em; margin-top: 1.4em; }
@@ -413,6 +416,14 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .ask-tag { text-transform: uppercase; letter-spacing: .06em; color: var(--blue); font-weight: 700; }
 .ask-q > :first-child { margin-top: 2px; } .ask-q > :last-child { margin-bottom: 4px; }
 .ask-answer { font-size: calc(13px * var(--fs, 1)); }
+/* A <draft>: text to edit and send back (AssistantMessage.tsx DraftCard). */
+.draft-title { font-weight: 600; }
+.draft-text { white-space: pre-wrap; font-size: calc(13px * var(--fs, 1)); color: var(--muted); max-height: 12em; overflow: auto; }
+.draft-actions { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: calc(12px * var(--fs, 1)); }
+.draft-how { font-size: calc(12px * var(--fs, 1)); }
+.reply-btn.draft-approve.on { background: var(--ok); border-color: var(--ok); color: #fff; }
+.draft-card.approved .ri-edit { color: var(--muted); background: transparent; }
+.reply-btn.draft-confirm { color: var(--bad); border-color: var(--bad); }
 .ask-options { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 8px; }
 .chip { border-radius: 14px; padding: 2px 10px; font-size: calc(13px * var(--fs, 1)); text-align: left; }
 .chip.on { background: var(--blue); border-color: var(--blue); color: #fff; }
@@ -434,6 +445,9 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .ri-edit .md-link { color: var(--blue); }
 .ri-edit .md-h { font-weight: 700; } .ri-edit .md-h1 { font-size: 1.2em; } .ri-edit .md-h2 { font-size: 1.1em; }
 .ri-edit .md-bullet { color: var(--muted); }
+/* "- " shows as a bullet until the caret is on its line; the text stays "- ", so the caret's offsets do not move. */
+.ri-edit .md-li:not(.md-active) > .md-ul { position: relative; color: transparent; }
+.ri-edit .md-li:not(.md-active) > .md-ul::before { content: '•'; position: absolute; left: 0; color: var(--muted); }
 .ri-edit .md-quote { color: var(--muted); }
 .ri-edit:focus { outline: 2px solid var(--blue); outline-offset: -1px; }
 .ri-edit[data-empty]::before { content: attr(data-placeholder); color: var(--muted); pointer-events: none; position: absolute; }

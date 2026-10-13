@@ -22,7 +22,7 @@ export type PermissionMode = 'auto' | 'default' | 'acceptEdits' | 'plan' | 'bypa
 export type InboxItem = {
   id: string; text: string; from: string; ts: number
   kind?: 'text' | 'answer' | 'reply' | 'done' | 'dismiss'
-  key?: string; label?: string; choices?: string[]
+  key?: string; label?: string; choices?: string[]; draft?: 'same' | 'edited'
 }
 
 export type SessionMeta = {
@@ -59,7 +59,7 @@ export type SessionMeta = {
   notes?: NotesState
   // What its API calls cost (notes and keep-warm included), in dollars at API prices,
   // each priced when it was made (shared/prices.ts); since: when Codiner began to count.
-  // keep: the part notes and keep-warm calls cost; hours: [hour start, dollars] for the last 6 hours.
+  // keep: the part notes and keep-warm calls cost; hours: [hour start, dollars] for the last 7 days.
   spend?: { usd: number; since: number; keep?: number; hours?: [number, number][] }
   // The first API call's prompt: Claude Code's system prompt and tools, and how much of
   // it other sessions had already cached. What a new session would start from.
@@ -96,7 +96,8 @@ export type Part =
   // itemKey: the <consider> item this comment replies to ("<msg>:<id>").
   // whole: a reaction to a whole paragraph or list item.
   | { kind: 'note'; text: string; quote: string; anchor: Anchor; images?: ImageRef[]; itemKey?: string; whole?: boolean }
-  | { kind: 'answer'; text: string; askKey: string; question: string; choices?: string[]; images?: ImageRef[] }
+  // draft: the answer to a <draft>, sent back as Claude wrote it or edited.
+  | { kind: 'answer'; text: string; askKey: string; question: string; choices?: string[]; images?: ImageRef[]; draft?: 'same' | 'edited' }
   // Questions and items the user saw and set aside.
   | { kind: 'dismiss'; text: string; items: { key: string; label: string }[]; images?: ImageRef[] }
   // Items the user marked done; `text` on one is a problem they hit doing it.
@@ -126,7 +127,7 @@ export type AuthState = { state: 'ok' | 'needed' | 'pending' | 'failed'; url?: s
 
 // rate: how much of each window a dollar of spend (at API prices) uses, as server/meter.ts estimates it.
 export type Usage = { fiveHour?: number; sevenDay?: number; resetsAt?: number; status?: string; rate?: { fiveHour?: number; sevenDay?: number; pairs: number } }
-// trackedFiles: files whose history Codiner keeps, besides AGENTS.md, CLAUDE.md and NOTES.md.
+// trackedFiles: files whose history Codiner keeps, besides AGENTS.md, CLAUDE.md and LEAD_NOTES.md.
 // selfRestart: offer to restart when Codiner's own code changes (for working on Codiner); off by default.
 // appearance: unset until you pick one, which the first load asks you to do.
 // groupOrder: the sidebar's folders, once you drag one. cacheGuard: tokens; see shared/cache.ts.

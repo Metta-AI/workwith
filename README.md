@@ -35,7 +35,7 @@ ever reports a key-based auth source. The sidebar footer shows your plan's 5-hou
   disappears when you click away; the X discards one. When the window is too narrow for a
   margin, cards sit under their passage instead. Selecting text just to copy it opens a
   card too, which vanishes as soon as you click elsewhere.
-- **Five kinds of content.** Claude is told (via `--append-system-prompt`) to mark its
+- **Six kinds of content.** Claude is told (via `--append-system-prompt`) to mark its
   replies with XML tags on their own lines, and each kind looks different:
   - `<answer>`: the direct answer, marked in the accent colour;
   - `<details title="…">`: supporting detail, folded to its title;
@@ -45,7 +45,9 @@ ever reports a key-based auth source. The sidebar footer shows your plan's 5-hou
   - `<run title="…">`: a command for you to run yourself (one that restarts Codiner, needs
     sudo, or is interactive), with **Run in Terminal** (macOS: a new Terminal window in the
     session's directory, via a self-deleting `.command` file, which closes itself when the
-    command succeeds) and **Copy**.
+    command succeeds) and **Copy**;
+  - `<draft id="…" title="…">`: text Claude wrote for you (a commit message, an email), in a
+    box you edit in place or **Approve** as it is; it goes back with your next message.
 
   Sections render as the reply streams in. The older ` ```ask ` and `:::more` forms still
   parse. Parsing is in `shared/blocks.ts`.
@@ -116,7 +118,7 @@ within a minute of a sign-in that worked); the banner's Sign in button starts it
 ## Where your notes came from
 
 Settings keeps the history of the notes files you and Claude keep: `~/.codiner/AGENTS.md`,
-your global `~/.claude/CLAUDE.md`, the lead's `NOTES.md`, and any file you add there. Every
+your global `~/.claude/CLAUDE.md`, the lead's `LEAD_NOTES.md`, and any file you add there. Every
 version is kept with who made it: you in Settings, a Codiner session (linked to the message
 where Claude edited the file, with Edit/Write or a shell command naming it), a Claude Code
 session elsewhere (found in its transcript), or someone outside. **Read** shows the file
@@ -216,7 +218,7 @@ needs to call anything just to know what's going on.
 
 **Keeping its context small:** it runs with `--strict-mcp-config` (none of your other MCP
 servers), only Read/Write/Edit/Glob/Grep, and `--autocompact 200k`. It keeps durable notes
-in `NOTES.md` in its working directory, so **Fresh start** (a new conversation) costs
+in `LEAD_NOTES.md` in its working directory, so **Fresh start** (a new conversation) costs
 nothing it meant to remember.
 
 ## AGENTS.md: instructions for every session

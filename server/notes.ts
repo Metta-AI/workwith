@@ -1,9 +1,11 @@
 // Rolling notes and keep-warm. While a session waits for you, Codiner makes a few
 // one-off calls on its conversation (Session.forkCommand: forked and not saved,
 // so the conversation stays as it is). Each call reads the prompt cache, which
-// keeps it warm for another TTL. The first call in a spell of quiet also writes
-// compact notes on the conversation to .codiner/notes/<id>.md in its directory,
-// to start a new session from.
+// keeps it warm for another TTL. The first call in a spell of quiet also brings
+// the notes in .codiner/notes/<id>.md up to date, to start a new session from.
+// The worker keeps those notes itself as it works (server/prompts.ts); this call
+// fills the gaps with edits, so it neither undoes the worker's nor yours, and when
+// the worker kept up it costs little more than a keep-alive call.
 //
 // A call after the cache has expired writes the whole context to it again: worse
 // than no call at all. So a call goes out only well inside the TTL, judged by the
@@ -24,6 +26,7 @@ import { KEEP_WARM, notesFile } from '../shared/notes.ts'
 import { spend } from './meter.ts'
 import { addSpend, coldCost, costOf, priceOf, warmCost } from '../shared/prices.ts'
 import { DATA } from './store.ts'
+import { NOTES_SECTIONS } from './prompts.ts'
 import type { Session } from './session.ts'
 
 const HOUR = 3_600_000
@@ -37,28 +40,36 @@ const LOG = path.join(DATA, 'notes.jsonl')
 
 const PING = `[Codiner, automatic] A keep-alive call from Codiner, not a message from the user. Your reply is not added to the conversation. Do not use any tools. Reply with the single word: ok`
 
-const notesPrompt = (prev: string | null) => `[Codiner, automatic] A request from Codiner, not a message from the user. Your reply is not added to the conversation. Do not use any tools.
+const REQUEST = `[Codiner, automatic] A request from Codiner, not a message from the user. Your reply is not added to the conversation. Do not use any tools.`
+const KEEP = `Keep exact names: files, identifiers, commands, numbers. Leave out what the repository already records, such as the code itself and git history. Keep them compact: at most about 3,000 words, and most sessions need far fewer.`
 
-Write notes on this conversation that let a new session continue the work from the notes alone. Keep them compact: up to about 3,000 words, fewer when that is enough. Use Markdown with these sections, and leave out a section with nothing in it:
+// No notes yet: all of them. Notes already: only edits, since you or the worker may have written them.
+const notesPrompt = (file: string, prev: string | null) => prev == null ? `${REQUEST}
 
-## Goal
-## Decisions
-Each with its reason. Include what was tried and rejected, and why.
-## Current state
-What is done, what is verified, and what is not yet committed.
-## Open items
-Questions waiting for the user, next steps, known problems.
-## Key files and commands
-## User preferences
-How the user wants the work done, in their terms.
+Write notes on this conversation that let a new session continue the work from the notes alone. Use Markdown with these sections, and leave out a section with nothing in it:
 
-Keep exact names: files, identifiers, commands, numbers. Leave out what the repository already records, such as the code itself and git history. Reply with the notes only, starting at the first section heading.${prev ? `
+${NOTES_SECTIONS}
 
-The notes so far are below. Update them: keep what is still true, change what changed, and drop what no longer matters. The user may have edited them; keep those edits.
+${KEEP} Reply with the notes only, starting at the first section heading.` : `${REQUEST}
+
+The notes on this conversation in \`${file}\` are below, as they are now. You may have written some of them as you worked, and the user may have edited them. Bring them up to date with the conversation, so that a new session can continue the work from the notes alone: add what is missing, change what changed, and remove what no longer matters. Keep the user's edits.
+
+Reply with edits only, in this form, as many as you need:
+
+<edit>
+<old>exact text from the notes</old>
+<new>the text to put in its place</new>
+</edit>
+
+Each <old> must appear in the notes exactly once. To add text, take as <old> the line that it goes after, and repeat that line at the start of <new>. To remove text, leave <new> empty. A section that is not there yet goes after the section before it in this order:
+
+${NOTES_SECTIONS}
+
+${KEEP} If the notes are already up to date, reply with the single word: none
 
 <notes>
 ${prev}
-</notes>` : ''}`
+</notes>`
 
 type Ctx = { sessions: () => Iterable<Session>; settings: () => Settings; usage: () => Usage; changed: () => void }
 let ctx: Ctx
@@ -73,18 +84,43 @@ const log = (x: object) => fs.appendFile(LOG, JSON.stringify({ t: Date.now(), ..
 export const notesPath = (m: SessionMeta) => path.join(m.cwd, notesFile(m.id))
 const HEAD = /^# .*\n\n<!-- codiner notes .*-->\n\n/
 
+// The notes' folder, kept out of git: the worker may write the file before Codiner does.
+export function notesDir(m: SessionMeta): string {
+  const dir = path.dirname(notesPath(m))
+  try {
+    fs.mkdirSync(dir, { recursive: true })
+    // Notes are yours, not the repository's: keep them out of git unless you say otherwise.
+    const ignore = path.join(dir, '.gitignore')
+    if (!fs.existsSync(ignore)) fs.writeFileSync(ignore, '*\n')
+  } catch { /* a directory we cannot write to: no notes there */ }
+  return dir
+}
+
 export function readNotes(m: SessionMeta): string | null {
   try { return fs.readFileSync(notesPath(m), 'utf8').replace(HEAD, '').trim() || null } catch { return null }
 }
 
 function saveNotes(m: SessionMeta, body: string) {
   const file = notesPath(m)
-  fs.mkdirSync(path.dirname(file), { recursive: true })
-  // Notes are yours, not the repository's: keep them out of git unless you say otherwise.
-  const ignore = path.join(path.dirname(file), '.gitignore')
-  if (!fs.existsSync(ignore)) fs.writeFileSync(ignore, '*\n')
+  notesDir(m)
   const head = `# ${m.title}\n\n<!-- codiner notes · session ${m.id} · ${new Date().toISOString()} · from ${k(m.context.used)} tokens of context -->\n\n`
   fs.writeFileSync(file, head + body.trim() + '\n')
+}
+
+// Apply the call's edits to the notes as they are now: the worker or you may have
+// changed them while it ran. An edit whose old text is not there exactly once is skipped.
+const EDIT = /<edit>\s*<old>\n?([\s\S]*?)\n?<\/old>\s*<new>\n?([\s\S]*?)\n?<\/new>\s*<\/edit>/g
+function applyEdits(notes: string, reply: string): { text: string; applied: number; skipped: number } {
+  let text = notes, applied = 0, skipped = 0
+  for (const [, old, rep] of reply.matchAll(EDIT)) {
+    const at = old ? text.indexOf(old) : -1
+    if (at < 0 || text.indexOf(old, at + 1) >= 0) { skipped++; continue }
+    // Removed text takes its line break with it.
+    const end = at + old.length + (!rep && text[at + old.length] === '\n' ? 1 : 0)
+    text = text.slice(0, at) + rep + text.slice(end)
+    applied++
+  }
+  return { text: text.replace(/\n{3,}/g, '\n\n'), applied, skipped }
 }
 
 // ---- costs -----------------------------------------------------------------
@@ -93,9 +129,11 @@ function saveNotes(m: SessionMeta, body: string) {
 function cost(m: SessionMeta, kind: 'notes' | 'ping' | 'cold') {
   const c = m.context.used, p = priceOf(m.model, c)
   if (kind === 'cold') return coldCost(c, m.model, HOUR)
-  // A ping adds about 1.5k tokens to the cache and says "ok"; notes add the old
-  // notes and the request, then write up to about 6k tokens (thinking included).
-  const [added, out] = kind === 'ping' ? [1_500, 100] : [10_000, 6_000]
+  // A ping adds about 1.5k tokens to the cache and says "ok"; notes add the notes
+  // and the request, then write edits (about 2k tokens, thinking included), or all
+  // of the notes the first time.
+  const size = m.notes?.size ?? 0
+  const [added, out] = kind === 'ping' ? [1_500, 100] : [2_500 + size, size ? 2_000 : 6_000]
   return warmCost(c, m.model) + (2 * p.input * added + p.output * out) / 1e6
 }
 
@@ -195,6 +233,8 @@ async function call(s: Session, kind: 'notes' | 'ping') {
   n.running = kind
   ctx.changed()
   const started = Date.now(), upTo = m.lastActivity, used = m.context.used
+  const prev = kind === 'notes' ? readNotes(m) : null
+  let edits: { applied: number; skipped: number } | undefined
   const { cmd, args, cwd, env } = s.forkCommand()
   let out = '', err = ''
   const code = await new Promise<number | null>((resolve) => {
@@ -203,7 +243,7 @@ async function call(s: Session, kind: 'notes' | 'ping') {
     p.stdout.setEncoding('utf8').on('data', (d: string) => { out += d })
     p.stderr.setEncoding('utf8').on('data', (d: string) => { err = (err + d).slice(-1000) })
     p.stdin.on('error', () => {})
-    p.stdin.end(kind === 'notes' ? notesPrompt(readNotes(m)) : PING)
+    p.stdin.end(kind === 'notes' ? notesPrompt(notesFile(m.id), prev) : PING)
     p.on('error', (e) => { err = e.message; clearTimeout(timer); resolve(-1) })
     p.on('exit', (c) => { clearTimeout(timer); resolve(c) })
   })
@@ -228,9 +268,17 @@ async function call(s: Session, kind: 'notes' | 'ping') {
     const why = String(r?.result || r?.subtype || err.trim().split('\n').pop() || `exit code ${code}`).slice(0, 200)
     n.end = { reason: `The ${kind === 'notes' ? 'notes' : 'keep-warm'} call failed: ${why}`, at: m.cache ? m.cache.at + m.cache.ttl : started }
   } else if (kind === 'notes') {
-    const text = String(r.result ?? '').trim()
-    if (text.length > 100) { saveNotes(m, text); n.at = Date.now(); n.upTo = upTo; n.size = Math.round(text.length / 4) }
+    const reply = String(r.result ?? '').trim()
+    const done = (text: string) => { n.at = Date.now(); n.upTo = upTo; n.size = Math.round(text.length / 4) }
+    if (prev == null) { if (reply.length > 100) { saveNotes(m, reply); done(reply) } }
+    else {
+      const e = applyEdits(readNotes(m) ?? prev, reply)
+      edits = { applied: e.applied, skipped: e.skipped }
+      if (e.applied) saveNotes(m, e.text)
+      // "none" or edits: either way the notes now cover the conversation.
+      if (e.applied || /^none\.?$/i.test(reply)) done(e.text)
+    }
   }
-  log({ id: m.id, kind, ms: Date.now() - started, context: used, read: u?.cache_read_input_tokens, wrote, out: u?.output_tokens, usd: u ? Math.round(costOf(u, m.model) * 1e4) / 1e4 : null, failed, ...(n.off ? { off: true } : {}) })
+  log({ id: m.id, kind, ms: Date.now() - started, context: used, read: u?.cache_read_input_tokens, wrote, out: u?.output_tokens, usd: u ? Math.round(costOf(u, m.model) * 1e4) / 1e4 : null, failed, ...(edits ?? {}), ...(n.off ? { off: true } : {}) })
   ctx.changed()
 }

@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 import type { SessionMeta } from '../../shared/types.ts'
 import { DEFAULT_CACHE_GUARD, cacheLeft, knownTtl } from '../../shared/cache.ts'
 import { changed, state } from './store.ts'
-import { coldCost, freshCost, recentSpend, warmCost } from '../../shared/prices.ts'
+import { WEEK, coldCost, freshCost, recentSpend, warmCost } from '../../shared/prices.ts'
 
 export function useNow(every = 15_000) {
   const [now, setNow] = useState(Date.now)
@@ -58,39 +58,53 @@ export const ofFresh = (dollars: number, fresh: number) => {
 
 export const usd = (x: number) => x < 0.01 ? '<$0.01' : x < 100 ? `$${x.toFixed(2)}` : `$${Math.round(x)}`
 
-// A cost as you chose to see it: a share of your 5-hour limit, dollars at API
-// prices, or both. Without an estimate from the meter, a share shows as dollars.
-// Without an estimate from the meter yet, the share shows as "…%".
-export function money(dollars: number, share: number | null, mode = state.money): string {
-  if (mode === 'usd') return usd(dollars)
-  const p = share == null ? '…%' : pct(share)
-  return mode === 'both' ? `${p} · ${usd(dollars)}` : p
+// A cost as you chose to see it: dollars at API prices, or a share of your 5-hour
+// or weekly limit, once the meter (server/meter.ts) has an estimate for that limit.
+const LIMITS = { pct: { key: 'fiveHour', name: '5-hour limit', short: '5h' }, week: { key: 'sevenDay', name: 'weekly limit', short: '7d' } } as const
+export const limitOf = (mode = state.money) => LIMITS[mode === 'week' ? 'week' : 'pct']
+export function shareOf(dollars: number, mode = state.money): number | null {
+  const r = state.usage.rate?.[limitOf(mode).key]
+  return r == null ? null : dollars * r * 100
+}
+// What is left of that limit, in percent.
+export function limitLeft(mode = state.money): number | null {
+  const u = state.usage[limitOf(mode).key]
+  return u == null ? null : Math.max(0, 100 - u * 100)
 }
 
-// The same in a sentence: "0.7% of your 5-hour limit", "$1.60 at API prices", or both.
-export function moneyLong(dollars: number, share: number | null, mode = state.money): string {
-  const a = share == null ? null : `${pct(share)} of your 5-hour limit`, b = `${usd(dollars)} at API prices`
-  if (mode === 'usd' || a == null) return b
-  return mode === 'both' ? `${a} (${b})` : a
+// "$0.12", "0.4% of 5h", "0.1% of 7d"; without an estimate yet, the share shows as "…%".
+export function money(dollars: number, mode = state.money): string {
+  if (mode === 'usd') return usd(dollars)
+  const s = shareOf(dollars, mode)
+  return `${s == null ? '…%' : pct(s)} of ${limitOf(mode).short}`
+}
+
+// The same in a sentence: "0.7% of your 5-hour limit", or "$1.60 at API prices".
+export function moneyLong(dollars: number, mode = state.money): string {
+  const s = mode === 'usd' ? null : shareOf(dollars, mode)
+  return s == null ? `${usd(dollars)} at API prices` : `${pct(s)} of your ${limitOf(mode).name}`
 }
 
 // What a conversation has cost so far, as a label and a tooltip. Percent: its share
-// of your 5-hour limit over the last 5 hours; dollars: everything since Codiner began to count.
+// of your 5-hour limit over the last 5 hours, and of your weekly limit over the last
+// 7 days; dollars: everything since Codiner began to count.
 export function spendOf(m: SessionMeta) {
   if (!m.spend?.usd) return null
-  const r = state.usage.rate?.fiveHour
-  const recent = recentSpend(m, 5 * 3_600_000)
-  const share = r == null ? null : recent * r * 100
-  const p = `${share == null ? '…%' : pct(share)} in 5h`
-  const label = state.money === 'usd' ? usd(m.spend.usd) : state.money === 'pct' ? p : `${usd(m.spend.usd)} · ${p}`
+  const r = state.usage.rate
+  const recent = recentSpend(m, 5 * 3_600_000), week = recentSpend(m, WEEK)
+  const share = r?.fiveHour == null ? null : recent * r.fiveHour * 100
+  const weekShare = r?.sevenDay == null ? null : week * r.sevenDay * 100
+  const label = state.money === 'usd' ? usd(m.spend.usd)
+    : state.money === 'week' ? `${weekShare == null ? '…%' : pct(weekShare)} in 7d`
+    : `${share == null ? '…%' : pct(share)} in 5h`
   const keep = m.spend.keep ? ` ${usd(m.spend.keep)} of that was notes and keep-warm calls.` : ''
   const tip = `This session has cost ${usd(m.spend.usd)} at API prices since ${new Date(m.spend.since).toLocaleDateString()}, each call priced when it was made.${keep}`
     + `\n\nIn the last 5 hours it cost ${usd(recent)}${share != null ? `, about ${pct(share)} of your 5-hour limit` : '. Codiner is still measuring how much of your 5-hour limit a dollar uses'}.`
-    + '\n\nClick to show costs as a percentage, in dollars, or both.'
+    + `\n\nIn the last 7 days it cost ${usd(week)}${weekShare != null ? `, about ${pct(weekShare)} of your weekly limit` : '. Codiner is still measuring how much of your weekly limit a dollar uses'}.`
   return { label, tip }
 }
 
-const NEXT = { pct: 'usd', usd: 'both', both: 'pct' } as const
+const NEXT = { usd: 'pct', pct: 'week', week: 'usd' } as const
 export function toggleMoney() {
   state.money = NEXT[state.money]
   localStorage.setItem('codiner.money', JSON.stringify(state.money))

@@ -7,7 +7,7 @@ import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { NewSession } from './NewSession.tsx'
 import { BackIcon, GearIcon, XIcon } from './Icons.tsx'
 import { SettingsDialog } from './SettingsDialog.tsx'
-import { cacheOf, minutes, spendOf, toggleMoney, useNow } from '../cache.ts'
+import { cacheOf, minutes, spendOf, useNow } from '../cache.ts'
 
 // Sessions grouped by directory; sessions spawned for another one nest under it.
 // You can drag both into place; until you do, folders go by latest activity and
@@ -192,12 +192,12 @@ function Row({ s, depth = 0, active, label, onPointerDown }: { s: SessionMeta; d
   )
 }
 
-// What the conversation has cost so far; a click cycles percent, dollars and both.
+// What the conversation has cost so far. Only a label: the session's own pill explains it.
 function SpendHint({ s }: { s: SessionMeta }) {
   useStore()
   const x = spendOf(s)
   if (!x) return null
-  return <span className="row-spend" data-tip={x.tip} onClick={(e) => { e.stopPropagation(); toggleMoney() }}> · {x.label}</span>
+  return <span className="row-spend"> · {x.label}</span>
 }
 
 // A cache about to expire, or one that has expired with a lot in it.

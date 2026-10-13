@@ -583,7 +583,7 @@ export class Session {
 // The text Claude receives for one part of a message.
 function partText(p: Part): string {
   return p.kind === 'note' ? formatNote(p.quote, p.text)
-    : p.kind === 'answer' ? formatAnswer(p.askKey.split(':').pop()!, p.question, p.choices, p.text)
+    : p.kind === 'answer' ? formatAnswer(p.askKey.split(':').pop()!, p.question, p.choices, p.text, p.draft)
     : p.kind === 'dismiss' ? formatDismissed(p.items)
     : p.kind === 'done' ? formatDone(p.items)
     : p.text

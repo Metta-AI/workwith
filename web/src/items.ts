@@ -66,6 +66,15 @@ export function trackItems(sid: string, events: Event[], fold: ItemFold): Tracke
       }
     })
   })
+  // An answer to a question inside an item to consider is a reply to the item too.
+  // Innermost first, so it goes up through every level.
+  for (const it of [...out].reverse()) {
+    if (!it.parent) continue
+    const up = out.find((p) => p.msg === it.msg && p.id === it.parent)
+    if (!up) continue
+    if (it.status === 'answered' && (up.status === 'open' || up.status === 'dismissing' || up.status === 'dismissed')) Object.assign(up, { status: 'answered', reply: up.reply ?? it.reply })
+    else if (it.status === 'drafted' && up.status === 'open') up.status = 'drafted'
+  }
   return out
 }
 

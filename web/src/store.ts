@@ -4,12 +4,14 @@
 import { useSyncExternalStore } from 'react'
 import type { Anchor, AuthState, Event, ImageRef, InboxItem, Part, ServerMsg, SessionMeta, Settings, Usage } from '../../shared/types.ts'
 import { inboxParts } from '../../shared/inbox.ts'
+import { itemsOf } from '../../shared/blocks.ts'
 import { applyAppearance, holdingAppearance } from './appearance.ts'
 
 // reaction: an emoji alone, shown at the left of its passage, not as a card;
 // whole: on a whole paragraph or list item (the reaction button), so not highlighted.
 export type NoteDraft = { id: string; kind: 'note'; anchor: Anchor; quote: string; text: string; images: ImageRef[]; createdAt: number; itemKey?: string; reaction?: boolean; whole?: boolean }
-export type AnswerDraft = { id: string; kind: 'answer'; askKey: string; question: string; choices: string[]; text: string; images: ImageRef[]; createdAt: number }
+// original: for a <draft>, the text as Claude wrote it; approved: it goes back as it is (edits go back anyway).
+export type AnswerDraft = { id: string; kind: 'answer'; askKey: string; question: string; choices: string[]; text: string; images: ImageRef[]; createdAt: number; original?: string; approved?: boolean }
 // A question or item set aside without a reply ("<msg>:<id>").
 export type DismissDraft = { id: string; kind: 'dismiss'; key: string; label: string; createdAt: number }
 // An item you did ("<msg>:<id>"); text: a problem you hit doing it.
@@ -37,7 +39,7 @@ type State = {
   auth: AuthState
   lightbox: string | null     // an image shown full size
   showSteps: boolean          // keep Claude's in-between messages out of the activity rows
-  money: 'pct' | 'usd' | 'both'   // costs as a share of the 5-hour limit, in dollars, or both (web/src/cache.ts)
+  money: 'usd' | 'pct' | 'week'   // costs in dollars, or as a share of the 5-hour or weekly limit (web/src/cache.ts)
   runs: Record<string, Run>
   fileTick: Record<string, number>   // bumped when a tracked file gets a new version
   stale: boolean                     // the server's code on disk is newer than the server
@@ -66,7 +68,8 @@ export const state: State = {
   auth: { state: 'ok' },
   lightbox: null,
   showSteps: saved('codiner.showSteps', false),
-  money: saved('codiner.money', 'pct'),
+  // 'both' was a choice until October 2026.
+  money: (['usd', 'pct', 'week'] as const).find((x) => x === saved('codiner.money', 'pct')) ?? 'pct',
   runs: {},
   fileTick: {},
   stale: false,
@@ -264,7 +267,18 @@ const cmp = (a: number[], b: number[]) => { for (let i = 0; i < Math.max(a.lengt
 
 export function hasContent(d: Draft): boolean {
   if (d.kind === 'dismiss' || d.kind === 'done') return true
+  // A draft goes back when edited, or approved as it is.
+  if (d.kind === 'answer' && d.original != null) return !!d.text.trim() && (d.text.trim() !== d.original.trim() || !!d.approved)
   return !!(d.text.trim() || d.images.length || (d.kind === 'answer' && d.choices.length))
+}
+
+// The questions and items directly inside an item to consider.
+function nestedIn(sid: string, key: string): { key: string; label: string }[] {
+  const at = key.indexOf(':'), msg = key.slice(0, at), id = key.slice(at + 1)
+  const [seq, i] = msg.split('.').map(Number)
+  const e = state.events[sid]?.find((x) => x.t === 'assistant' && x.seq === seq)
+  const b = e?.t === 'assistant' ? e.blocks[i] : undefined
+  return b?.type === 'text' ? itemsOf(b.text).filter((it) => it.parent === id).map((it) => ({ key: `${msg}:${it.id}`, label: it.label })) : []
 }
 
 export function dismissItem(sid: string, key: string, label: string) {
@@ -272,10 +286,14 @@ export function dismissItem(sid: string, key: string, label: string) {
   // An untouched reply card for it goes too.
   const keep = draftsOf(sid).filter((d) => !(d.kind === 'note' && d.itemKey === key && !hasContent(d)) && !(d.kind === 'answer' && d.askKey === key && !hasContent(d)))
   state.drafts[sid] = [...keep, { id: uid(), kind: 'dismiss', key, label, createdAt: Date.now() }]
+  // So do the questions inside it, which it hides.
+  for (const n of nestedIn(sid, key)) dismissItem(sid, n.key, n.label)
   changed()
 }
 export function undismissItem(sid: string, key: string) {
+  const nested = new Set(nestedIn(sid, key).map((n) => n.key))
   state.drafts[sid] = draftsOf(sid).filter((d) => !((d.kind === 'dismiss' || d.kind === 'done') && d.key === key))
+  for (const n of nested) undismissItem(sid, n)
   changed()
 }
 
@@ -313,7 +331,7 @@ export function queuedParts(sid: string, alsoDismiss: { key: string; label: stri
   ]
   const keyed: { p: Part; k: number[]; t: number }[] = mine.filter((d): d is NoteDraft | AnswerDraft => (d.kind === 'note' || d.kind === 'answer') && hasContent(d)).map((d) => d.kind === 'note'
     ? { p: { kind: 'note', text: d.text, quote: d.quote, anchor: d.anchor, images: d.images, ...(d.itemKey ? { itemKey: d.itemKey } : {}), ...(d.whole ? { whole: true } : {}) }, k: [...order(d.anchor.msg), d.anchor.pieces.at(-1)?.block ?? 0], t: d.createdAt }
-    : { p: { kind: 'answer', text: d.text, askKey: d.askKey, question: d.question, choices: d.choices, images: d.images }, k: [...order(d.askKey.split(':')[0]), 9999], t: d.createdAt })
+    : { p: { kind: 'answer', text: d.text, askKey: d.askKey, question: d.question, choices: d.choices, images: d.images, ...(d.original != null ? { draft: d.text.trim() === d.original.trim() ? 'same' as const : 'edited' as const } : {}) }, k: [...order(d.askKey.split(':')[0]), 9999], t: d.createdAt })
   for (const i of lead) if ((i.kind === 'answer' || i.kind === 'reply') && i.key) keyed.push({ p: inboxParts([i])[0], k: [...order(i.key.split(':')[0]), 9999], t: i.ts })
   keyed.sort((a, b) => cmp(a.k, b.k) || a.t - b.t)
   const parts: Part[] = keyed.map((x) => x.p)

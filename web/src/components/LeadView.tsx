@@ -66,7 +66,7 @@ export function LeadView({ id }: { id: string }) {
               <input type="checkbox" checked={st.settings.leadAutoSend} onChange={(e) => void api('/api/settings', 'PUT', { leadAutoSend: e.target.checked })} />
               Auto-send
             </label>
-            <button title="Start the lead over with an empty context (it keeps NOTES.md)" onClick={() => { if (confirm('Give the lead a fresh start? It forgets this conversation but keeps its NOTES.md.')) { void api('/api/lead/reset') } }}>Fresh start</button>
+            <button title="Start the lead over with an empty context (it keeps LEAD_NOTES.md)" onClick={() => { if (confirm('Give the lead a fresh start? It forgets this conversation but keeps its LEAD_NOTES.md.')) { void api('/api/lead/reset') } }}>Fresh start</button>
           </>}
         />
       </section>
