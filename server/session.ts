@@ -25,6 +25,7 @@ export type Hooks = {
   authFailed(s: Session): void
   usage(u: Usage): void
   commands(s: Session, list: SlashCommand[]): void
+  mcpServers(s: Session): Record<string, unknown> | null   // MCP servers to add once the process starts
 }
 
 export type SlashCommand = { name: string; description: string; argumentHint: string }
@@ -170,6 +171,9 @@ export class Session {
     p.on('error', (e) => { this.notice(`Could not start claude: ${e.message}`, 'error') })
     // Ask for the command list (with descriptions) the way the Agent SDK does.
     p.stdin!.write(JSON.stringify({ type: 'control_request', request_id: `init-${m.id}`, request: { subtype: 'initialize' } }) + '\n')
+    // A session that started with your MCP servers off gets back the ones turned on since.
+    const mcp = this.hooks.mcpServers(this)
+    if (mcp && Object.keys(mcp).length) p.stdin!.write(JSON.stringify({ type: 'control_request', request_id: `mcp-${randomUUID()}`, request: { subtype: 'mcp_set_servers', servers: mcp } }) + '\n')
     p.on('exit', (code, signal) => {
       if (this.proc !== p) return
       this.proc = null
@@ -220,6 +224,13 @@ export class Session {
       cwd: m.cwd,
       env: childEnv(),
     }
+  }
+
+  // The MCP servers this session has on besides Codiner's, in a running process at once;
+  // a process started later gets them from the mcpServers hook.
+  setMcp(servers: Record<string, unknown>) {
+    if (!this.proc || this.stopping) return
+    this.write({ type: 'control_request', request_id: `mcp-${randomUUID()}`, request: { subtype: 'mcp_set_servers', servers } })
   }
 
   stop() {
@@ -501,6 +512,8 @@ export class Session {
       }
       case 'control_response': {
         const r = msg.response
+        const failed = String(r?.request_id ?? '').startsWith('mcp-') ? Object.entries(r.response?.errors ?? {}) : []
+        if (failed.length) this.notice(`Could not turn on ${failed.map(([n, e]) => `${n} (${e})`).join(', ')}`, 'warn')
         if (r?.request_id === `init-${m.id}` && Array.isArray(r.response?.commands)) {
           this.hooks.commands(this, r.response.commands
             .filter((c: any) => c?.name && !this.terminalOnly.has(c.name) && !c.name.startsWith('__'))

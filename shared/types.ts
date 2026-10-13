@@ -64,6 +64,8 @@ export type SessionMeta = {
   // The first API call's prompt: Claude Code's system prompt and tools, and how much of
   // it other sessions had already cached. What a new session would start from.
   base?: { total: number; read: number }
+  // Started with your MCP servers off (server/mcpservers.ts); on: the ones turned on since.
+  mcp?: { strict: true; on: string[] }
   // The model it will probably run, until Claude Code reports the real one into model.
   expectedModel?: string
   // Set by a rewind: the next start resumes claudeSessionId cut at this entry, as a fork.
@@ -136,6 +138,9 @@ export type Settings = {
   leadAutoSend: boolean; autoModeMigrated?: boolean; trackedFiles?: string[]; selfRestart?: boolean
   appearance?: Appearance; groupOrder?: string[]; cacheGuard?: number
   notes?: boolean; keepWarmHours?: number; keepWarmMax?: number; keepWarmUsage?: number
+  // MCP servers: new sessions start with them off (default), except those always on;
+  // Claude may turn one on itself (default) or must ask you.
+  mcpStartOff?: boolean; mcpAlways?: string[]; mcpClaude?: boolean
 }
 
 export type ServerMsg =

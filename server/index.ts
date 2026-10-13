@@ -23,6 +23,7 @@ import { cleanAppearance } from '../shared/appearance.ts'
 import * as meter from './meter.ts'
 import { notesDir, notesNow, notesPath, readNotes, resumeKeepWarm, startNotes } from './notes.ts'
 import { notesFile } from '../shared/notes.ts'
+import { configsFor, probe, serversFor } from './mcpservers.ts'
 import { DEFAULT_CACHE_GUARD, cacheLeft, knownTtl } from '../shared/cache.ts'
 import { AGENTS_FILE, agentsPrompt, readAgentsMd, writeAgentsMd } from './agentsmd.ts'
 import { handleMcp, type Tool } from './mcp.ts'
@@ -126,6 +127,7 @@ const hooks: Hooks = {
     commands.set(s.meta.id, list)
     if (s.meta.kind === 'worker') { lastCommands = list; fs.writeFile(COMMANDS_FILE, JSON.stringify(list), () => {}) }
   },
+  mcpServers: (s) => s.meta.mcp ? configsFor(s.meta.cwd, s.meta.mcp.on) : null,
 }
 
 function launchFor(meta: SessionMeta): () => Launch {
@@ -137,9 +139,11 @@ function launchFor(meta: SessionMeta): () => Launch {
     return {
       args: [
         '--mcp-config', JSON.stringify({ mcpServers: { codiner: { type: 'http', url: `http://127.0.0.1:${PORT}/mcp/${MCP_TOKEN}/look/${meta.id}` } } }),
-        '--allowedTools', 'mcp__codiner__set_look,mcp__codiner__set_title',
+        // Started with your MCP servers off: only Codiner's, until one is turned on (server/mcpservers.ts).
+        ...(meta.mcp ? ['--strict-mcp-config'] : []),
+        '--allowedTools', `mcp__codiner__set_look,mcp__codiner__set_title${meta.mcp && settings.mcpClaude !== false ? ',mcp__codiner__use_mcp_server' : ''}`,
       ],
-      prompt: WORKER_PROMPT + lookPrompt(meta.look) + titlePrompt(meta) + (notes ? workerNotesPrompt(notesFile(meta.id)) : '') + agentsPrompt(),
+      prompt: WORKER_PROMPT + lookPrompt(meta.look) + titlePrompt(meta) + mcpPrompt(meta) + (notes ? workerNotesPrompt(notesFile(meta.id)) : '') + agentsPrompt(),
     }
   }
   return () => ({
@@ -219,7 +223,12 @@ function createSession(o: { cwd: string; title?: string; model?: string | null; 
   const s = adopt(newMeta({
     cwd, title: o.title?.trim() || path.basename(cwd), model: o.model || null, permissionMode: mode,
     parentId: o.parentId && sessions.has(o.parentId) ? o.parentId : null,
+    // Your MCP servers start off, except the ones you keep always on.
+    ...(settings.mcpStartOff !== false ? { mcp: { strict: true as const, on: [...(settings.mcpAlways ?? [])] } } : {}),
   }))
+  // Learn this folder's servers before Claude needs their names.
+  // The ones always on reach a process that started before the probe ended.
+  if (s.meta.mcp) probe(cwd).then(() => { if (s.meta.mcp?.on.length) s.setMcp(configsFor(cwd, s.meta.mcp.on)) }).catch(() => {})
   metaChanged()
   return s
 }
@@ -336,6 +345,41 @@ function titlePrompt(meta: SessionMeta): string {
   const base = `\n\n## Your session's name\nName this session after its task with the set_title tool: 2 to 5 words, like "Login flow fix". Do it once the task is clear, and again only if the task changes a lot. Do not mention it unless the user asks.`
   if (!meta.titleByUser) return base + '\n'
   return base + ` The user named this session "${meta.title}"; you may still rename it when the task changes, and they can undo it.${meta.titleUndone ? ` They undid your rename to "${meta.titleUndone}", so do not propose that one again.` : ''}\n`
+}
+
+// A session that started with your MCP servers off is told their names, and may turn one on.
+function mcpPrompt(meta: SessionMeta): string {
+  if (!meta.mcp) return ''
+  const names = serversFor(meta.cwd).map((s) => s.name)
+  const may = settings.mcpClaude !== false
+  return `\n\n## MCP servers\nThis session started with the user's MCP servers off, to keep its context small.`
+    + (names.length ? ` These are available: ${names.join(', ')}.` : ' Their names are not known yet; use_mcp_server lists them.')
+    + (meta.mcp.on.length ? ` Turned on: ${meta.mcp.on.join(', ')}.` : '')
+    + ` When the task needs one, turn it on with the use_mcp_server tool${may ? '' : ', which asks the user first'}, then use its tools (they may come as deferred tools: load them with ToolSearch). Do not turn on a server the task does not need.\n`
+}
+
+function mcpTool(id: string): Tool {
+  return {
+    name: 'use_mcp_server',
+    description: "Turn on one of the user's MCP servers (for example a claude.ai connector) in this session, when the task needs it. Its tools become available from your next step. With no name, it lists the servers.",
+    inputSchema: { type: 'object', properties: { name: { type: 'string', description: 'The server name, as listed' } } },
+    run: async (args) => {
+      const s = get(id), m = s.meta
+      if (!m.mcp) return 'This session has all of the user\'s MCP servers on already.'
+      const want = String(args?.name ?? '').trim().toLowerCase().replace(/^claude\.ai /, '')
+      const find = () => serversFor(m.cwd).find((x) => x.name.toLowerCase().replace(/^claude\.ai /, '') === want)
+      let server = want ? find() : undefined
+      if (want && !server) { await probe(m.cwd).catch(() => {}); server = find() }
+      const list = serversFor(m.cwd).map((x) => `${x.name}${m.mcp!.on.includes(x.name) ? ' (on)' : ''}${x.status === 'needs-auth' ? ' (needs sign-in)' : ''}`).join(', ')
+      if (!want) return list ? `Servers: ${list}.` : 'The user has no other MCP servers.'
+      if (!server) return `There is no server called "${args.name}". Servers: ${list || 'none'}.`
+      if (server.status === 'needs-auth') return `${server.name} needs the user to sign in first, in their claude.ai connector settings. Ask them to do that.`
+      if (!m.mcp.on.includes(server.name)) m.mcp.on.push(server.name)
+      s.setMcp(configsFor(m.cwd, m.mcp.on))
+      metaChanged()
+      return `Turned on ${server.name} (${server.tools} tools). Its tools are available from your next step.`
+    },
+  }
 }
 
 function titleTool(id: string): Tool {
@@ -634,6 +678,9 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       ...(Number.isFinite(body.keepWarmHours) && body.keepWarmHours >= 0 ? { keepWarmHours: Math.min(48, body.keepWarmHours) } : {}),
       ...(Number.isFinite(body.keepWarmMax) && body.keepWarmMax > 0 ? { keepWarmMax: Math.round(body.keepWarmMax) } : {}),
       ...(Number.isFinite(body.keepWarmUsage) && body.keepWarmUsage > 0 ? { keepWarmUsage: Math.min(100, body.keepWarmUsage) } : {}),
+      ...(typeof body.mcpStartOff === 'boolean' ? { mcpStartOff: body.mcpStartOff } : {}),
+      ...(typeof body.mcpClaude === 'boolean' ? { mcpClaude: body.mcpClaude } : {}),
+      ...(Array.isArray(body.mcpAlways) ? { mcpAlways: body.mcpAlways.map(String) } : {}),
     }
     saveSettings(settings)
     broadcast({ type: 'settings', settings })
@@ -641,6 +688,11 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   }
   // What the usage meter has measured, to see how steady its estimate is.
   // What a new session in a folder starts with, by category.
+  // Your MCP servers in a folder, found by a probe (server/mcpservers.ts).
+  if (a === 'mcp' && method === 'POST') {
+    const cwd = path.resolve(expandHome(String((await json(req)).cwd ?? '~')))
+    try { return send(res, 200, await probe(cwd, true)) } catch (e) { throw new HttpError(500, (e as Error).message) }
+  }
   if (a === 'context' && method === 'GET') {
     const cwd = path.resolve(expandHome(url.searchParams.get('cwd') || '~'))
     if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new HttpError(400, `Not a directory: ${cwd}`)
@@ -769,6 +821,10 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   }
   if (b === 'events' && method === 'GET') return send(res, 200, s.getEvents())
   if (b === 'commands' && method === 'GET') return send(res, 200, commands.get(id) ?? lastCommands)
+  if (b === 'mcp' && method === 'GET') {
+    if (s.meta.kind === 'worker') probe(s.meta.cwd).catch(() => {})
+    return send(res, 200, { servers: serversFor(s.meta.cwd), on: s.meta.mcp?.on ?? null })
+  }
   if (b === 'notes' && !c && method === 'GET') return send(res, 200, { path: notesPath(s.meta), text: readNotes(s.meta) })
   if (method !== 'POST') throw new HttpError(404, 'Not found')
   const body = await json(req)
@@ -823,6 +879,16 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       if (!/^\/[\w:.-]+/.test(body.cmd ?? '')) throw new HttpError(400, 'Not a slash command')
       s.command(body.cmd)
       return send(res, 200, { ok: true })
+    case 'mcp': {
+      // Turn one of your MCP servers on or off in a session that started with them off.
+      const m = s.meta
+      if (!m.mcp) throw new HttpError(400, 'This session started with all your MCP servers on')
+      const name = String(body.name ?? '')
+      m.mcp.on = body.on ? [...new Set([...m.mcp.on, name])] : m.mcp.on.filter((n) => n !== name)
+      s.setMcp(configsFor(m.cwd, m.mcp.on))
+      metaChanged()
+      return send(res, 200, { on: m.mcp.on })
+    }
     case 'notes': {
       // Write the notes now; keep-warm on again; or a new session that starts from them.
       if (c === 'keep-warm') { resumeKeepWarm(s.meta); return send(res, 200, { ok: true }) }
@@ -864,7 +930,7 @@ const server = http.createServer(async (req, res) => {
       return await handleMcp(req, res, lead ? [...tools, lookTool(lead.meta.id)] : tools)
     }
     const look = url.pathname.startsWith(`/mcp/${MCP_TOKEN}/look/`) && url.pathname.split('/').pop()
-    if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look)])
+    if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look), mcpTool(look)])
     if (url.pathname.startsWith('/api/')) return await api(req, res, url)
     if (vite) return vite.middlewares(req, res)
     serveStatic(url.pathname, res)

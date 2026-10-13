@@ -115,6 +115,14 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
                 {[...new Set([...GUARDS, guard])].sort((x, y) => x - y).map((g) => <option key={g} value={g}>{g ? `${g / 1000}k tokens` : 'never ask'}</option>)}
               </select>
             </label>
+            <label className="settings-check" data-tip="A new session then has only Codiner's own tools. Its MCP chip turns servers on, and so can Claude. Sessions that exist now keep what they have.">
+              <input type="checkbox" checked={st.settings.mcpStartOff !== false} onChange={(e) => void api('/api/settings', 'PUT', { mcpStartOff: e.target.checked })} />
+              Start new sessions with my MCP servers off
+            </label>
+            <label className="settings-check" data-tip="Without this, Claude asks you before it turns on an MCP server. It applies to sessions that start after you change it.">
+              <input type="checkbox" checked={st.settings.mcpClaude !== false} onChange={(e) => void api('/api/settings', 'PUT', { mcpClaude: e.target.checked })} />
+              Let Claude turn on an MCP server when the task needs it
+            </label>
             <label className="settings-check" title="After 20 quiet minutes, a call on the conversation writes compact notes to .codiner/notes/ in its folder, to start a new session from">
               <input type="checkbox" checked={st.settings.notes !== false} onChange={(e) => void api('/api/settings', 'PUT', { notes: e.target.checked })} />
               Write notes on quiet sessions

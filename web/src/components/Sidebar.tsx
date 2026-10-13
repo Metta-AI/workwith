@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import type { SessionMeta } from '../../../shared/types.ts'
+import type { SessionMeta, Usage } from '../../../shared/types.ts'
 import { api, changed, closeSession, select, state, useStore } from '../store.ts'
 import { HistoryDialog } from './HistoryDialog.tsx'
 import { fatigue, timeAgo } from '../util.ts'
@@ -7,7 +7,7 @@ import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { NewSession } from './NewSession.tsx'
 import { BackIcon, GearIcon, XIcon } from './Icons.tsx'
 import { SettingsDialog } from './SettingsDialog.tsx'
-import { cacheOf, minutes, spendOf, useNow } from '../cache.ts'
+import { cacheOf, minutes, spendOf, toggleMoney, useNow, usd } from '../cache.ts'
 
 // Sessions grouped by directory; sessions spawned for another one nest under it.
 // You can drag both into place; until you do, folders go by latest activity and
@@ -161,9 +161,9 @@ export function Sidebar({ width }: { width: number }) {
         <div className="side-foot-left">
           <button className="link" title="Settings" onClick={() => setSettings(true)}><GearIcon size={14} /></button>
           {(u.fiveHour != null || u.sevenDay != null) && (
-            <div className="usage" title="Your Claude plan's usage windows, as Claude Code reports them">
-              {u.fiveHour != null && <span>5h {Math.round(u.fiveHour * 100)}%</span>}
-              {u.sevenDay != null && <span>7d {Math.round(u.sevenDay * 100)}%</span>}
+            <div className="usage" data-tip={limitsTip(u)} onClick={toggleMoney}>
+              {u.fiveHour != null && <span>5h {limitLabel(u.fiveHour, u.rate?.fiveHour, st.money)}</span>}
+              {u.sevenDay != null && <span>7d {limitLabel(u.sevenDay, u.rate?.sevenDay, st.money)}</span>}
             </div>
           )}
         </div>
@@ -190,6 +190,28 @@ function Row({ s, depth = 0, active, label, onPointerDown }: { s: SessionMeta; d
       )}
     </button>
   )
+}
+
+// A usage window in dollars at API prices, once the meter knows what a dollar uses:
+// the meter's rate is the share of the limit one dollar uses, so the whole limit is 1 / rate.
+function limitLabel(used: number, rate: number | undefined, mode: string) {
+  if (mode !== 'usd' || !rate) return `${Math.round(used * 100)}%`
+  return `${dollars(used / rate)}/${dollars(1 / rate)}`
+}
+
+// Dollars in few characters: $4.7, $48, $282, $1.8k, $18k.
+function dollars(x: number): string {
+  if (x >= 1000) return `$${+(x / 1000).toPrecision(2)}k`
+  if (x >= 10) return `$${Math.round(x)}`
+  return `$${+x.toPrecision(2)}`
+}
+
+function limitsTip(u: Usage) {
+  const line = (name: string, used: number | undefined, rate: number | undefined) => used == null ? '' : rate
+    ? `Your ${name} limit is about ${usd(1 / rate)} at API prices. You have used ${Math.round(used * 100)}% of it, about ${usd(used / rate)}, so about ${usd((1 - used) / rate)} is left.`
+    : `You have used ${Math.round(used * 100)}% of your ${name} limit. Codiner is still measuring what it is in dollars.`
+  return [line('5-hour', u.fiveHour, u.rate?.fiveHour), line('weekly', u.sevenDay, u.rate?.sevenDay)].filter(Boolean).join('\n\n')
+    + `\n\nThe dollar values are estimates: the meter compares what Claude Code spends at API prices with how far the percentages move (${u.rate?.pairs ?? 0} measurements so far). Click to show dollars or percent.`
 }
 
 // What the conversation has cost so far. Only a label: the session's own pill explains it.

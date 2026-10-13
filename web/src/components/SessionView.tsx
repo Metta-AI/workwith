@@ -15,6 +15,7 @@ import { Splitter, useWidth } from './Splitter.tsx'
 import { cacheOf, limitLeft, minutes, money, moneyLong, ofFresh, pct, shareOf, spendOf, toggleMoney, useNow, usd } from '../cache.ts'
 import { ttlLabel } from '../../../shared/cache.ts'
 import { NotesPill } from './NotesDialog.tsx'
+import { McpPill } from './McpDialog.tsx'
 
 export function ContextGauge({ m, onCompact }: { m: SessionMeta; onCompact?: () => void }) {
   const used = m.context.used
@@ -103,6 +104,7 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
           <CachePill m={m} />
           <SpendPill m={m} />
           <NotesPill m={m} />
+          <McpPill m={m} />
           <ContextGauge m={m} onCompact={() => {
             if (cacheOf(m, Date.now()).blocked && !confirm(`The prompt cache has expired. Compacting reads all ${kTokens(m.context.used)} tokens at full price. Compact anyway?`)) return
             void api(`/api/sessions/${m.id}/command`, 'POST', { cmd: '/compact' })
