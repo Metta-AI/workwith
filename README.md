@@ -42,7 +42,8 @@ ever reports a key-based auth source. The sidebar footer shows your plan's 5-hou
   - `<ask id="…">`: a question with suggested answers to click, a text box, and an X;
   - `<run title="…">`: a command for you to run yourself (one that restarts Codiner, needs
     sudo, or is interactive), with **Run in Terminal** (macOS: a new Terminal window in the
-    session's directory, via a self-deleting `.command` file) and **Copy**.
+    session's directory, via a self-deleting `.command` file, which closes itself when the
+    command succeeds) and **Copy**.
 
   Sections render as the reply streams in. The older ` ```ask ` and `:::more` forms still
   parse. Parsing is in `shared/blocks.ts`.
@@ -109,6 +110,17 @@ shows while it waits, with the page's link and a box for the code that page show
 sign-in can't finish by itself. Once signed in, the message that failed is sent again in its
 own place. Only a missing login at start or an auth failure starts it by itself (not again
 within a minute of a sign-in that worked); the banner's Sign in button starts it any time. The code is in `server/auth.ts`.
+
+## Where your notes came from
+
+Settings keeps the history of the notes files you and Claude keep: `~/.codiner/AGENTS.md`,
+your global `~/.claude/CLAUDE.md`, the master's `NOTES.md`, and any file you add there. Every
+version is kept with who made it: you in Settings, a Codiner session (linked to the message
+where Claude edited the file, with Edit/Write or a shell command naming it), a Claude Code
+session elsewhere (found in its transcript), or someone outside. **Read** shows the file
+rendered, each block and list item with a bar for how recently it changed (the latest change
+tinted); hover for who and when, click for every change with links to the conversations.
+**Edit** and **History** do what they say. The code is in `server/filehistory.ts`.
 
 ## Code
 

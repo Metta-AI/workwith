@@ -20,6 +20,7 @@ import { MASTER_PROMPT, WORKER_PROMPT, lookPrompt } from './prompts.ts'
 import { LOOK_OPTIONS, LOOK_SLOTS, cleanLook, describeLook } from '../shared/looks.ts'
 import { AGENTS_FILE, agentsPrompt, readAgentsMd, writeAgentsMd } from './agentsmd.ts'
 import { handleMcp, type Tool } from './mcp.ts'
+import { blame, initFileHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
 import { authState, cancelLogin, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
 import {
   DATA, MASTER_DIR, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, loadSessions, loadSettings, saveImage, saveSessions, saveSettings,
@@ -42,6 +43,41 @@ const sockets = new Set<WebSocket>()
 // list, and the last one seen for sessions that haven't started yet.
 const COMMANDS_FILE = path.join(DATA, 'commands.json')
 const commands = new Map<string, SlashCommand[]>()
+// Closes the terminal window (or iTerm2 session) on the tty given as $1, a moment
+// after the command's shell ends. Each app gets its own AppleScript, so a Mac
+// without iTerm2 still compiles the Terminal one.
+const CLOSER = `#!/bin/sh
+rm -f "$0"
+sleep 1
+case "$TERM_PROGRAM" in
+iTerm.app) osascript - "$1" <<'AS'
+on run argv
+  tell application "iTerm2"
+    repeat with w in windows
+      repeat with t in tabs of w
+        repeat with x in sessions of t
+          if tty of x is (item 1 of argv) then close x
+        end repeat
+      end repeat
+    end repeat
+  end tell
+end run
+AS
+;;
+Apple_Terminal) osascript - "$1" <<'AS'
+on run argv
+  tell application "Terminal"
+    repeat with w in windows
+      repeat with t in tabs of w
+        if tty of t is (item 1 of argv) then close w
+      end repeat
+    end repeat
+  end tell
+end run
+AS
+;;
+esac
+`
 // Commands opened in Terminal from a <run> block, by token, until they report back.
 const runs = new Map<string, { sid: string; log: string }>()
 let lastCommands: SlashCommand[] = (() => { try { return JSON.parse(fs.readFileSync(COMMANDS_FILE, 'utf8')) } catch { return [] } })()
@@ -60,7 +96,19 @@ function metaChanged() {
 
 const hooks: Hooks = {
   meta: metaChanged,
-  event: (s, event) => { broadcast({ type: 'event', sessionId: s.meta.id, event }); metaChanged() },
+  event: (s, event) => {
+    broadcast({ type: 'event', sessionId: s.meta.id, event })
+    metaChanged()
+    // A tool call that finished may have changed a tracked file: record it with this message.
+    if (event.t === 'tool_result') {
+      const ev = s.getEvents()
+      for (let i = ev.length - 1; i >= 0 && i > ev.length - 400; i--) {
+        const a = ev[i]
+        const b = a.t === 'assistant' ? a.blocks.find((x) => x.type === 'tool_use' && x.id === event.toolUseId) : undefined
+        if (b?.type === 'tool_use') { noteEdit(b.name, b.input, { kind: 'session', sid: s.meta.id, title: s.meta.title, seq: a.seq }); break }
+      }
+    }
+  },
   delta: (s, text, reset) => broadcast({ type: 'delta', sessionId: s.meta.id, text, reset }),
   authFailed: () => authNeeded(),
   truncate: (s, seq) => { broadcast({ type: 'truncate', sessionId: s.meta.id, seq }); metaChanged() },
@@ -366,11 +414,42 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     return
   }
   if (a === 'images' && method === 'POST') return send(res, 200, saveImage(String((await json(req)).dataUrl ?? '')))
+  if (a === 'files') {
+    const p = url.searchParams.get('path') ?? ''
+    const known = trackedFiles().includes(p)
+    if (!id && method === 'GET') return send(res, 200, trackedFiles().map((f) => ({
+      path: f, builtIn: BUILT_IN().includes(f), exists: fs.existsSync(f), versions: versions(f).length, last: versions(f).at(-1)?.ts ?? null,
+    })))
+    if (id === 'blame' && method === 'GET') { if (!known) throw new HttpError(404, 'Not a tracked file'); return send(res, 200, blame(p)) }
+    if (!id && method === 'PUT') {
+      if (!known) throw new HttpError(404, 'Not a tracked file')
+      const body = await json(req)
+      if (typeof body.text !== 'string') throw new HttpError(400, 'text must be a string')
+      fs.mkdirSync(path.dirname(p), { recursive: true })
+      fs.writeFileSync(p, body.text)
+      recordVersion(p, { kind: 'settings' })
+      return send(res, 200, blame(p))
+    }
+    if (id === 'track' && method === 'POST') {
+      const f = path.resolve(expandHome(String((await json(req)).path ?? '').trim()))
+      if (!f || f === '/') throw new HttpError(400, 'Give a file path')
+      if (!trackedFiles().includes(f)) { settings = { ...settings, trackedFiles: [...(settings.trackedFiles ?? []), f] }; saveSettings(settings) }
+      recordVersion(f, { kind: 'initial' })
+      return send(res, 200, { path: f })
+    }
+    if (id === 'track' && method === 'DELETE') {
+      settings = { ...settings, trackedFiles: (settings.trackedFiles ?? []).filter((f) => f !== p) }
+      saveSettings(settings)
+      return send(res, 200, { ok: true })
+    }
+    throw new HttpError(404, 'Not found')
+  }
   if (a === 'agents-md' && method === 'GET') return send(res, 200, { path: AGENTS_FILE, text: readAgentsMd() })
   if (a === 'agents-md' && method === 'PUT') {
     const body = await json(req)
     if (typeof body.text !== 'string') throw new HttpError(400, 'text must be a string')
     writeAgentsMd(body.text)
+    recordVersion(AGENTS_FILE, { kind: 'settings' })
     return send(res, 200, { path: AGENTS_FILE, text: body.text })
   }
   if (a === 'settings' && method === 'PUT') {
@@ -492,12 +571,19 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       const file = path.join(os.tmpdir(), `codiner-${token}.command`)
       const log = path.join(os.tmpdir(), `codiner-${token}.log`)
       const q = (x: string) => `'${x.replace(/'/g, `'\\''`)}'`
+      const closer = path.join(os.tmpdir(), `codiner-${token}-close.sh`)
+      fs.writeFileSync(closer, CLOSER, { mode: 0o755 })
       runs.set(token, { sid: s.meta.id, log })
       fs.writeFileSync(file, [
         '#!/bin/sh', 'rm -f "$0"', `cd ${q(s.meta.cwd)} || exit 1`,
         `cat <<'CODINER_CMD'`, `$ ${cmd}`, 'CODINER_CMD',
         `script -q ${q(log)} /bin/sh -c ${q(cmd)}`, 'code=$?',
-        `curl -s -m 5 -X POST "http://127.0.0.1:${PORT}/api/runs/${token}?code=$code" >/dev/null 2>&1`, 'exit $code', '',
+        `curl -s -m 5 -X POST "http://127.0.0.1:${PORT}/api/runs/${token}?code=$code" >/dev/null 2>&1`,
+        // On success the window closes itself a moment after the shell ends (found by its tty);
+        // on failure it stays, so you can read what went wrong.
+        'if [ $code -eq 0 ]; then', '  echo; echo "Done. This window closes."',
+        `  nohup sh ${q(closer)} "$(tty)" >/dev/null 2>&1 &`, `else rm -f ${q(closer)}`, 'fi',
+        'exit $code', '',
       ].join('\n'), { mode: 0o755 })
       execFile('open', [file], (err) => { if (err) console.error('open', err.message) })
       return send(res, 200, { token })
@@ -571,6 +657,18 @@ if (DEV) {
 }
 
 // A missing or expired login starts a sign-in; once signed in, what failed goes again.
+// Files whose history is kept: the notes every session reads, and any you add in Settings.
+const BUILT_IN = () => [AGENTS_FILE, path.join(os.homedir(), '.claude', 'CLAUDE.md'), path.join(MASTER_DIR, 'NOTES.md')]
+const trackedFiles = () => [...new Set([...BUILT_IN(), ...(settings.trackedFiles ?? [])])]
+initFileHistory({
+  files: trackedFiles,
+  sessions: () => [...sessions.values()].map((s) => ({
+    sid: s.meta.id, title: s.meta.title, csid: s.meta.claudeSessionId,
+    seqOf: (toolUseId: string) => s.getEvents().find((e) => e.t === 'assistant' && e.blocks.some((b) => b.type === 'tool_use' && b.id === toolUseId))?.seq ?? null,
+  })),
+  changed: (p) => broadcast({ type: 'file', path: p }),
+})
+
 initAuth({
   change: (auth) => broadcast({ type: 'auth', auth }),
   signedIn: () => { for (const s of sessions.values()) s.retryAfterSignIn(hiddenFor(s)) },

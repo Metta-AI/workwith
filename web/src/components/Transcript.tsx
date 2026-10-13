@@ -299,7 +299,7 @@ function Activity({ sid, items, f, live }: { sid: string; items: Item[]; f: Fold
   const [open, setOpen] = useState(false)
   const last = items[items.length - 1]
   return (
-    <div className={`activity${open ? ' open' : ''}`}>
+    <div className={`activity${open ? ' open' : ''}`} data-seqs={[...new Set(items.map((it) => it.e.seq))].join(',')}>
       <button className="tool-line activity-line" onClick={() => setOpen(!open)}>
         <span className="tool-icon"><ChevronIcon size={12} className="chevron" /></span>
         <span className="activity-sum">{tally(items, f)}</span>

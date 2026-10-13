@@ -268,7 +268,8 @@ textarea.agents-md { font-size: 12.5px; line-height: 1.5; resize: vertical; min-
 .ack-row .more-emoji { padding: 4px 10px; border-radius: 14px; }
 .ack-row button.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); position: relative; }
 /* An emoji you already put on comes off: hovering it says so. */
-.ack-row button.on:hover::after { content: '×'; position: absolute; top: -5px; right: -5px; width: 14px; height: 14px; border-radius: 50%; background: var(--bad); color: #fff; font-size: 11px; line-height: 14px; text-align: center; }
+.ack-row button.on:hover { transform: none; background: rgba(229, 83, 75, .14); box-shadow: inset 0 0 0 1.5px var(--bad); }
+.ack-row button.on:hover::after { content: '−'; position: absolute; right: 0; bottom: 0; width: 11px; height: 11px; border-radius: 50%; background: var(--bad); color: #fff; font-size: 10px; line-height: 10px; text-align: center; }
 .rail-ack .emoji-picker { left: 0; top: calc(100% + 4px); }
 .more-emoji { font-size: 14px !important; color: var(--muted); }
 .emoji-picker { position: absolute; z-index: 20; width: 260px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px rgba(0, 0, 0, .18); padding: 6px; }
@@ -483,4 +484,39 @@ textarea.agents-md { font-size: 12.5px; line-height: 1.5; resize: vertical; min-
 .modal label > input, .modal label > select, .modal label > textarea { color: var(--text); font-size: 14px; }
 .modal .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Settings: the notes files and their history (SettingsDialog.tsx). */
+.modal-back:has(.files-modal) { padding-top: 5vh; }
+.modal.files-modal { width: min(1100px, 94vw); height: 85vh; padding: 14px 16px; gap: 8px; }
+.files-head { display: flex; align-items: center; gap: 16px; }
+.files-head h2 { margin: 0; }
+.files-head .settings-check { flex: 1; flex-direction: row; margin: 0; color: var(--muted); }
+.files-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 240px 1fr; gap: 14px; }
+.files-list { overflow-y: auto; display: flex; flex-direction: column; gap: 2px; border-right: 1px solid var(--line); padding-right: 10px; }
+.file-row { position: relative; display: flex; flex-direction: column; padding: 6px 8px; border-radius: 7px; cursor: pointer; }
+.file-row:hover { background: rgba(127, 127, 127, .1); } .file-row.on { background: var(--accent-soft); }
+.file-name { font-size: 13.5px; font-weight: 600; } .file-dir, .file-meta { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-x { position: absolute; right: 4px; top: 4px; opacity: 0; } .file-row:hover .file-x { opacity: 1; }
+.file-add { margin-top: 8px; } .file-add input { width: 100%; font-size: 12.5px; }
+.file-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.file-tabs { display: flex; gap: 4px; align-items: center; }
+.file-tabs button { border: none; background: none; padding: 4px 10px; border-radius: 6px; color: var(--muted); }
+.file-tabs button.on { background: var(--panel); color: var(--text); }
+.file-path { margin-left: auto; font-size: 11.5px; }
+.file-pane .agents-md { flex: 1; max-height: none; resize: none; }
+.blame-view { position: relative; flex: 1; overflow-y: auto; padding: 4px 8px 20px 18px; }
+/* Each block's bar: brighter for a newer change; the latest change is tinted too. */
+.blame-view .blame { position: relative; border-radius: 4px; cursor: pointer; }
+.blame-view .blame::before { content: ''; position: absolute; left: -14px; top: 2px; bottom: 2px; width: 3px; border-radius: 2px; background: var(--accent); opacity: var(--age); }
+.blame-view .blame:hover::before { width: 5px; left: -15px; }
+.blame-view .blame:hover { background: rgba(127, 127, 127, .07); }
+.blame-view .blame.latest { background: var(--hl-sent); }
+.blame-view li.blame::before { left: -38px; }
+.blame-picked { position: sticky; top: 0; z-index: 2; display: flex; flex-direction: column; gap: 3px; padding: 8px 30px 8px 10px; margin-bottom: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, .12); }
+.blame-picked .icon-btn { position: absolute; right: 6px; top: 6px; }
+.file-history { overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.hist-row { display: flex; gap: 10px; align-items: baseline; font-size: 13px; padding: 3px 0; }
+.hist-when { width: 80px; flex: none; font-size: 12px; }
+.hist-size .add { color: var(--ok); } .hist-size .del { color: var(--bad); }
+.who-link { padding: 0; color: var(--blue); text-decoration: underline; text-underline-offset: 2px; }
 .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--bad); color: #fff; padding: 8px 14px; border-radius: 8px; cursor: pointer; z-index: 40; max-width: 80vw; }

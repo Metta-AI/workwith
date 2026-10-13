@@ -84,11 +84,14 @@ export type Event =
 export type AuthState = { state: 'ok' | 'needed' | 'pending' | 'failed'; url?: string; error?: string }
 
 export type Usage = { fiveHour?: number; sevenDay?: number; resetsAt?: number; status?: string }
-export type Settings = { masterAutoSend: boolean; autoModeMigrated?: boolean }
+// trackedFiles: files whose history Codiner keeps, besides AGENTS.md, CLAUDE.md and NOTES.md.
+export type Settings = { masterAutoSend: boolean; autoModeMigrated?: boolean; trackedFiles?: string[] }
 
 export type ServerMsg =
   | { type: 'hello'; sessions: SessionMeta[]; settings: Settings; usage: Usage; platform: string; home: string; auth: AuthState }
   | { type: 'auth'; auth: AuthState }
+  // A tracked file has a new version.
+  | { type: 'file'; path: string }
   // A command run from a <run> block ended.
   | { type: 'run'; sessionId: string; token: string; code: number; tail: string }
   | { type: 'sessions'; sessions: SessionMeta[] }

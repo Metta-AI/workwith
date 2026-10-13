@@ -36,6 +36,7 @@ type State = {
   lightbox: string | null     // an image shown full size
   showSteps: boolean          // keep Claude's in-between messages out of the activity rows
   runs: Record<string, Run>
+  fileTick: Record<string, number>   // bumped when a tracked file gets a new version
 }
 
 const saved = <T,>(k: string, d: T): T => { try { return JSON.parse(localStorage.getItem(k) ?? '') ?? d } catch { return d } }
@@ -59,6 +60,7 @@ export const state: State = {
   lightbox: null,
   showSteps: saved('codiner.showSteps', false),
   runs: {},
+  fileTick: {},
 }
 
 let version = 0
@@ -120,6 +122,7 @@ function onServer(m: ServerMsg) {
     case 'settings': state.settings = m.settings; break
     case 'usage': state.usage = m.usage; break
     case 'auth': state.auth = m.auth; break
+    case 'file': state.fileTick = { ...state.fileTick, [m.path]: (state.fileTick[m.path] ?? 0) + 1 }; break
     case 'run': {
       const run = state.runs[m.token]
       if (!run) break
@@ -173,6 +176,20 @@ export function select(id: string) {
   void loadEvents(id)
   const s = state.sessions.find((x) => x.id === id)
   if (s?.unread) void api(`/api/sessions/${id}/seen`).catch(() => {})
+}
+
+// Open a session at one of its events (a message, or the tool call in an activity row).
+export function revealEvent(sid: string, seq: number) {
+  select(sid)
+  const find = (n: number) => {
+    const el = document.querySelector<HTMLElement>(`[data-sid="${sid}"][data-msg^="${seq}."]`)
+      ?? [...document.querySelectorAll<HTMLElement>('.activity[data-seqs]')].find((a) => a.dataset.seqs!.split(',').includes(String(seq)))
+    if (!el) { if (n < 30) setTimeout(() => find(n + 1), 150); return }
+    if (el.classList.contains('activity') && !el.classList.contains('open')) el.querySelector<HTMLElement>('.activity-line')?.click()
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash')
+  }
+  setTimeout(() => find(0), 50)
 }
 
 // Closing archives the session (its process ends; Reopen brings it back).
