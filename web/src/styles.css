@@ -287,7 +287,7 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 /* The button's box reaches the text, so the pointer never leaves the message on its way over. */
 /* The left rail: per line, a row of reactions running leftward from 6px off the
    text; the reaction button shares the marks' box, so hovering only adds a border. */
-.rail-row { position: absolute; right: calc(100% + 6px); z-index: 3; display: flex; flex-direction: row-reverse; gap: 2px; align-items: center; }
+.rail-row { position: absolute; right: calc(100% + 6px); z-index: 3; transform: translateY(-50%); display: flex; flex-direction: row-reverse; gap: 2px; align-items: center; }
 .rail-ack { position: relative; }
 .ack-btn, .react-mark { display: block; border: 1px solid transparent; padding: 0 3px; font-size: calc(14px * var(--fs, 1)); line-height: 20px; border-radius: 6px; white-space: nowrap; user-select: none; }
 .react-mark { background: none; cursor: pointer; }

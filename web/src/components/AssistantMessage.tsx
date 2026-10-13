@@ -104,11 +104,11 @@ export const AssistantMessage = memo(function AssistantMessage({ sid, msg, text,
   )
 })
 
-// The top of an element's first line of text, from the top of the message:
-// reactions and the reaction button sit level with it.
-function lineTop(r: Range | null, root: HTMLElement): number | null {
+// The middle of an element's first line of text, from the top of the message:
+// reactions and the reaction button sit centred on it.
+function lineMid(r: Range | null, root: HTMLElement): number | null {
   const box = r?.getClientRects()[0]
-  return box ? Math.round(box.top - root.getBoundingClientRect().top) : null
+  return box ? Math.round(box.top + box.height / 2 - root.getBoundingClientRect().top) : null
 }
 const contentsOf = (el: HTMLElement) => { const r = document.createRange(); r.selectNodeContents(el); return r }
 
@@ -152,7 +152,7 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     if (!el) return
     const at = new Map<number, RailItem[]>()
     for (const it of items) {
-      const top = lineTop(rangesFor(it.anchor, el)[0] ?? null, el)
+      const top = lineMid(rangesFor(it.anchor, el)[0] ?? null, el)
       if (top != null) at.set(top, [...(at.get(top) ?? []), it])
     }
     const next = [...at].map(([top, its]) => ({ top, items: its.sort((a, b) => Number(b.whole) - Number(a.whole)) }))
@@ -188,7 +188,7 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
         }
         if (!best || best === targetRef.current?.el) return
         const anchor = anchorFromRange(contentsOf(best), el)
-        const top = anchor && lineTop(rangesFor(anchor, el)[0] ?? null, el)
+        const top = anchor && lineMid(rangesFor(anchor, el)[0] ?? null, el)
         if (anchor && top != null) setTarget({ el: best, key: keyOf(anchor), anchor, top })
       })
     }
