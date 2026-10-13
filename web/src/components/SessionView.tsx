@@ -16,6 +16,7 @@ import { cacheOf, limitLeft, minutes, money, moneyLong, ofFresh, pct, shareOf, s
 import { ttlLabel } from '../../../shared/cache.ts'
 import { NotesPill } from './NotesDialog.tsx'
 import { McpPill } from './McpDialog.tsx'
+import { shortPath } from './DirPicker.tsx'
 
 export function ContextGauge({ m, onCompact }: { m: SessionMeta; onCompact?: () => void }) {
   const used = m.context.used
@@ -95,7 +96,7 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
         )}
         <div className="head-sub">
           <span className={`status-pill st-${m.status}`}>{m.compacting ? 'compacting' : STATUS_LABEL[m.status]}</span>
-          <span className="muted mono path" title={m.cwd}>{'\u200E' + m.cwd.replace(/^\/Users\/[^/]+/, '~') + '\u200E'}</span>
+          <span className="muted mono path" title={m.cwd}>{'\u200E' + shortPath(m.cwd) + '\u200E'}</span>
           {model && <span className="muted" title={m.model?.includes('-') ? undefined : 'Model used for this choice last time'}>{model}</span>}
         </div>
       </div>

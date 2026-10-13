@@ -9,6 +9,7 @@ import { kTokens, renderMd, timeAgo } from '../util.ts'
 import { moneyLong, usd } from '../cache.ts'
 import { KEEP_WARM } from '../../../shared/notes.ts'
 import { XIcon } from './Icons.tsx'
+import { shortPath } from './DirPicker.tsx'
 
 const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
@@ -74,7 +75,7 @@ function NotesDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
           <button className="icon-btn" title="Close" onClick={onClose}><XIcon size={14} /></button>
         </div>
         <div className="muted notes-status">
-          {notes && <div className="mono">{notes.path.replace(/^\/Users\/[^/]+/, '~')}</div>}
+          {notes && <div className="mono">{shortPath(notes.path)}</div>}
           <div>{n.running === 'notes' ? 'Writing the notes now.' : n.at ? `Written ${timeAgo(n.at)}.` : 'No notes yet. They are written when the session has been quiet for 20 minutes.'}</div>
           <div>
             {keepWarm(m)}

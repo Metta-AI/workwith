@@ -320,7 +320,7 @@ function taskTools(id: string): Tool[] {
         type: 'object', required: ['title', 'command'],
         properties: {
           title: { type: 'string', description: 'A short name for the user, like "Dev server" or "Full test run"' },
-          command: { type: 'string', description: 'The shell command (run with /bin/sh -c)' },
+          command: { type: 'string', description: process.platform !== 'win32' ? 'The shell command (run with /bin/sh -c)' : 'The shell command (run in Git Bash with sh -c; in cmd.exe if Git Bash is not installed)' },
           cwd: { type: 'string', description: "The directory to run it in; your session's by default" },
           notify: { type: 'string', enum: ['next', 'turn', 'interrupt'], description: 'How you hear that it ended. next (default): with the next message to you. turn: in a turn of your own as soon as you are between turns; use it when you wait on the result. interrupt: stop your current turn; only when its end changes what you are doing.' },
         },
@@ -338,7 +338,7 @@ function taskTools(id: string): Tool[] {
     },
     {
       name: 'stop_task',
-      description: 'Stop one of your tasks: SIGTERM to its process group, then SIGKILL after 5 seconds.',
+      description: process.platform !== 'win32' ? 'Stop one of your tasks: SIGTERM to its process group, then SIGKILL after 5 seconds.' : 'Stop one of your tasks: taskkill /T on its process tree, then with /F after 5 seconds.',
       inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } },
       run: (args) => { const t = mine(args?.id); if (t.ended) return `It already ended.`; stopTask(t.id, 'agent'); return `Stopping task \`${t.id}\`.` },
     },
@@ -1119,11 +1119,26 @@ setInterval(() => {
 }, 5000).unref()
 
 function restart() {
+  if (process.platform === 'win32') return restartWindows()
   const q = (x: string) => `'${x.replace(/'/g, `'\\''`)}'`
   const log = q(path.join(DATA, 'server.log'))
   // The built UI is rebuilt first when not serving it through Vite.
   const cmd = `sleep 1; ${DEV ? '' : `npx vite build >> ${log} 2>&1 && `}exec ${[process.execPath, ...process.argv.slice(1)].map(q).join(' ')} >> ${log} 2>&1`
   spawn('sh', ['-c', cmd], { cwd: process.cwd(), env: process.env, detached: true, stdio: 'ignore' }).unref()
+  shutdown()
+}
+
+// No sh on Windows: a small node process waits for this one to go, then starts the new one.
+function restartWindows() {
+  const script = `const { spawn, execSync } = require('node:child_process'), fs = require('node:fs')
+const [log, dev, cwd, ...cmd] = JSON.parse(process.argv[1])
+setTimeout(() => {
+  const fd = fs.openSync(log, 'a')
+  if (!dev) try { execSync('npx vite build', { cwd, stdio: ['ignore', fd, fd] }) } catch { process.exit(1) }
+  spawn(cmd[0], cmd.slice(1), { cwd, detached: true, windowsHide: true, stdio: ['ignore', fd, fd] }).unref()
+}, 1000)`
+  const args = [path.join(DATA, 'server.log'), DEV, process.cwd(), process.execPath, ...process.argv.slice(1)]
+  spawn(process.execPath, ['-e', script, JSON.stringify(args)], { cwd: process.cwd(), env: process.env, detached: true, windowsHide: true, stdio: 'ignore' }).unref()
   shutdown()
 }
 

@@ -8,6 +8,7 @@ import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { CachePill, ContextGauge, SessionView } from './SessionView.tsx'
 import { groupSessions, treeOf } from './Sidebar.tsx'
 import { Splitter, useWidth } from './Splitter.tsx'
+import { shortPath } from './DirPicker.tsx'
 
 export function LeadView({ id }: { id: string }) {
   const st = useStore()
@@ -34,7 +35,7 @@ export function LeadView({ id }: { id: string }) {
         </div>
         {groups.map(([cwd, list]) => (
           <div key={cwd} className="board-group">
-            <div className="board-group-head" title={cwd}>{cwd.replace(/^\/Users\/[^/]+/, '~')}</div>
+            <div className="board-group-head" title={cwd}>{shortPath(cwd)}</div>
             <div className="cards">
               {treeOf(list).map(({ s, depth }) => (
                 <button key={s.id} className={`card st-${s.status}`} style={{ marginLeft: depth * 18 }} onClick={() => select(s.id)}>

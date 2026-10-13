@@ -8,7 +8,13 @@ import { api, state } from '../store.ts'
 import { timeAgo } from '../util.ts'
 import { FolderIcon, UpIcon } from './Icons.tsx'
 
-export const shortPath = (p: string) => (state.home && p.startsWith(state.home) ? '~' + p.slice(state.home.length) : p)
+// Your home directory as ~. Windows paths do not care about case.
+export const shortPath = (p: string) => {
+  const h = state.home
+  if (!h) return p
+  const at = h.includes('\\') ? p.toLowerCase().startsWith(h.toLowerCase()) : p.startsWith(h)
+  return at && (p.length === h.length || '/\\'.includes(p[h.length])) ? '~' + p.slice(h.length) : p
+}
 
 export function DirPicker({ value, onChange, autoFocus }: { value: string; onChange(v: string): void; autoFocus?: boolean }) {
   const [recent, setRecent] = useState<RecentDir[]>([])
@@ -84,16 +90,22 @@ function DirBrowser({ start, onChoose }: { start: string; onChoose(p: string): v
   useEffect(() => { void go(start.trim() || '~').catch(() => go('~')) }, [])
   useEffect(() => { if (err && !listing) void go('~') }, [err])
   if (!listing) return <div className="dir-browser muted pad">{err ?? 'Loading…'}</div>
-  const crumbs = listing.path.split('/').filter(Boolean)
+  // A Windows path starts with its drive, C:\, and uses backslashes.
+  const sep = listing.roots ? '\\' : '/'
+  const root = listing.roots ? listing.path.slice(0, 3) : '/'
+  const crumbs = listing.path.slice(root.length).split(sep).filter(Boolean)
+  const join = (d: string) => listing.path.endsWith(sep) ? listing.path + d : listing.path + sep + d
   return (
     <div className="dir-browser">
       <div className="crumbs">
-        <button type="button" className="link" onClick={() => void go('/')}>/</button>
-        {crumbs.map((c, i) => <button type="button" key={i} className="link" onClick={() => void go('/' + crumbs.slice(0, i + 1).join('/'))}>{c}/</button>)}
+        {listing.roots && listing.roots.length > 1
+          ? <select value={root} onChange={(e) => void go(e.target.value)}>{listing.roots.map((r) => <option key={r}>{r}</option>)}</select>
+          : <button type="button" className="link" onClick={() => void go(root)}>{root}</button>}
+        {crumbs.map((c, i) => <button type="button" key={i} className="link" onClick={() => void go(root + crumbs.slice(0, i + 1).join(sep))}>{c}{sep}</button>)}
       </div>
       <div className="dir-list">
         {listing.parent && <button type="button" onClick={() => void go(listing.parent!)}><UpIcon size={13} /> ..</button>}
-        {listing.dirs.map((d) => <button type="button" key={d} onClick={() => void go(`${listing.path}/${d}`)} onDoubleClick={() => onChoose(`${listing.path}/${d}`)}><FolderIcon size={13} /> {d}</button>)}
+        {listing.dirs.map((d) => <button type="button" key={d} onClick={() => void go(join(d))} onDoubleClick={() => onChoose(join(d))}><FolderIcon size={13} /> {d}</button>)}
         {!listing.dirs.length && <div className="muted pad">No subfolders</div>}
       </div>
       <div className="dir-foot">

@@ -178,4 +178,5 @@ export type HistoryItem = {
   mtime: number; size: number; continuedIn: string | null; codinerId: string | null
 }
 export type RecentDir = { path: string; ts: number; source: 'codiner' | 'claude' | 'both' }
-export type DirListing = { path: string; parent: string | null; dirs: string[] }
+// roots: the drives, on Windows.
+export type DirListing = { path: string; parent: string | null; dirs: string[]; roots?: string[] }

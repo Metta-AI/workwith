@@ -14,10 +14,11 @@ export const DATA = process.env.CODINER_HOME ?? path.join(os.homedir(), '.codine
 const EVENTS = path.join(DATA, 'events')
 export const IMAGES = path.join(DATA, 'images')
 export const LEAD_DIR = path.join(DATA, 'lead')
+const PROMPTS = path.join(DATA, 'prompts')
 // The lead agent was called the master until October 2026. Move its directory once.
 const OLD_LEAD_DIR = path.join(DATA, 'master')
 if (fs.existsSync(OLD_LEAD_DIR) && !fs.existsSync(LEAD_DIR)) fs.renameSync(OLD_LEAD_DIR, LEAD_DIR)
-for (const d of [DATA, EVENTS, IMAGES, LEAD_DIR]) fs.mkdirSync(d, { recursive: true })
+for (const d of [DATA, EVENTS, IMAGES, LEAD_DIR, PROMPTS]) fs.mkdirSync(d, { recursive: true })
 export const LEAD_NOTES = path.join(LEAD_DIR, 'LEAD_NOTES.md')
 // The lead's notes were NOTES.md until October 2026. Move them once (their history moves in index.ts).
 export const OLD_LEAD_NOTES = path.join(LEAD_DIR, 'NOTES.md')
@@ -133,5 +134,13 @@ export function imageFile(url: string): string | null {
 }
 
 export function expandHome(p: string): string {
-  return p === '~' ? os.homedir() : p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : p
+  return p === '~' ? os.homedir() : /^~[\\/]/.test(p) ? path.join(os.homedir(), p.slice(2)) : p
+}
+
+// A session's system prompt goes to claude as a file: on Windows the whole command
+// line must fit in 32,767 characters, and the prompt alone can be bigger.
+export function promptFile(id: string, text: string): string {
+  const f = path.join(PROMPTS, `${id}.md`)
+  fs.writeFileSync(f, text)
+  return f
 }

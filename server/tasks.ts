@@ -12,6 +12,11 @@
 //
 // Stop sends SIGTERM to the task's process group (the exact pid Codiner started),
 // then SIGKILL if it is still there after 5 seconds.
+//
+// On Windows the task runs in Git Bash when there is one, the same shell Claude
+// Code's Bash tool uses. Without it the task runs in cmd.exe, with no wrapper:
+// its exit code is known only if Codiner is still up when it ends. Stop is
+// `taskkill /T` on the process tree, then `/F` after 5 seconds.
 
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
@@ -68,15 +73,19 @@ export function startTask(sid: string, o: { title: string; command: string; cwd:
   const fd = fs.openSync(logPath(id), 'a')
   fs.writeSync(fd, `# codiner task ${id} · session ${sid} · ${o.title} · ${new Date().toISOString()}\n# in ${o.cwd}\n$ ${o.command}\n\n`)
   // The inner shell runs the command, so an `exit` in it still leaves the wrapper to write the code.
-  const wrapper = `: codiner-task ${id} session ${sid}; /bin/sh -c "$CODINER_TASK_COMMAND"; echo $? > '${exitPath(id)}'`
-  const p = spawn('/bin/sh', ['-c', wrapper], {
-    cwd: o.cwd, detached: true, stdio: ['ignore', fd, fd],
+  const sh = shell()
+  const wrapper = `: codiner-task ${id} session ${sid}; ${sh ? 'sh' : '/bin/sh'} -c "$CODINER_TASK_COMMAND"; echo $? > '${exitPath(id).replaceAll('\\', '/')}'`
+  const [cmd, args] = !WIN ? ['/bin/sh', ['-c', wrapper]] : sh ? [sh, ['-c', wrapper]] : [process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', `"${o.command}"`]]
+  const p = spawn(cmd, args, {
+    cwd: o.cwd, detached: true, windowsHide: true, windowsVerbatimArguments: WIN && !sh, stdio: ['ignore', fd, fd],
     env: { ...childEnv(), CODINER_TASK: id, CODINER_SESSION: sid, CODINER_TASK_COMMAND: o.command },
   })
   fs.closeSync(fd)
   if (!p.pid) throw new Error('The task did not start')
   p.unref()
   p.on('error', () => {})
+  // cmd.exe has no wrapper to write the code: Codiner writes it, if it is still up.
+  if (WIN && !sh) p.on('exit', (code) => { if (code != null) fs.writeFile(exitPath(id), `${code}\n`, () => {}) })
   const t: Task = { id, sid, title: o.title, command: o.command, cwd: o.cwd, pid: p.pid, started: Date.now(), notify: o.notify ?? 'next' }
   tasks.push(t)
   save()
@@ -90,9 +99,27 @@ export function stopTask(id: string, by: 'user' | 'agent'): Task {
   t.stopped = by
   save()
   // The whole group: the wrapper, the command and whatever it started.
-  try { process.kill(-t.pid, 'SIGTERM') } catch { /* gone */ }
-  setTimeout(() => { if (!t.ended && alive(t.pid)) try { process.kill(-t.pid, 'SIGKILL') } catch { /* gone */ } }, 5000).unref()
+  kill(t.pid, false)
+  setTimeout(() => { if (!t.ended && alive(t.pid)) kill(t.pid, true) }, 5000).unref()
   return t
+}
+
+const WIN = process.platform === 'win32'
+
+function kill(pid: number, force: boolean) {
+  if (WIN) spawn('taskkill', ['/pid', String(pid), '/T', ...(force ? ['/F'] : [])], { stdio: 'ignore', windowsHide: true }).on('error', () => {})
+  else try { process.kill(-pid, force ? 'SIGKILL' : 'SIGTERM') } catch { /* gone */ }
+}
+
+// Git Bash on Windows, if there is one (the place Claude Code looks first, then the usual ones).
+let bash: string | null | undefined
+function shell(): string | null {
+  if (!WIN) return null
+  if (bash !== undefined) return bash
+  const e = process.env
+  const places = [e.CLAUDE_CODE_GIT_BASH_PATH, ...[e.ProgramFiles, e['ProgramFiles(x86)'], e.LOCALAPPDATA && path.join(e.LOCALAPPDATA, 'Programs')]
+    .filter(Boolean).map((d) => path.join(d!, 'Git', 'bin', 'bash.exe'))]
+  return bash = places.find((f) => f && fs.existsSync(f)) ?? null
 }
 
 export function markTold(ids: string[]) {
@@ -133,7 +160,7 @@ export function searchLog(id: string, q: string, limit = 500): { n: number; line
   let text = ''
   try { text = fs.readFileSync(logPath(id), 'utf8') } catch { return [] }
   const out: { n: number; line: string }[] = []
-  text.split('\n').forEach((line, i) => { if (out.length < limit && line.toLowerCase().includes(needle)) out.push({ n: i + 1, line: line.slice(0, 1000) }) })
+  text.split(/\r?\n/).forEach((line, i) => { if (out.length < limit && line.toLowerCase().includes(needle)) out.push({ n: i + 1, line: line.slice(0, 1000) }) })
   return out
 }
 

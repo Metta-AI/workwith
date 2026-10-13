@@ -9,6 +9,7 @@ import { ArchiveIcon, GearIcon, TerminalIcon, XIcon } from './Icons.tsx'
 import { TasksDialog } from './TasksDialog.tsx'
 import { SettingsDialog } from './SettingsDialog.tsx'
 import { cacheOf, minutes, spendOf, toggleMoney, useNow, usd } from '../cache.ts'
+import { shortPath } from './DirPicker.tsx'
 
 // Sessions grouped by directory; sessions spawned for another one nest under it.
 // You can drag both into place; until you do, folders go by latest activity and
@@ -94,7 +95,7 @@ function useDragSort(onDrop: (key: string, ids: string[]) => void) {
   return { start, sortable }
 }
 
-const short = (p: string) => p.replace(/^\/Users\/[^/]+/, '~')
+const short = shortPath
 
 export function Sidebar({ width }: { width: number }) {
   const st = useStore()
@@ -149,7 +150,7 @@ export function Sidebar({ width }: { width: number }) {
           return (
             <div key={cwd} {...g} className={`group${g.className}`}>
               <div className="group-head" title={`${cwd}\nDrag to move`} onPointerDown={(e) => start(e, 'groups', cwd)}>
-                <span>{cwd.split('/').pop()}</span>
+                <span>{cwd.split(/[\\/]/).pop()}</span>
                 <button className="link" title={`New session in ${short(cwd)}`} onClick={() => setNewIn(cwd)}>+</button>
               </div>
               {kids(null).map((x) => branch(x, 0))}

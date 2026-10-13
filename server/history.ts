@@ -5,7 +5,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { Block, Event, ImageRef, Part } from '../shared/types.ts'
+import type { Block, DirListing, Event, ImageRef, Part } from '../shared/types.ts'
 import { saveImage } from './store.ts'
 
 const PROJECTS = path.join(process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude'), 'projects')
@@ -237,7 +237,7 @@ export function entryBefore(csid: string, msg: { uuid?: string; text: string; nt
 
 // ---- directories ------------------------------------------------------------
 
-export function listDirs(p: string, hidden: boolean): { path: string; parent: string | null; dirs: string[] } {
+export function listDirs(p: string, hidden: boolean): DirListing {
   const abs = path.resolve(p)
   const dirs = fs.readdirSync(abs, { withFileTypes: true })
     .filter((d) => (d.isDirectory() || d.isSymbolicLink()) && (hidden || !d.name.startsWith('.')))
@@ -245,5 +245,7 @@ export function listDirs(p: string, hidden: boolean): { path: string; parent: st
     .map((d) => d.name)
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
   const parent = path.dirname(abs)
-  return { path: abs, parent: parent === abs ? null : parent, dirs }
+  return { path: abs, parent: parent === abs ? null : parent, dirs, ...(process.platform === 'win32' && { roots: drives() }) }
 }
+
+const drives = () => 'CDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((l) => `${l}:\\`).filter((d) => fs.existsSync(d))

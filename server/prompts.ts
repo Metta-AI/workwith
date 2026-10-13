@@ -1,5 +1,7 @@
 import { describeLook, type Look } from '../shared/looks.ts'
 
+const WIN = process.platform === 'win32'
+
 // Appended to Claude Code's own system prompt. Sessions learn what this UI adds:
 // the kinds of content they mark (shared/blocks.ts), and replies that
 // quote passages. The
@@ -59,11 +61,11 @@ click on inline code copies it.
 
 When the user must run a command themselves (it restarts the server this UI runs on, needs
 sudo or a browser login, or is interactive), put it in a \`<run title="...">\` tag on its own
-lines, with only the command inside. The UI gives a button that opens the command in a new
-Terminal window in the session's directory, and a Copy button. Run commands yourself when you can.
+lines, with only the command inside. ${WIN ? 'The UI gives a Copy button.' : `The UI gives a button that opens the command in a new
+Terminal window in the session's directory, and a Copy button.`} Run commands yourself when you can.
 
 <run title="Restart Codiner">
-kill $(lsof -ti tcp:4545 -sTCP:LISTEN); npm run dev
+${WIN ? 'Stop-Process -Id (Get-NetTCPConnection -LocalPort 4545 -State Listen).OwningProcess; npm run dev' : 'kill $(lsof -ti tcp:4545 -sTCP:LISTEN); npm run dev'}
 </run>
 
 Tags can nest: a \`<details>\` or an \`<ask>\` can go inside a \`<consider>\`. Inside code blocks the

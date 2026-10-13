@@ -15,7 +15,7 @@ import type { Block, Event, Part, PermissionMode, SessionMeta, Status, Usage } f
 import { AUTH_ERROR, childEnv } from './auth.ts'
 import { entryBefore } from './history.ts'
 import { addSpend, costOf } from '../shared/prices.ts'
-import { appendEvent, imageFile, knownWindow, learnModel, learnWindow, readEvents, writeEvents } from './store.ts'
+import { appendEvent, imageFile, knownWindow, learnModel, learnWindow, promptFile, readEvents, writeEvents } from './store.ts'
 
 export type Hooks = {
   meta(s: Session): void
@@ -142,7 +142,7 @@ export class Session {
       ...(m.model ? ['--model', m.model] : []),
       ...(m.resumeAt ? ['--resume', m.claudeSessionId, '--resume-session-at', m.resumeAt, '--fork-session']
         : m.started ? ['--resume', m.claudeSessionId] : ['--session-id', m.claudeSessionId]),
-      '--append-system-prompt', prompt,
+      '--append-system-prompt-file', promptFile(m.id, prompt),
       ...args,
     ]
     const env = childEnv()
@@ -218,7 +218,7 @@ export class Session {
         '-p', '--output-format', 'json', '--permission-mode', m.permissionMode,
         ...(m.model ? ['--model', m.model] : []),
         '--resume', m.claudeSessionId, '--fork-session', '--no-session-persistence', '--max-turns', '1',
-        '--append-system-prompt', prompt,
+        '--append-system-prompt-file', promptFile(m.id, prompt),
         ...args,
       ],
       cwd: m.cwd,

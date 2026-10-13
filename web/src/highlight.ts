@@ -35,4 +35,4 @@ export function highlight(code: string, lang: string | undefined): string {
   try { return hljs.highlight(code, { language: l, ignoreIllegals: true }).value } catch { return escape(code) }
 }
 
-export const langOfPath = (p: string | undefined) => p?.split('/').pop()?.split('.').slice(1).pop()
+export const langOfPath = (p: string | undefined) => p?.split(/[\\/]/).pop()?.split('.').slice(1).pop()

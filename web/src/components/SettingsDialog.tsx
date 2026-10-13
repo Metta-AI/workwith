@@ -156,8 +156,8 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
             <nav className="files-list">
               {files.map((f) => (
                 <div key={f.path} className={`file-row${f.path === sel ? ' on' : ''}`} onClick={() => pick(f.path)} title={f.path}>
-                  <span className="file-name">{f.path.split('/').pop()}</span>
-                  <span className="file-dir muted">{shortPath(f.path.split('/').slice(0, -1).join('/'))}</span>
+                  <span className="file-name">{f.path.split(/[\\/]/).pop()}</span>
+                  <span className="file-dir muted">{shortPath(f.path.replace(/[\\/][^\\/]*$/, ''))}</span>
                   <span className="file-meta muted">{!f.exists ? 'no file yet' : f.last ? `changed ${timeAgo(f.last)}` : ''}</span>
                   {!f.builtIn && <button className="icon-btn file-x" title="Stop tracking" onClick={(e) => { e.stopPropagation(); void untrack(f.path) }}><XIcon size={11} /></button>}
                 </div>

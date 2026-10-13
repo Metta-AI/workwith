@@ -12,6 +12,7 @@ import { splitQuote } from '../../../shared/asks.ts'
 import { highlight, langOfPath } from '../highlight.ts'
 import { CARD_W, GUTTER_GAP, Margin, focusPassage, rangesOfNote } from './Margin.tsx'
 import { AgentsIcon, BlockIcon, CheckIcon, ChevronIcon, DashIcon, XIcon, FileIcon, GlobeIcon, ListIcon, PencilIcon, SearchIcon, TerminalIcon, ToolIcon, TrashIcon } from './Icons.tsx'
+import { shortPath } from './DirPicker.tsx'
 
 type PermEvent = Extract<Event, { t: 'permission' }>
 type Folded = {
@@ -442,7 +443,7 @@ const TOOL_ICON: Record<string, (p: { size?: number }) => React.ReactElement> = 
 function summary(name: string, input: any): string {
   if (!input) return ''
   if (name === 'Bash') return input.command ?? ''
-  if (input.file_path) return input.file_path.replace(/^\/Users\/[^/]+/, '~')
+  if (input.file_path) return shortPath(input.file_path)
   const v = input.pattern ?? input.url ?? input.query ?? input.description ?? input.prompt
   return typeof v === 'string' ? v : JSON.stringify(input)
 }
