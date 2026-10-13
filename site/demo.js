@@ -1,11 +1,14 @@
 // A live copy of a Codiner reply, for the landing page. Each [data-demo] element
 // becomes one: select text to comment in the margin, react to a paragraph, answer the
-// question, dismiss or finish the item, run the command in a pretend terminal. Every
-// demo resets itself a few seconds after you stop using it. The messages it builds
-// follow shared/asks.ts and shared/blocks.ts in the app.
+// question, dismiss or finish the item, run the command in a pretend terminal. A small
+// demo resets itself a few seconds after you stop using it; the full one (data-full)
+// only after you send, and one with data-preset starts marked up and never resets.
+// The messages it builds follow shared/asks.ts and shared/blocks.ts in the app.
 
 const IDLE_MS = 9000
+const SENT_S = 15
 const EMOJI = ['👍', '❤️', '💪', '🙏', '🎉', '🤔']
+const COMMENT_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
 
 const RUN_CMD = 'npm test'
 const RUN_OUT = [
@@ -90,6 +93,8 @@ function shortQuote(q) {
   return q.length <= 100 ? q : q.split(' ').slice(0, 8).join(' ') + ' …'
 }
 const note = (q, t) => `> ${shortQuote(q)}` + (t.trim() ? `\n\n${t.trim()}` : '')
+// As in the app: an emoji in a comment that has text goes on at the end, or comes off.
+const toggleEmoji = (text, r) => text.includes(r) ? text.replace(r, '').replace(/ {2,}/g, ' ').trim() : text.trim() ? `${text.trimEnd()} ${r}` : r
 
 // ---- one demo -------------------------------------------------------------------
 
@@ -99,6 +104,7 @@ class Demo {
     this.parts = (root.dataset.demo || Object.keys(PARTS).join(' ')).split(/\s+/)
     this.live = root.dataset.live ? document.getElementById(root.dataset.live) : null
     this.full = root.hasAttribute('data-full')
+    this.keep = root.hasAttribute('data-preset')
     this.timer = null
     this.render()
     for (const ev of ['pointerdown', 'keydown', 'input', 'pointermove']) root.addEventListener(ev, () => this.touch(), { passive: true })
@@ -111,18 +117,45 @@ class Demo {
 
   render() {
     this.clearRanges()
+    // A passage is what a comment or a reaction is on: a selection, a whole paragraph
+    // (the reaction button) or an item to consider (Reply). reactions: passage → emoji.
     this.state = { notes: [], reactions: new Map(), items: {}, answer: null, answerText: '', composer: '', run: null, sent: false }
+    this.wholes = new Map()
+    this.last = '👍'
+    this.railKey = ''
     const body = this.parts.map((p) => PARTS[p]).join('')
     this.root.innerHTML = this.full ? this.frame(body) : `<div class="d-main"><div class="d-col">${body}</div><div class="d-margin"></div></div>`
     this.col = this.root.querySelector('.d-col')
+    this.rail = document.createElement('div')
+    this.rail.className = 'd-rail'
+    this.col.prepend(this.rail)
     this.margin = this.root.querySelector('.d-margin')
     for (const pre of this.root.querySelectorAll('pre[data-sh]')) pre.innerHTML = `<span class="p">$ </span>${highlightSh(pre.dataset.sh)}`
     for (const b of this.root.querySelectorAll('[data-react]')) {
       const g = document.createElement('button')
-      g.className = 'd-ack'; g.title = 'Click to react. Press and hold, or drag up, for more.'; g.innerHTML = '<span>👍</span>'
+      g.className = 'd-ack'; g.innerHTML = '<span>👍</span>'
       b.classList.add('d-reactable'); b.prepend(g)
     }
+    if (this.keep) this.preset()
     this.update()
+  }
+
+  // What the demo beside "What the agent sees" starts with: a reaction, a comment, a
+  // reply to the item to consider, and an answer.
+  preset() {
+    const answer = this.col.querySelector('.d-answer')
+    if (answer) this.toggleReact(this.wholeOf(answer), '👍')
+    const para = this.col.querySelector('p.d-text')
+    const text = para && [...para.childNodes].find((t) => t.nodeType === 3 && t.data.includes('compares the features.'))
+    if (text) {
+      const range = document.createRange(), at = text.data.indexOf('compares the features.')
+      range.setStart(text, at); range.setEnd(text, at + 'compares the features.'.length)
+      this.addNote({ quote: range.toString(), range, anchor: text, item: null }, 'Does it show the full feature list?')
+    }
+    const con = this.col.querySelector('.d-consider')
+    if (con) this.addNote(this.itemPass(con), 'Do you know that price?')
+    const pick = [...this.col.querySelectorAll('.d-ask [data-act="choose"]')].find((b) => b.textContent === '/plans')
+    if (pick) this.choose(pick)
   }
 
   frame(body) {
@@ -147,20 +180,27 @@ class Demo {
         <div class="d-main"><div class="d-col">${body}</div><div class="d-margin"></div></div>
         <div class="d-composer"><div class="d-counts"></div>
           <div class="d-comp-row"><textarea class="d-comp-in" rows="1" placeholder="Message the agent"></textarea><button class="d-primary d-send" data-act="send">Send</button></div></div>
-        <div class="d-sent" hidden><div class="d-sent-card"><div class="d-sent-head"><b>Sent. This is what the agent gets:</b><button class="d-x" data-act="reset" title="Start over">✕</button></div><pre></pre><small class="d-muted">The demo starts over in a few seconds.</small></div></div>
+        <div class="d-sent" hidden><div class="d-sent-card"><div class="d-sent-head"><b>Sent. This is what the agent gets:</b></div><pre></pre>
+          <div class="d-sent-foot"><small class="d-muted d-countdown"></small><button data-act="reset">Reset now</button></div></div></div>
       </div>
     </div>`
   }
 
-  // Any use pushes the reset back; a reset only happens once something changed.
+  // Any use pushes the reset back; a reset only happens once something changed. The
+  // full demo and a marked-up one never reset on their own (see send()).
   touch() {
     clearTimeout(this.timer)
+    if (this.full || this.keep) return
     this.timer = setTimeout(() => {
       if (!this.dirty()) return
       if (this.root.contains(document.activeElement) && document.activeElement.value) return this.touch()
-      this.root.classList.add('d-fading')
-      setTimeout(() => { this.render(); this.root.classList.remove('d-fading'); window.paintCritters?.(this.root) }, 250)
-    }, this.state?.sent ? 5000 : IDLE_MS)
+      this.reset()
+    }, IDLE_MS)
+  }
+  reset() {
+    clearTimeout(this.timer); clearInterval(this.countdown)
+    this.root.classList.add('d-fading')
+    setTimeout(() => { this.render(); this.root.classList.remove('d-fading'); window.paintCritters?.(this.root) }, 250)
   }
   dirty() {
     const s = this.state
@@ -169,7 +209,8 @@ class Demo {
   }
 
   clearRanges() {
-    for (const n of this.state?.notes ?? []) if (n.range) { hlRanges.delete(n.range); focusRanges.delete(n.range) }
+    const passes = [...this.state?.notes.map((n) => n.pass) ?? [], ...this.state?.reactions.keys() ?? []]
+    for (const p of passes) if (p.range) { hlRanges.delete(p.range); focusRanges.delete(p.range) }
     paintHighlights()
   }
 
@@ -185,34 +226,83 @@ class Demo {
     const quote = sel.toString().replace(/[👍❤️💪🙏🎉🤔]/gu, '').trim()
     if (quote.length < 2) return
     sel.removeAllRanges()
-    this.addNote({ quote, range: range.cloneRange(), anchor: range.startContainer })
+    const anchor = range.startContainer
+    this.addNote({ quote, range: range.cloneRange(), anchor, item: (anchor.nodeType === 1 ? anchor : anchor.parentElement).closest('.d-consider') })
   }
 
-  addNote(n) {
-    n.id = Math.random().toString(36).slice(2, 8)
-    n.text = ''
+  // The passage of a whole paragraph, without its reaction button.
+  wholeOf(block) {
+    if (!this.wholes.has(block)) {
+      const range = document.createRange()
+      range.selectNodeContents(block); range.setStartAfter(block.querySelector(':scope > .d-ack'))
+      this.wholes.set(block, { quote: range.toString().trim(), range, anchor: block, whole: true, item: block.closest('.d-consider') })
+    }
+    return this.wholes.get(block)
+  }
+  itemPass(con) {
+    if (!this.wholes.has(con)) this.wholes.set(con, { quote: con.dataset.title, label: con.dataset.title, range: null, anchor: con.querySelector('.d-con-head'), whole: true, item: con })
+    return this.wholes.get(con)
+  }
+
+  // A comment on a passage: the one open on it already, or a new card.
+  commentOn(p) {
+    const open = this.state.notes.find((n) => n.pass === p)
+    if (open) return open.card.querySelector('textarea').focus()
+    this.addNote(p)
+  }
+
+  addNote(p, text = '') {
+    const n = { id: Math.random().toString(36).slice(2, 8), text, pass: p }
     this.state.notes.push(n)
-    if (n.range) { hlRanges.add(n.range); paintHighlights() }
     const card = document.createElement('div')
     card.className = 'd-card'; card.dataset.note = n.id
-    card.innerHTML = `${n.label ? `<div class="d-card-q">${esc(n.label)}</div>` : ''}<button class="d-x" data-act="drop-note" title="Discard">✕</button>
+    card.innerHTML = `${p.label ? `<div class="d-card-q">${esc(p.label)}</div>` : ''}<button class="d-x" data-act="drop-note" title="Discard">✕</button>
       <textarea rows="1" placeholder="Comment"></textarea>
-      <div class="d-card-emoji">${EMOJI.map((e) => `<button data-act="note-emoji">${e}</button>`).join('')}</div>`
+      <div class="d-card-emoji"></div>`
     n.card = card
     const ta = card.querySelector('textarea')
+    ta.value = text
     ta.addEventListener('blur', () => setTimeout(() => { if (!n.text.trim() && !card.contains(document.activeElement)) this.dropNote(n.id) }, 150))
-    card.addEventListener('mouseenter', () => { if (n.range) { focusRanges.add(n.range); paintHighlights() } })
-    card.addEventListener('mouseleave', () => { if (n.range) { focusRanges.delete(n.range); paintHighlights() } })
+    card.querySelector('.d-card-emoji').addEventListener('mousedown', (e) => e.preventDefault())
+    card.addEventListener('mouseenter', () => this.focusPass(p, true))
+    card.addEventListener('mouseleave', () => this.focusPass(p, false))
+    this.syncPass(p)
     this.placeCard(card, n)
-    ta.focus()
+    if (text) { this.grow(ta); this.layout() } else ta.focus()
     this.update()
+  }
+
+  focusPass(p, on) {
+    if (!p.range) return
+    if (on) focusRanges.add(p.range); else focusRanges.delete(p.range)
+    paintHighlights()
+  }
+
+  // The emoji row of a card: the passage's reactions first, then the usual ones.
+  paintCardEmoji(n) {
+    const em = this.state.reactions.get(n.pass) ?? []
+    n.card.querySelector('.d-card-emoji').innerHTML = [...new Set([...em, ...EMOJI])]
+      .map((e) => `<button data-act="note-emoji" class="${n.text.includes(e) || em.includes(e) ? 'on' : ''}">${e}</button>`).join('')
+  }
+
+  // As in the app: on an empty card the emoji is a reaction, which goes to the left
+  // of the passage, and the card goes too (unless the passage has reactions already:
+  // then the card was opened from them, and stays). On a card with text it goes in the text.
+  cardEmoji(n, r) {
+    const p = n.pass, em = this.state.reactions.get(p) ?? []
+    const ta = n.card.querySelector('textarea')
+    if (!n.text.trim() && em.length) { this.toggleReact(p, r); return ta.focus() }
+    if (!n.text.trim()) { this.toggleReact(p, r); return this.dropNote(n.id) }
+    ta.value = toggleEmoji(ta.value, r)
+    ta.dispatchEvent(new Event('input', { bubbles: true })); ta.focus()
   }
 
   inline() { return !this.margin || this.margin.offsetWidth < 40 }
 
   placeCard(card, n) {
     if (this.inline()) {
-      const block = (n.anchor.nodeType === 1 ? n.anchor : n.anchor.parentElement).closest('.d-col > *') ?? this.col.lastElementChild
+      const a = n.pass.anchor
+      const block = (a.nodeType === 1 ? a : a.parentElement).closest('.d-col > *') ?? this.col.lastElementChild
       block.after(card)
     } else this.margin.append(card)
     this.layout()
@@ -223,13 +313,14 @@ class Demo {
     if (i < 0) return
     const [n] = this.state.notes.splice(i, 1)
     n.card.remove()
-    if (n.range) { hlRanges.delete(n.range); focusRanges.delete(n.range); paintHighlights() }
-    if (n.item) this.setItem(n.item, this.itemHasReply(n.item) ? 'answered' : undefined)
+    this.focusPass(n.pass, false)
+    this.syncPass(n.pass)
     this.layout(); this.update()
   }
 
   // Cards sit level with their passage and stack downwards so they never overlap.
   layout() {
+    this.paintRail()
     if (!this.margin || this.inline()) {
       if (this.margin) for (const n of this.state.notes) if (n.card.parentElement === this.margin) this.placeCard(n.card, n)
       return
@@ -237,7 +328,7 @@ class Demo {
     const top0 = this.margin.getBoundingClientRect().top
     const cards = this.state.notes.map((n) => {
       if (n.card.parentElement !== this.margin) this.margin.append(n.card)
-      const r = n.range ? n.range.getBoundingClientRect() : n.anchor.getBoundingClientRect()
+      const r = (n.pass.range ?? n.pass.anchor).getBoundingClientRect()
       return { n, want: r.top - top0 - 6 }
     }).sort((a, b) => a.want - b.want)
     let floor = 0
@@ -253,46 +344,54 @@ class Demo {
 
   onClick(e) {
     const b = e.target.closest('[data-act]')
-    if (!b || !this.root.contains(b)) return
+    if (!b) return this.clickHighlight(e)
+    if (!this.root.contains(b)) return
     const act = b.dataset.act
     const con = b.closest('.d-consider')
     if (act === 'toggle-activity') b.parentElement.classList.toggle('open')
     else if (act === 'dismiss') this.setItem(con, this.state.items[con.dataset.key] === 'dismissed' ? undefined : 'dismissed')
     else if (act === 'done') this.setItem(con, this.state.items[con.dataset.key] === 'done' ? undefined : 'done')
-    else if (act === 'reply') {
-      const open = this.state.notes.find((n) => n.item === con)
-      if (open) return open.card.querySelector('textarea').focus()
-      this.addNote({ quote: con.dataset.title, label: con.dataset.title, anchor: con, item: con })
-      this.setItem(con, 'answered')
-    } else if (act === 'dismiss-ask') { const ask = b.closest('.d-ask'); this.state.answer = this.state.answer === 'dismissed' ? null : 'dismissed'; ask.classList.toggle('st-dismissed', this.state.answer === 'dismissed') }
+    else if (act === 'reply') this.commentOn(this.itemPass(con))
+    else if (act === 'mark') this.commentOn(b.pass)
+    else if (act === 'dismiss-ask') { const ask = b.closest('.d-ask'); this.state.answer = this.state.answer === 'dismissed' ? null : 'dismissed'; ask.classList.toggle('st-dismissed', this.state.answer === 'dismissed') }
     else if (act === 'choose') this.choose(b)
-    else if (act === 'note-emoji') {
-      const ta = b.closest('.d-card').querySelector('textarea')
-      ta.value = ta.value.startsWith(b.textContent) ? ta.value.slice(b.textContent.length).trimStart() : `${b.textContent} ${ta.value}`.trim()
-      ta.dispatchEvent(new Event('input', { bubbles: true })); ta.focus()
-    } else if (act === 'drop-note') this.dropNote(b.closest('.d-card').dataset.note)
+    else if (act === 'note-emoji') this.cardEmoji(this.state.notes.find((n) => n.card === b.closest('.d-card')), b.textContent)
+    else if (act === 'drop-note') this.dropNote(b.closest('.d-card').dataset.note)
     else if (act === 'run') this.runInTerminal(b.closest('.d-run'))
     else if (act === 'copy') { navigator.clipboard?.writeText(RUN_CMD); b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy' }, 1200) }
     else if (act === 'send') this.send()
-    else if (act === 'reset') { clearTimeout(this.timer); this.render(); window.paintCritters?.(this.root) }
+    else if (act === 'reset') this.reset()
     else if (act === 'other-session') this.toast(b.closest('.d-window'), 'This demo has one live session. Install Codiner for the rest.')
     this.update()
   }
 
-  // As in the app: a click reacts with 👍 (or takes the reaction off); press and
-  // hold, or drag up, for more emoji, and let go on one.
+  // Clicking the highlight of a reaction to a selection opens a comment on it.
+  clickHighlight(e) {
+    if (!getSelection().isCollapsed || !this.col?.contains(e.target)) return
+    const inside = (r) => e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
+    const hit = [...this.state.reactions.keys()].find((p) => !p.whole && [...p.range.getClientRects()].some(inside))
+    if (hit) { this.commentOn(hit); this.update() }
+  }
+
+  // As in the app: on a paragraph without reactions a click puts on your last emoji;
+  // on one with reactions it opens the comment card, where they can change. Press and
+  // hold, or drag up, for more emoji (and a comment), and let go on one.
   hold(e, btn) {
     e.preventDefault()
+    const p = this.wholeOf(btn.parentElement)
+    const pick = (emoji) => { if (emoji === 'comment') this.commentOn(p); else this.toggleReact(p, emoji); this.closePop(btn) }
     const picked = e.target.closest('[data-emoji]')
-    if (picked) { this.react(btn, picked.dataset.emoji); return this.closePop(btn) }
+    if (picked) return pick(picked.dataset.emoji)
     if (btn.querySelector('.d-ack-pop')) return this.closePop(btn)
     const x0 = e.clientX, y0 = e.clientY
     let pop = null, over = null
     const open = () => {
       if (pop) return
+      const mine = this.state.reactions.get(p) ?? []
       pop = document.createElement('div')
       pop.className = 'd-ack-pop'
-      pop.innerHTML = EMOJI.map((m) => `<span data-emoji="${m}">${m}</span>`).join('')
+      pop.innerHTML = [...new Set([...mine, ...EMOJI])].map((m) => `<span data-emoji="${m}" class="${mine.includes(m) ? 'on' : ''}" title="${mine.includes(m) ? `Remove ${m}` : `Add ${m}`}">${m}</span>`).join('')
+        + `<span data-emoji="comment" class="d-pop-comment" title="Comment on this">${COMMENT_ICON}</span>`
       btn.append(pop); btn.classList.add('holding')
     }
     const timer = setTimeout(open, 350)
@@ -306,26 +405,85 @@ class Demo {
     const up = (ev) => {
       clearTimeout(timer)
       removeEventListener('pointermove', move); removeEventListener('pointerup', up)
-      if (!pop) this.react(btn, this.state.reactions.get(btn.parentElement) ?? '👍')
-      else { const t = under(ev); if (t) { this.react(btn, t.dataset.emoji); this.closePop(btn) } }
+      if (!pop) { if (this.state.reactions.has(p)) this.commentOn(p); else this.toggleReact(p, this.last) }
+      else { const t = under(ev); if (t) pick(t.dataset.emoji) }
       this.update()
     }
     addEventListener('pointermove', move); addEventListener('pointerup', up)
   }
   closePop(btn) { btn.querySelector('.d-ack-pop')?.remove(); btn.classList.remove('holding'); this.update() }
 
-  react(btn, emoji) {
-    const block = btn.parentElement
-    const next = this.state.reactions.get(block) === emoji ? null : emoji
-    if (next) this.state.reactions.set(block, next); else this.state.reactions.delete(block)
-    btn.firstElementChild.textContent = next ?? '👍'
-    btn.classList.toggle('on', !!next)
-    const con = block.closest('.d-consider')
-    if (con) this.setItem(con, next || this.itemHasReply(con) ? 'answered' : undefined)
+  toggleReact(p, emoji) {
+    const em = this.state.reactions.get(p) ?? []
+    const next = em.includes(emoji) ? em.filter((x) => x !== emoji) : [...em, emoji]
+    if (!em.includes(emoji)) this.last = emoji
+    if (next.length) this.state.reactions.set(p, next); else this.state.reactions.delete(p)
+    this.syncPass(p)
   }
 
+  // After a passage's comment or reactions change: its highlight (none for reactions to
+  // a whole paragraph), its cards' emoji rows, and its item to consider.
+  syncPass(p) {
+    const noted = this.state.notes.some((n) => n.pass === p)
+    if (p.range) {
+      if (noted || !p.whole && this.state.reactions.has(p)) hlRanges.add(p.range)
+      else { hlRanges.delete(p.range); focusRanges.delete(p.range) }
+      paintHighlights()
+    }
+    for (const n of this.state.notes) if (n.pass === p) this.paintCardEmoji(n)
+    const con = p.item
+    if (con) {
+      const st = this.state.items[con.dataset.key]
+      this.setItem(con, this.itemHasReply(con) ? 'answered' : st === 'answered' ? undefined : st)
+    }
+  }
+
+  // A comment or a reaction inside an item to consider counts as a reply to it.
   itemHasReply(con) {
-    return [...this.state.reactions.keys()].some((b) => con.contains(b)) || this.state.notes.some((n) => n.item === con)
+    return [...this.state.reactions.keys()].some((p) => p.item === con) || this.state.notes.some((n) => n.pass.item === con)
+  }
+
+  // The left of the text: each paragraph's reaction button shows its reactions, and the
+  // reactions to a selection sit level with the selection's first line, left of that button.
+  paintRail() {
+    if (!this.rail) return
+    for (const [block, p] of this.wholes) {
+      const ack = block.querySelector(':scope > .d-ack')
+      if (!ack) continue
+      const em = this.state.reactions.get(p) ?? []
+      ack.firstElementChild.textContent = em.join('') || this.last
+      ack.classList.toggle('on', em.length > 0)
+      ack.title = em.length ? 'Comment, or change reactions (hold or drag up for more)' : 'React (click for your last emoji; hold or drag up for more)'
+    }
+    for (const ack of this.col.querySelectorAll('.d-ack:not(.on)')) ack.firstElementChild.textContent = this.last
+    const c = this.col.getBoundingClientRect(), rows = []
+    for (const [p, em] of this.state.reactions) {
+      if (p.whole && this.wholes.get(p.anchor) === p) continue
+      const box = (p.range ? p.range.getClientRects()[0] : null) ?? p.anchor.getBoundingClientRect()
+      const mid = (box.top + box.bottom) / 2
+      const a = (p.anchor.nodeType === 1 ? p.anchor : p.anchor.parentElement).closest('.d-reactable')?.querySelector(':scope > .d-ack')?.getBoundingClientRect()
+      const x = a ? (Math.abs(mid - (a.top + a.bottom) / 2) < 9 ? a.left - 2 : a.right) : c.left - 6
+      const row = rows.find((r) => Math.abs(r.mid - mid) < 6)
+      if (row) { row.x = Math.min(row.x, x); row.marks.push([p, em]) } else rows.push({ mid, x, marks: [[p, em]] })
+    }
+    const key = JSON.stringify(rows.map((r) => [Math.round(r.mid - c.top), Math.round(r.x - c.left), r.marks.map(([p, em]) => em.join('') + p.quote)]))
+    if (key === this.railKey) return
+    this.railKey = key
+    for (const p of this.state.reactions.keys()) if (!p.whole) focusRanges.delete(p.range)
+    paintHighlights()
+    this.rail.replaceChildren(...rows.map((r) => {
+      const row = document.createElement('div')
+      row.className = 'd-rail-row'
+      row.style.top = `${r.mid - c.top - 11}px`; row.style.left = `${r.x - c.left}px`
+      for (const [p, em] of r.marks) {
+        const m = document.createElement('button')
+        m.className = 'd-mark'; m.dataset.act = 'mark'; m.pass = p; m.textContent = em.join(''); m.title = 'Comment, or change reactions'
+        m.addEventListener('mouseenter', () => this.focusPass(p, true))
+        m.addEventListener('mouseleave', () => this.focusPass(p, false))
+        row.append(m)
+      }
+      return row
+    }))
   }
 
   setItem(con, st) {
@@ -346,7 +504,7 @@ class Demo {
 
   onInput(e) {
     const t = e.target
-    if (t.matches('.d-card textarea')) { this.state.notes.find((n) => n.card === t.closest('.d-card')).text = t.value; this.grow(t); this.layout() }
+    if (t.matches('.d-card textarea')) { const n = this.state.notes.find((x) => x.card === t.closest('.d-card')); n.text = t.value; this.paintCardEmoji(n); this.grow(t); this.layout() }
     else if (t.matches('.d-ask-in')) { this.state.answerText = t.value; t.closest('.d-ask').classList.toggle('st-answered', !!(t.value || (this.state.answer && this.state.answer !== 'dismissed'))) }
     else if (t.matches('.d-comp-in')) { this.state.composer = t.value; this.grow(t) }
     this.update()
@@ -401,8 +559,8 @@ class Demo {
   message() {
     const s = this.state, out = [], done = [], dismissed = []
     const entries = []
-    for (const n of s.notes) if (n.text.trim()) entries.push({ at: n.anchor, text: note(n.quote, n.text) })
-    for (const [block, emoji] of s.reactions) entries.push({ at: block, text: note(block.textContent.replace(/^[^\p{L}]+/u, ''), emoji) })
+    for (const n of s.notes) if (n.text.trim()) entries.push({ at: n.pass.anchor, text: note(n.pass.quote, n.text) })
+    for (const [p, em] of s.reactions) for (const e of em) entries.push({ at: p.anchor, text: note(p.quote, e) })
     const ask = this.root.querySelector('.d-ask')
     if (ask && s.answer !== 'dismissed' && (s.answer || s.answerText.trim())) {
       const lines = [`**Answer to your question \`${ask.dataset.id}\`** ("${ask.dataset.q}"):`]
@@ -426,11 +584,12 @@ class Demo {
 
   update() {
     const s = this.state
+    this.paintRail()
     const msg = this.message()
     if (this.live) this.live.textContent = msg || 'Nothing yet. Select some text on the left, react to a paragraph, or pick an answer.'
     const counts = this.root.querySelector('.d-counts')
     if (counts) {
-      const n = s.notes.filter((x) => x.text.trim()).length, r = s.reactions.size, a = s.answer && s.answer !== 'dismissed' || s.answerText.trim() ? 1 : 0
+      const n = s.notes.filter((x) => x.text.trim()).length, r = [...s.reactions.values()].flat().length, a = s.answer && s.answer !== 'dismissed' || s.answerText.trim() ? 1 : 0
       const open = (this.root.querySelector('.d-consider') && !s.items.c1 ? 1 : 0) + (this.root.querySelector('.d-ask') && !a && s.answer !== 'dismissed' ? 1 : 0)
       const pl = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`
       counts.innerHTML = [n && pl(n, 'comment'), r && pl(r, 'reaction'), a && pl(a, 'answer'), open && `${open} open`].filter(Boolean).map((t) => `<span>${t}</span>`).join('')
@@ -448,7 +607,11 @@ class Demo {
     const box = this.root.querySelector('.d-sent')
     box.querySelector('pre').textContent = msg
     box.hidden = false
-    this.touch()
+    // The full demo starts over a while after you send, or when you say so.
+    let left = SENT_S
+    const tick = () => { box.querySelector('.d-countdown').textContent = `The demo starts over in ${left} s.`; if (left-- <= 0) this.reset() }
+    clearInterval(this.countdown)
+    tick(); this.countdown = setInterval(tick, 1000)
   }
 }
 

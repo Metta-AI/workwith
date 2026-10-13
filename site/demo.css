@@ -48,7 +48,7 @@
 .d-chip-st { background: color-mix(in srgb, var(--d-blue) 18%, transparent); color: var(--fg); border-radius: 6px; padding: 0 .4rem; }
 .d-gauge { width: 70px; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
 .d-gauge i { display: block; width: 6%; height: 100%; background: var(--d-ok); }
-.d-session > .d-main { padding: 1rem 1.1rem 1.2rem 2.6rem; flex: 1; }
+.d-session > .d-main { padding: 1rem 1.1rem 1.2rem 4.4rem; flex: 1; }
 .d-composer { border-top: 1px solid var(--line); padding: .6rem 1.1rem .8rem 2.6rem; }
 .d-counts { display: flex; gap: .4rem; min-height: 1.6rem; margin-bottom: .4rem; }
 .d-counts span { font-size: .8rem; background: var(--panel); border-radius: 999px; padding: .1rem .6rem; }
@@ -61,6 +61,7 @@
 .d-sent-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.18); padding: .9rem 1.1rem; max-width: 34rem; width: 100%; max-height: 90%; overflow: auto; }
 .d-sent-head { display: flex; justify-content: space-between; margin-bottom: .5rem; }
 .d-sent pre { background: var(--panel) !important; padding: .7rem .8rem !important; border-radius: 8px; margin-bottom: .5rem; }
+.d-sent-foot { display: flex; justify-content: space-between; align-items: center; gap: .6rem; }
 @media (max-width: 52rem) { .d-window { grid-template-columns: 1fr; } .d-side { display: none; } .d-session > .d-main, .d-composer { padding-left: 1.1rem; } }
 
 /* The reply */
@@ -94,6 +95,12 @@ pre .k, pre .c { color: var(--sx-fn); } pre .n, pre .f { color: var(--sx-num); }
 .d-ack:hover > span, .d-ack.on > span { filter: none; opacity: 1; }
 .d-ack:hover { border-color: var(--line) !important; }
 .d-ack.on { background: var(--accent-soft) !important; }
+/* Reactions to a selection: level with its first line, left of the paragraph's reaction button. */
+.d-col { position: relative; }
+.d-rail { position: absolute; top: 0; left: 0; width: 0; z-index: 3; }
+.d-rail-row { position: absolute; transform: translateX(-100%); display: flex; flex-direction: row-reverse; gap: 2px; }
+.d-mark { border-color: transparent !important; background: var(--accent-soft) !important; padding: 0 3px !important; font-size: 14px; line-height: 20px; white-space: nowrap; }
+.d-mark:hover { border-color: var(--line) !important; }
 
 .d-answer { margin: .3rem 0 1rem; padding: 6px 14px; border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent-soft) 55%, transparent); border-radius: 0 10px 10px 0; }
 .d-col > p { margin: .6rem 0; }
@@ -140,6 +147,7 @@ pre .k, pre .c { color: var(--sx-fn); } pre .n, pre .f { color: var(--sx-num); }
 .d-card:hover .d-card-emoji, .d-card:focus-within .d-card-emoji { opacity: 1; }
 .d-card-emoji button { border: none !important; background: none !important; padding: 2px 4px !important; font-size: 15px; border-radius: 50% !important; transition: transform .08s; }
 .d-card-emoji button:hover { transform: scale(1.25); }
+.d-card-emoji button.on { background: var(--accent-soft) !important; box-shadow: inset 0 0 0 1.5px var(--accent); }
 
 /* The pretend terminal */
 .d-term { position: fixed; z-index: 100; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(36rem, 92vw); background: #1e1e1e; color: #e6e6e6; border-radius: 10px; box-shadow: 0 30px 80px rgba(0,0,0,.45); overflow: hidden; animation: d-pop .18s ease-out; transition: opacity .35s, transform .35s; }
@@ -162,4 +170,6 @@ pre .k, pre .c { color: var(--sx-fn); } pre .n, pre .f { color: var(--sx-num); }
 .d-ack-pop { position: absolute; bottom: calc(100% + 4px); left: -4px; display: flex; gap: 2px; padding: 3px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; box-shadow: 0 6px 20px rgba(0,0,0,.18); animation: d-up .12s ease-out; }
 .d-ack-pop span { font-size: 18px; line-height: 1; padding: 4px; border-radius: 50%; transition: transform .08s; cursor: pointer; filter: none !important; opacity: 1 !important; }
 .d-ack-pop span:hover, .d-ack-pop span.over { transform: scale(1.35); background: rgba(127,127,127,.14); }
+.d-ack-pop span.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.d-ack-pop .d-pop-comment { display: flex; align-items: center; color: var(--muted); }
 @keyframes d-up { from { opacity: 0; transform: translateY(4px); } }
