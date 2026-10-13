@@ -285,7 +285,7 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
         </button>
         {row && (
           <div className="ack-row">
-            {topEmoji(6).map((e) => <button key={e} data-emoji={e} className={on.has(e) ? 'on' : ''} title={on.has(e) ? 'Take it off' : undefined} onClick={() => toggle(e)}>{e}</button>)}
+            {[...new Set([...on, ...topEmoji(8)])].slice(0, Math.max(8, on.size)).map((e) => <button key={e} data-emoji={e} className={on.has(e) ? 'on' : ''} title={on.has(e) ? 'Take it off' : undefined} onClick={() => toggle(e)}>{e}</button>)}
             <button className="more-emoji" data-emoji="+" title="Search emoji" onClick={() => toggle('+')}>+</button>
             <button className="more-emoji" data-emoji="comment" title="Comment on this" onClick={() => toggle('comment')}><CommentIcon size={14} /></button>
           </div>

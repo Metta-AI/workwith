@@ -1,7 +1,7 @@
 // Search every emoji by name. Opens as a small popover; Enter takes the first match.
 
 import { useEffect, useRef, useState } from 'react'
-import { allEmoji, topEmoji, type EmojiInfo } from '../emoji.ts'
+import { allEmoji, searchEmoji, topEmoji, type EmojiInfo } from '../emoji.ts'
 
 export function EmojiPicker({ onPick, onClose }: { onPick(e: string): void; onClose(): void }) {
   const [list, setList] = useState<EmojiInfo[]>([])
@@ -16,7 +16,7 @@ export function EmojiPicker({ onPick, onClose }: { onPick(e: string): void; onCl
     return () => document.removeEventListener('mousedown', down)
   }, [onClose])
   const words = q.toLowerCase().split(/\s+/).filter(Boolean)
-  const found = words.length ? list.filter((e) => words.every((w) => e.name.includes(w))).slice(0, 120) : []
+  const found = searchEmoji(list, q).slice(0, 120)
   const shown = words.length ? found.map((e) => e.emoji) : topEmoji(16)
   // With no search, your most used, then every emoji by group to scroll through.
   const groups: [string, EmojiInfo[]][] = []

@@ -2,3 +2,6 @@ node_modules
 dist
 .DS_Store
 .dev
+
+# Notes between Claude sessions; personal, not part of the project
+HANDOFF-*.md
