@@ -8,6 +8,7 @@
 <meta property="og:description" content="Reply to your coding agent the way you mark up a draft. Comments in the margin, questions answered in place, many sessions side by side.">
 <meta property="og:image" content="https://codiner.app/og.png">
 <meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="demo.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 -1 16 14' shape-rendering='crispEdges'><rect x='3' y='3' width='10' height='1' fill='%232b98c6'/><rect x='2' y='4' width='12' height='5' fill='%232b98c6'/><rect x='3' y='9' width='10' height='1' fill='%232b98c6'/><rect x='0' y='6' width='2' height='2' fill='%232b98c6'/><rect x='14' y='6' width='2' height='2' fill='%232b98c6'/><rect x='5' y='4' width='1' height='2' fill='%23222'/><rect x='10' y='4' width='1' height='2' fill='%23222'/><rect x='4' y='10' width='2' height='2' fill='%232b98c6'/><rect x='10' y='10' width='2' height='2' fill='%232b98c6'/></svg>">
 <style>
   :root {
@@ -31,6 +32,7 @@
   .brand { display: flex; align-items: center; gap: .5rem; font-weight: 700; text-decoration: none; color: var(--fg); font-size: 1.05rem; }
   nav a { color: var(--muted); text-decoration: none; margin-left: 1.4rem; font-size: .95rem; }
   nav a:hover { color: var(--fg); }
+  @media (max-width: 40rem) { nav a[href^="#"] { display: none; } }
 
   .hero-row { display: grid; grid-template-columns: minmax(0, 44rem) 1fr; gap: 2.5rem; }
   .hero { padding: 3rem 0 1rem; }
@@ -65,7 +67,8 @@
   .shot { margin-top: 2.2rem; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; box-shadow: 0 18px 50px rgba(0,0,0,.12); }
 
   /* What you see, what the agent sees */
-  .pair { display: grid; grid-template-columns: 1.5fr 1fr; gap: 1.4rem; margin-top: 1.4rem; align-items: start; }
+  .pair { display: grid; grid-template-columns: 2fr 1fr; gap: 1.4rem; margin-top: 1.4rem; align-items: stretch; }
+  .pair pre { height: calc(100% - 2rem); }
   .pair .side-label { display: block; margin-bottom: .5rem; }
   .pair .seen { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--bg); }
   .arrow { display: none; }
@@ -73,7 +76,7 @@
 
   /* Five kinds */
   .kinds { display: grid; gap: 1.6rem; margin-top: 1.6rem; }
-  .kind { display: grid; grid-template-columns: 15rem 1fr; gap: 1.4rem; align-items: center; }
+  .kind { display: grid; grid-template-columns: 15rem 1fr; gap: 1.4rem; align-items: start; }
   .kind img { border-radius: 10px; border: 1px solid var(--line); }
   .kind p { margin: 0; color: var(--muted); font-size: .95rem; }
   @media (max-width: 52rem) { .kind { grid-template-columns: 1fr; gap: .6rem; } }
@@ -91,6 +94,12 @@
   .harness { background: var(--accent-soft); border-radius: 14px; padding: 1.6rem 1.8rem; }
   .harness ul { margin: .4rem 0 0; padding-left: 1.2rem; }
   .harness li { margin: .35rem 0; }
+  .harness-lede { font-size: 1.15rem; }
+  .fine { font-size: .82rem; color: var(--muted); margin: 1rem 0 0; }
+  footer .fine { margin: 0; flex-basis: 100%; }
+  .agent-live { min-height: 100%; }
+  .pair > div { min-width: 0; }
+  .kind > [data-demo] { min-width: 0; }
 
   /* Install */
   .install { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 1.4rem; margin-top: 1.2rem; }
@@ -134,39 +143,21 @@
   </aside>
   </div>
 
-  <figure class="shot">
-    <picture>
-      <source srcset="shots/hero-dark.webp" media="(prefers-color-scheme: dark)">
-      <img src="shots/hero.webp" width="2400" height="1440" alt="Codiner: a sidebar of sessions, each with a pixel critter; an answer with a highlighted passage and a comment card beside it in the margin; an item to consider with a reaction; a question with a picked answer; a command with Run in Terminal">
-    </picture>
-  </figure>
+  <div class="hero-demo" data-demo data-full></div>
+  <p class="try">This is a live copy, not a picture. Select text to comment on it. React, answer, dismiss, open the steps, or press <b>Run in Terminal</b>. It starts over a few seconds after you stop.</p>
 
   <section id="replying">
     <h2>Reply in the margin</h2>
     <p>A chat box makes you quote by hand. In Codiner you select a passage and type your note beside it, the way you review a draft. A reaction is one click. A suggested answer is one click. Codiner turns all of it into one plain message.</p>
     <div class="pair">
-      <figure>
-        <span class="tag side-label">What you see</span>
-        <div class="seen">
-          <picture>
-            <source srcset="shots/see-dark.webp" media="(prefers-color-scheme: dark)">
-            <img src="shots/see.webp" width="2288" height="722" alt="A highlighted passage with a comment card in the margin, a thumbs-up reaction beside an item to consider, and the answer /pricing picked on a question" loading="lazy">
-          </picture>
-        </div>
-      </figure>
-      <figure>
+      <div>
+        <span class="tag side-label">What you see (try it)</span>
+        <div data-demo="answer para consider ask" data-live="agent-live"></div>
+      </div>
+      <div>
         <span class="tag side-label">What the agent sees</span>
-<pre><code>&gt; I left the annual plan out, because the checkout cannot take it yet.
-
-Fine for today. Put it behind a flag so we can turn it on next week.
-
-&gt; Sales changed the Team price in August. Check the new figure with them before you publish.
-
-👍
-
-**Answer to your question `path`** ("Where should the page go?"):
-Chose: /pricing</code></pre>
-      </figure>
+        <pre class="agent-live"><code id="agent-live"></code></pre>
+      </div>
     </div>
     <div class="grid">
       <div class="tile"><span class="tag">Comments</span><h3>Select, then type</h3><p>A comment card opens in the right margin, level with the passage. Cards stack so they never overlap. Sent comments stay as read-only cards.</p></div>
@@ -179,16 +170,11 @@ Chose: /pricing</code></pre>
     <h2>Five kinds of content</h2>
     <p>Codiner tells the agent to mark each part of its reply. Each kind looks different, so you can see at a glance what needs you.</p>
     <div class="kinds">
-      <div class="kind"><div><h3>Answer</h3><p>The direct answer, first, in the accent colour.</p></div>
-        <picture><source srcset="shots/k-answer-dark.png" media="(prefers-color-scheme: dark)"><img src="shots/k-answer.png" alt="An answer block" loading="lazy"></picture></div>
-      <div class="kind"><div><h3>Consider</h3><p>A problem, risk or trade-off that wants your attention. Reply, dismiss it, or mark it done.</p></div>
-        <picture><source srcset="shots/k-consider-dark.png" media="(prefers-color-scheme: dark)"><img src="shots/k-consider.png" alt="An item to consider with Done and Reply buttons" loading="lazy"></picture></div>
-      <div class="kind"><div><h3>Ask</h3><p>A question in place, with suggested answers to click and a box for your own.</p></div>
-        <picture><source srcset="shots/k-ask-dark.png" media="(prefers-color-scheme: dark)"><img src="shots/k-ask.png" alt="A question with two suggested answers and an answer box" loading="lazy"></picture></div>
-      <div class="kind"><div><h3>Details</h3><p>Supporting detail, folded to its title until you open it.</p></div>
-        <picture><source srcset="shots/k-details-dark.png" media="(prefers-color-scheme: dark)"><img src="shots/k-details.png" alt="An open details block listing the files changed" loading="lazy"></picture></div>
-      <div class="kind"><div><h3>Run</h3><p>A command you must run yourself. <b>Run in Terminal</b> opens it in a new window, and the exit code and output go back to the agent.</p></div>
-        <picture><source srcset="shots/k-run-dark.png" media="(prefers-color-scheme: dark)"><img src="shots/k-run.png" alt="A command block with Run in Terminal and Copy" loading="lazy"></picture></div>
+      <div class="kind"><div><h3>Answer</h3><p>The direct answer, first, in the accent colour.</p></div><div data-demo="answer"></div></div>
+      <div class="kind"><div><h3>Consider</h3><p>A problem, risk or trade-off that wants your attention. Reply, dismiss it, or mark it done.</p></div><div data-demo="consider"></div></div>
+      <div class="kind"><div><h3>Ask</h3><p>A question in place, with suggested answers to click and a box for your own.</p></div><div data-demo="ask"></div></div>
+      <div class="kind"><div><h3>Details</h3><p>Supporting detail, folded until you open it. The steps fold too: thinking, commands and edits, each with its input and output.</p></div><div data-demo="activity details"></div></div>
+      <div class="kind"><div><h3>Run</h3><p>A command you must run yourself. <b>Run in Terminal</b> opens it in a new window, and the exit code and output go back to the agent.</p></div><div data-demo="run"></div></div>
     </div>
   </section>
 
@@ -214,14 +200,15 @@ Chose: /pricing</code></pre>
   <section id="harness">
     <div class="harness">
       <h2>Every session is Claude Code</h2>
-      <p>Codiner is a window onto Claude Code, not a replacement for it. You must have Claude Code installed and logged in. Codiner does not talk to any model itself.</p>
+      <p class="harness-lede">Codiner is a window onto Claude Code, <strong>not a replacement for it</strong>. <strong>You must have Claude Code installed and logged in.</strong> Codiner does not talk to any model itself.</p>
       <ul>
         <li>Each session is a real <code>claude</code> process, which Codiner starts in Claude Code's documented headless mode.</li>
-        <li>Every command, file edit and tool call goes through Claude Code, with its permission prompts. Codiner shows the prompts, and you answer them.</li>
+        <li><strong>Every command, file edit and tool call goes through Claude Code</strong>, with its permission prompts. Codiner shows the prompts, and you answer them.</li>
         <li>Your subscription, settings, hooks, <code>CLAUDE.md</code>, skills and MCP servers all apply, as in the terminal.</li>
         <li>Codiner removes API keys from the environment of the process, so a session cannot bill per token by accident.</li>
         <li>The server listens on <code>127.0.0.1</code> only and rejects requests from other origins. A web page you visit cannot reach it.</li>
       </ul>
+      <p class="fine">Codiner is an independent open-source project. It is not affiliated with, endorsed by or sponsored by Anthropic. Claude and Claude Code are trademarks of Anthropic, PBC.</p>
     </div>
   </section>
 
@@ -267,15 +254,17 @@ npm start</code></pre>
     <details><summary>Can I still use the terminal?</summary><p>Yes. Claude Code keeps its own transcripts, so <code>claude --resume</code> picks up any Codiner session, and Codiner can open any terminal session.</p></details>
     <details><summary>Can I tell every session how to write?</summary><p>Yes. <code>~/.codiner/AGENTS.md</code> goes into the system prompt of every session. Edit it in Settings. By default it asks the agent to write in Simplified Technical English.</p></details>
     <details><summary>Does it work on Windows or Linux?</summary><p>The server is plain Node, so it should. <b>Run in Terminal</b> and the native folder dialog are macOS only.</p></details>
-    <details><summary>Is Codiner made by Anthropic?</summary><p>No. Codiner is an independent open-source project. Claude Code is a product of Anthropic.</p></details>
+    <details><summary>Is Codiner made by Anthropic?</summary><p>No. Codiner is an independent open-source project, and Anthropic does not endorse it. Claude and Claude Code are trademarks of Anthropic, PBC.</p></details>
   </section>
 
   <footer>
     <span>Open source: <a href="https://github.com/huttj/codiner">github.com/huttj/codiner</a> · MIT</span>
     <span>Also: <a href="https://marginer.app">Marginer</a>, notes in the margin of any page.</span>
+    <span class="fine">Not affiliated with Anthropic. Claude and Claude Code are trademarks of Anthropic, PBC.</span>
   </footer>
 </div>
 
+<script src="demo.js"></script>
 <script>
 // The critter, as in web/src/components/Mascot.tsx and looks.tsx (a subset of the looks).
 const BODY = { teal: '#2b98c6', tangerine: '#ff8c1a', ocean: '#3f8fd6', moss: '#5e9e4f', grape: '#8a5cc7', bubblegum: '#e57aa8', slate: '#7d8a99', gold: '#d9a521', midnight: '#3b4a7a' }
@@ -359,7 +348,8 @@ const CROWD = [
   { color: 'grape', hat: 'flower', face: 'blush' },
 ]
 document.getElementById('crowd').innerHTML = CROWD.map((o) => critter({ ...o, size: 54 })).join('')
-for (const el of document.querySelectorAll('[data-critter]')) el.innerHTML = critter(JSON.parse(el.dataset.critter))
+window.paintCritters = (root = document) => { for (const el of root.querySelectorAll('[data-critter]')) el.innerHTML = critter(JSON.parse(el.dataset.critter)) }
+paintCritters()
 for (const btn of document.querySelectorAll('[data-copy]')) btn.addEventListener('click', async () => {
   await navigator.clipboard.writeText(document.getElementById(btn.dataset.copy).textContent)
   btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = 'Copy' }, 1500)
