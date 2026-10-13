@@ -255,10 +255,12 @@ function deliver(s: Session, text: string): string {
 
 // The critter's look, chosen by the Claude in that session.
 // Workers name their session after its task, and keep the name current, unless you named it.
+// A name is a small thing of the session's own: Claude may always rename it, and
+// when it renames one the user named, the user's name is kept to undo to.
 function titlePrompt(meta: SessionMeta): string {
-  return meta.titleByUser
-    ? `\n\n## Your session's name\nThe user named this session "${meta.title}". Keep that name.\n`
-    : `\n\n## Your session's name\nName this session after its task with the set_title tool: 2 to 5 words, like "Login flow fix". Do it once the task is clear, and again only if the task changes a lot. Do not mention it unless the user asks.\n`
+  const base = `\n\n## Your session's name\nName this session after its task with the set_title tool: 2 to 5 words, like "Login flow fix". Do it once the task is clear, and again only if the task changes a lot. Do not mention it unless the user asks.`
+  if (!meta.titleByUser) return base + '\n'
+  return base + ` The user named this session "${meta.title}"; you may still rename it when the task changes, and they can undo it.${meta.titleUndone ? ` They undid your rename to "${meta.titleUndone}", so do not propose that one again.` : ''}\n`
 }
 
 function titleTool(id: string): Tool {
@@ -268,12 +270,15 @@ function titleTool(id: string): Tool {
     inputSchema: { type: 'object', properties: { title: { type: 'string' } }, required: ['title'] },
     run: (args) => {
       const s = get(id)
-      if (s.meta.titleByUser) return `The user named this session "${s.meta.title}" themselves. Keep that name.`
       const t = String(args?.title ?? '').replace(/\s+/g, ' ').trim().slice(0, 60)
       if (!t) return 'Give a title of 2 to 5 words.'
-      s.meta.title = t
+      if (t === s.meta.title) return `It is already "${t}".`
+      const m = s.meta
+      // Over a name the user gave, keep theirs to undo to.
+      if (m.titleByUser && m.titleBefore == null) m.titleBefore = m.title
+      m.title = t
       metaChanged()
-      return `Renamed to "${t}".`
+      return m.titleBefore != null ? `Renamed to "${t}". The user had named it "${m.titleBefore}" and can undo this.` : `Renamed to "${t}".`
     },
   }
 }
@@ -488,7 +493,11 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   }
   if (a === 'settings' && method === 'PUT') {
     const body = await json(req)
-    settings = { ...settings, ...(typeof body.leadAutoSend === 'boolean' ? { leadAutoSend: body.leadAutoSend } : {}) }
+    settings = {
+      ...settings,
+      ...(typeof body.leadAutoSend === 'boolean' ? { leadAutoSend: body.leadAutoSend } : {}),
+      ...(typeof body.selfRestart === 'boolean' ? { selfRestart: body.selfRestart } : {}),
+    }
     saveSettings(settings)
     broadcast({ type: 'settings', settings })
     return send(res, 200, settings)
@@ -565,7 +574,13 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   const s = get(id)
   if (!b && method === 'PATCH') {
     const body = await json(req)
-    if (typeof body.title === 'string' && body.title.trim()) { s.meta.title = body.title.trim(); s.meta.titleByUser = true }
+    if (typeof body.title === 'string' && body.title.trim()) {
+      // Undo of Claude's rename: remember the name undone, so Claude doesn't offer it again.
+      if (body.undo && s.meta.titleBefore != null) s.meta.titleUndone = s.meta.title
+      s.meta.title = body.title.trim()
+      s.meta.titleByUser = true
+      s.meta.titleBefore = undefined
+    }
     if (typeof body.archived === 'boolean' && s.meta.kind === 'worker') { s.meta.archived = body.archived; if (body.archived) s.stop() }
     if (MODES.includes(body.permissionMode)) s.setPermissionMode(body.permissionMode)
     metaChanged()

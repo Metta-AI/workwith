@@ -39,7 +39,8 @@ function App() {
 // The server's code changed on disk: restart it from here (it comes back by itself).
 function Restart() {
   const st = useStore()
-  if (!st.stale && !st.restarting) return null
+  // Only for working on Codiner itself (Settings turns it on).
+  if (!st.restarting && !(st.stale && st.settings.selfRestart)) return null
   const busy = st.sessions.filter((s) => s.status === 'working' || s.status === 'permission').length
   return (
     <div className="signin restart">

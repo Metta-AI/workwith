@@ -84,6 +84,10 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
             <input type="checkbox" checked={st.showSteps} onChange={(e) => { state.showSteps = e.target.checked; changed() }} />
             Show Claude's in-between messages
           </label>
+          <label className="settings-check" title="For working on Codiner itself: a banner offers to restart the server when its code changes">
+            <input type="checkbox" checked={!!st.settings.selfRestart} onChange={(e) => void api('/api/settings', 'PUT', { selfRestart: e.target.checked })} />
+            Offer to restart when Codiner's code changes
+          </label>
           <button className="icon-btn" title="Close" onClick={() => { if (!dirty || confirm('Discard your changes?')) onClose() }}><XIcon size={14} /></button>
         </div>
         <div className="files-body">

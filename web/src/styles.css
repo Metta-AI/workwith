@@ -401,6 +401,7 @@ textarea.agents-md { font-size: 12.5px; line-height: 1.5; resize: vertical; min-
 .lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .75); display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
 .lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 6px; box-shadow: 0 8px 40px rgba(0, 0, 0, .5); }
 .signin { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 20px; background: rgba(212, 167, 44, .16); border-bottom: 1px solid var(--warn); font-size: 13px; }
+.title-before { font-size: 12px; } .title-before .link { padding: 0 2px; text-decoration: underline; }
 h1.rename { cursor: text; border-radius: 5px; } h1.rename:hover { background: rgba(127, 127, 127, .12); }
 .signin.restart { background: var(--accent-soft); border-bottom-color: var(--accent); }
 .signin.st-failed { background: rgba(229, 83, 75, .1); border-bottom-color: var(--bad); }
@@ -495,7 +496,8 @@ h1.rename { cursor: text; border-radius: 5px; } h1.rename:hover { background: rg
 .modal.files-modal { width: min(1100px, 94vw); height: 85vh; padding: 14px 16px; gap: 8px; }
 .files-head { display: flex; align-items: center; gap: 16px; }
 .files-head h2 { margin: 0; }
-.files-head .settings-check { flex: 1; flex-direction: row; margin: 0; color: var(--muted); }
+.files-head .icon-btn { margin-left: auto; }
+.files-head .settings-check { flex-direction: row; margin: 0; color: var(--muted); }
 .files-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 240px 1fr; gap: 14px; }
 .files-list { overflow-y: auto; display: flex; flex-direction: column; gap: 2px; border-right: 1px solid var(--line); padding-right: 10px; }
 .file-row { position: relative; display: flex; flex-direction: column; padding: 6px 8px; border-radius: 7px; cursor: pointer; }

@@ -135,6 +135,14 @@ Before each message to a worker, if `~/.claude/bin/agents` exists, the server ru
 `agents active <dir>` and adds the result to the message, out of the transcript, so Claude
 knows who else is at work there without checking.
 
+## Working on Codiner itself
+
+Settings has **Offer to restart when Codiner's code changes**, off by default. With it on,
+a banner appears when the server's code on disk is newer than the running server, and its
+Restart button starts a new server in the background (log: `~/.codiner/server.log`). An agent
+working on Codiner can turn it on with
+`curl -X PUT -H 'content-type: application/json' -d '{"selfRestart":true}' http://127.0.0.1:4545/api/settings`.
+
 ## Sessions
 
 - **New session** picks a directory from a dropdown of recent ones (from Codiner *and* from

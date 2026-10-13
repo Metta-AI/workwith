@@ -39,7 +39,10 @@ export type SessionMeta = {
   archived: boolean
   inbox: InboxItem[]      // messages the lead agent drafted for this session
   look?: Look             // what its critter wears; Claude picks it (shared/looks.ts)
-  titleByUser?: boolean   // you named it: Claude keeps that name (else it names it after its task)
+  titleByUser?: boolean   // you named it at some point
+  // Claude renamed a session you had named: your name, to undo to; and a name of Claude's you undid.
+  titleBefore?: string
+  titleUndone?: string
   // Set by a rewind: the next start resumes claudeSessionId cut at this entry, as a fork.
   resumeAt?: string | null
 }
@@ -86,7 +89,8 @@ export type AuthState = { state: 'ok' | 'needed' | 'pending' | 'failed'; url?: s
 
 export type Usage = { fiveHour?: number; sevenDay?: number; resetsAt?: number; status?: string }
 // trackedFiles: files whose history Codiner keeps, besides AGENTS.md, CLAUDE.md and NOTES.md.
-export type Settings = { leadAutoSend: boolean; autoModeMigrated?: boolean; trackedFiles?: string[] }
+// selfRestart: offer to restart when Codiner's own code changes (for working on Codiner); off by default.
+export type Settings = { leadAutoSend: boolean; autoModeMigrated?: boolean; trackedFiles?: string[]; selfRestart?: boolean }
 
 export type ServerMsg =
   | { type: 'hello'; sessions: SessionMeta[]; settings: Settings; usage: Usage; platform: string; home: string; auth: AuthState; stale?: boolean }

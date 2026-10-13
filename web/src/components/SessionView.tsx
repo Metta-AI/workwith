@@ -47,6 +47,10 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
         {editing
           ? <input className="title-edit" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} onBlur={save} onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setTitle(m.title); setEditing(false) } }} />
           : <h1 className="rename" onClick={() => setEditing(true)} title="Click to rename">{m.title}</h1>}
+        {/* Claude renamed a session you had named: your name stays one click away. */}
+        {!editing && m.titleBefore != null && (
+          <span className="title-before muted">was “{m.titleBefore}” <button className="link" onClick={() => void api(`/api/sessions/${m.id}`, 'PATCH', { title: m.titleBefore, undo: true })}>Undo</button></span>
+        )}
         <div className="head-sub">
           <span className={`status-pill st-${m.status}`}>{m.compacting ? 'compacting' : STATUS_LABEL[m.status]}</span>
           <span className="muted mono path" title={m.cwd}>{'\u200E' + m.cwd.replace(/^\/Users\/[^/]+/, '~') + '\u200E'}</span>
