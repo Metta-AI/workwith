@@ -5,7 +5,7 @@ import { HistoryDialog } from './HistoryDialog.tsx'
 import { fatigue, timeAgo } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { NewSession } from './NewSession.tsx'
-import { ArchiveIcon, BackIcon, GearIcon, TerminalIcon, XIcon } from './Icons.tsx'
+import { ArchiveIcon, GearIcon, TerminalIcon, XIcon } from './Icons.tsx'
 import { TasksDialog } from './TasksDialog.tsx'
 import { SettingsDialog } from './SettingsDialog.tsx'
 import { cacheOf, minutes, spendOf, toggleMoney, useNow, usd } from '../cache.ts'
@@ -127,9 +127,10 @@ export function Sidebar({ width }: { width: number }) {
       {lead && <Row s={lead} label="Lead" active={st.selected === lead.id} />}
       <div className="side-actions">
         <button className="primary" onClick={() => setNewIn('')}>+ New session</button>
-        <button onClick={() => setHistory(true)} title="Pick up any Claude Code conversation on this machine, including ones from the terminal">Resume…</button>
+        <button onClick={() => setHistory(true)} title="Continue any Claude Code conversation on this machine, including terminal ones">Resume…</button>
       </div>
-      <nav className="tree">
+      <nav className={`tree${st.showArchived ? ' archived' : ''}`}>
+        {st.showArchived && <div className="archive-banner"><ArchiveIcon size={13} /> Archived sessions<button className="icon-btn" title="Back to active sessions" onClick={() => { state.showArchived = false; changed() }}><XIcon size={12} /></button></div>}
         {groups.map(([cwd, list]) => {
           const g = sortable('groups', cwd)
           // A session and those nested under it move as one.
@@ -159,7 +160,7 @@ export function Sidebar({ width }: { width: number }) {
       </nav>
       <div className="side-foot">
         {/* Floats above the line, so it takes no room from the footer. */}
-        {custom && <button className="reset-order" title="Folders go back to latest activity first, and sessions to oldest first" onClick={() => void api('/api/sessions/order', 'DELETE')}>Reset order</button>}
+        {custom && <button className="reset-order" title="Sort folders by latest activity, sessions oldest first" onClick={() => void api('/api/sessions/order', 'DELETE')}>Reset order</button>}
         <button className="link" title="Settings" onClick={() => setSettings(true)}><GearIcon size={14} /></button>
         <div className="side-foot-mid">
           {(u.fiveHour != null || u.sevenDay != null) && (
@@ -174,7 +175,8 @@ export function Sidebar({ width }: { width: number }) {
           const running = st.tasks.filter((t) => !t.ended).length
           return <button className="link side-tasks" title={`Tasks: ${running} running`} onClick={() => setTasks(true)}><TerminalIcon size={14} />{running > 0 && <span>{running}</span>}</button>
         })()}
-        <button className="link" title={st.showArchived ? undefined : 'Archived sessions'} onClick={() => { state.showArchived = !state.showArchived; changed() }}>{st.showArchived ? <><BackIcon size={12} /> Active sessions</> : <ArchiveIcon size={14} />}</button>
+        {/* One toggle: pressed while the list shows archived sessions. */}
+        <button className={`link archive-toggle${st.showArchived ? ' on' : ''}`} title={st.showArchived ? 'Show active sessions' : 'Show archived sessions'} onClick={() => { state.showArchived = !state.showArchived; changed() }}><ArchiveIcon size={14} /></button>
       </div>
       {newIn !== null && <NewSession cwd={newIn} onClose={() => setNewIn(null)} />}
       {history && <HistoryDialog onClose={() => setHistory(false)} />}
@@ -194,7 +196,7 @@ function Row({ s, depth = 0, active, label, onPointerDown }: { s: SessionMeta; d
       </span>
       {s.inbox.length > 0 && <span className="count" title="Drafts from the lead">{s.inbox.length}</span>}
       {s.kind === 'worker' && !s.archived && (
-        <span className="row-close" role="button" title="Close (moves to Archived, reopenable)" onClick={(e) => { e.stopPropagation(); void closeSession(s.id) }}><XIcon size={12} /></span>
+        <span className="row-close" role="button" title="Archive session" onClick={(e) => { e.stopPropagation(); void closeSession(s.id) }}><XIcon size={12} /></span>
       )}
     </button>
   )
@@ -219,10 +221,10 @@ function dollars(x: number): string {
 
 function limitsTip(u: Usage) {
   const line = (name: string, used: number | undefined, rate: number | undefined) => used == null ? '' : rate
-    ? `Your ${name} limit is about ${usd(1 / rate)} at API prices. You have used ${Math.round(used * 100)}% of it, about ${usd(used / rate)}, so about ${usd((1 - used) / rate)} is left.`
-    : `You have used ${Math.round(used * 100)}% of your ${name} limit. Codiner is still measuring what it is in dollars.`
+    ? `The ${name} limit is about ${usd(1 / rate)} at API prices. You used ${Math.round(used * 100)}% (about ${usd(used / rate)}); about ${usd((1 - used) / rate)} is left.`
+    : `You used ${Math.round(used * 100)}% of your ${name} limit. Codiner does not know its dollar value yet.`
   return [line('5-hour', u.fiveHour, u.rate?.fiveHour), line('weekly', u.sevenDay, u.rate?.sevenDay)].filter(Boolean).join('\n\n')
-    + `\n\nThe dollar values are estimates: the meter compares what Claude Code spends at API prices with how far the percentages move (${u.rate?.pairs ?? 0} measurements so far). Click to show dollars or percent.`
+    + `\n\nDollar values are estimates: Codiner compares Claude Code's spend at API prices with how far the percentages move (${u.rate?.pairs ?? 0} measurements). Click to show dollars or percent.`
 }
 
 // What the conversation has cost so far. Only a label: the session's own pill explains it.
@@ -237,7 +239,7 @@ function SpendHint({ s }: { s: SessionMeta }) {
 function CacheHint({ s }: { s: SessionMeta }) {
   const c = cacheOf(s, useNow())
   if (c.left == null || s.status === 'working') return null
-  if (c.blocked) return <span className="cache-hint cold" title="The prompt cache has expired: the next message re-caches the whole context"> · cache expired</span>
-  if (!c.cold && c.left < (c.ttl >= 3_600_000 ? 10 : 2) * 60_000) return <span className="cache-hint soon" title="The prompt cache expires soon"> · cache {minutes(c.left)}</span>
+  if (c.blocked) return <span className="cache-hint cold" title="Prompt cache expired. The next message re-caches the whole context"> · cache expired</span>
+  if (!c.cold && c.left < (c.ttl >= 3_600_000 ? 10 : 2) * 60_000) return <span className="cache-hint soon" title="Prompt cache expires soon"> · cache {minutes(c.left)}</span>
   return null
 }

@@ -1,7 +1,9 @@
 // Tooltips that show quickly, for any element with a data-tip attribute. The
 // browser's own (title) waits about a second and can't be styled; this one
 // waits a moment, sits below the element (above it near the bottom of the
-// window) and stays inside the window.
+// window) and stays inside the window. A title becomes a data-tip the first
+// time the pointer is on it, so the browser's own never shows; React sets the
+// title again only when it changes, and then it moves over again.
 
 const DELAY = 200
 
@@ -27,7 +29,14 @@ export function initTooltips() {
   }
 
   document.addEventListener('mouseover', (e) => {
-    const el = (e.target as Element | null)?.closest?.('[data-tip]') as HTMLElement | null
+    const el = (e.target as Element | null)?.closest?.('[data-tip], [title]') as HTMLElement | null
+    const title = el?.getAttribute('title')
+    if (el && title) {
+      el.dataset.tip = title
+      el.removeAttribute('title')
+      // An icon-only button keeps a name for screen readers.
+      if (!el.getAttribute('aria-label') && !el.textContent?.trim()) el.setAttribute('aria-label', title)
+    }
     if (el === target) return
     hide()
     if (!el) return

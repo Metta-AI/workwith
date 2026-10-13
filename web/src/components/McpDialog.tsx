@@ -3,6 +3,7 @@
 // on for every new session.
 
 import { useEffect, useState } from 'react'
+import { useEscape } from '../escape.ts'
 import type { SessionMeta } from '../../../shared/types.ts'
 import { api, useStore } from '../store.ts'
 import { XIcon } from './Icons.tsx'
@@ -14,10 +15,10 @@ export function McpPill({ m }: { m: SessionMeta }) {
   if (m.kind !== 'worker' || !m.mcp) return null
   const on = m.mcp.on, missing = m.mcp.missing
   const tip = missing
-    ? `Claude asked for ${missing === 'a list of servers' ? 'your MCP servers' : `"${missing}"`}, and Codiner does not know it. Codiner looks for servers only when you ask it to: click, then press Refresh.`
+    ? `Claude asked for ${missing === 'a list of servers' ? 'your MCP servers' : `"${missing}"`}, which Codiner does not know. Click, then Refresh to look for servers.`
     : on.length
-    ? `MCP servers on in this session: ${on.join(', ')}. The others are off, to keep the context small.\n\nClaude can turn one on when the task needs it. Click to turn them on or off yourself.`
-    : 'Your MCP servers are off in this session, to keep the context small. Claude can turn one on when the task needs it.\n\nClick to turn them on or off yourself.'
+    ? `MCP servers on: ${on.join(', ')}. Others are off to keep the context small.\n\nClaude turns one on when it needs it. Click to change.`
+    : 'MCP servers are off here to keep the context small. Claude turns one on when it needs it.\n\nClick to change.'
   return <>
     <button className={`cache-pill mcp-pill${missing ? ' ask' : ''}`} data-tip={tip} onClick={() => setOpen(true)}>{missing ? 'MCP · Refresh?' : `MCP ${on.length}`}</button>
     {open && <McpDialog m={m} onClose={() => setOpen(false)} />}
@@ -25,6 +26,7 @@ export function McpPill({ m }: { m: SessionMeta }) {
 }
 
 function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
+  useEscape(onClose)
   const st = useStore()
   const [servers, setServers] = useState<Server[] | null>(null)
   const [busy, setBusy] = useState(false)
@@ -40,7 +42,7 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
   const keep = (name: string, value: boolean) => void api('/api/settings', 'PUT', { mcpAlways: value ? [...new Set([...always, name])] : always.filter((n) => n !== name) })
   return (
     <div className="modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal wide mcp-modal" onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
+      <div className="modal wide mcp-modal">
         <div className="files-head">
           <h2>MCP servers</h2>
           <button className="icon-btn" title="Close" onClick={onClose}><XIcon size={14} /></button>
@@ -68,7 +70,7 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
           </table>
         )}
         <div className="modal-actions">
-          <button className={m.mcp?.missing || servers?.length === 0 ? 'primary' : 'link'} disabled={busy} onClick={() => void look()} data-tip="Codiner starts Claude Code for a few seconds to list your MCP servers. It makes no API call.">{busy ? 'Looking…' : 'Refresh'}</button>
+          <button className={m.mcp?.missing || servers?.length === 0 ? 'primary' : 'link'} disabled={busy} onClick={() => void look()} data-tip="Runs Claude Code for a few seconds to list your MCP servers. No API call.">{busy ? 'Looking…' : 'Refresh'}</button>
         </div>
       </div>
     </div>

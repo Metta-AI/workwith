@@ -27,7 +27,7 @@ export function ContextGauge({ m, onCompact }: { m: SessionMeta; onCompact?: () 
     <div className="gauge" title={`${used.toLocaleString()} of ${window.toLocaleString()} tokens in context`}>
       <div className="gauge-bar"><div style={{ width: `${Math.max(pct, used ? 1 : 0)}%`, background: color }} /></div>
       <span className="gauge-label">{kTokens(used)} / {kTokens(window)}</span>
-      {onCompact && <button className="link" disabled={m.status === 'working' || !m.started} onClick={onCompact} title="Summarise the conversation so far to free up context (/compact)">Compact</button>}
+      {onCompact && <button className="link" disabled={m.status === 'working' || !m.started} onClick={onCompact} title="Summarise the conversation to free context (/compact)">Compact</button>}
     </div>
   )
 }
@@ -45,12 +45,12 @@ export function CachePill({ m }: { m: SessionMeta }) {
   const cost = (d: number, share: number | null) => `${usd(d)} (${ofFresh(d, c.dollars.fresh)} of those tokens${share != null ? `, about ${pct(share)} of your 5-hour limit` : ''})`
   const tokens = kTokens(m.context.used)
   const here = c.cold
-    ? `The prompt cache expired ${minutes(-c.left)} ago. A message here writes all ${tokens} tokens to the cache again: ${cost(c.dollars.cold, costCold)}. While the cache was warm, a message cost ${usd(c.dollars.warm)}.`
-    : `The prompt cache stays warm for ${minutes(c.left)} more (${ttlLabel(c.ttl)} after each call). A message here reads ${tokens} tokens from the cache: ${cost(c.dollars.warm, costWarm)}.`
+    ? `The prompt cache expired ${minutes(-c.left)} ago. A message here re-caches all ${tokens} tokens: ${cost(c.dollars.cold, costCold)}. With a warm cache, a message cost ${usd(c.dollars.warm)}.`
+    : `The prompt cache stays warm ${minutes(c.left)} more (${ttlLabel(c.ttl)} after each call). A message here reads ${tokens} cached tokens: ${cost(c.dollars.warm, costWarm)}.`
   const f = c.fresh
-  const fresh = `A new session from the notes would cost about ${usd(f.first)} for its first message, then about ${usd(f.next)} a message (it starts at about ${kTokens(f.tokens)} tokens).`
-    + (f.after == null ? ' So the new session does not cost less.' : f.after <= 1 ? ' So the new session costs less from its first message.' : ` So the new session costs less after about ${f.after} messages.`)
-  const title = `${here}\n\n${fresh} Both leave out what each reply adds.${costWarm == null ? '\n\nCodiner is still measuring how much of your 5-hour limit a dollar uses.' : ''}`
+  const fresh = `A new session from the notes: about ${usd(f.first)} for the first message, then about ${usd(f.next)} a message (it starts at about ${kTokens(f.tokens)} tokens).`
+    + (f.after == null ? ' It does not cost less.' : f.after <= 1 ? ' It costs less from the first message.' : ` It costs less after about ${f.after} messages.`)
+  const title = `${here}\n\n${fresh} Neither counts what each reply adds.${costWarm == null ? '\n\nCodiner does not know the 5-hour limit in dollars yet.' : ''}`
   return (
     <button className={`cache-pill${c.cold ? ' cold' : soon ? ' soon' : ' warm'}${c.blocked ? ' blocked' : ''}`} data-tip={title} onClick={toggleMoney}>
       {busy ? 'Cache warm' : c.cold ? `Cache expired · ${money(c.dollars.cold)}` : `Cache warm · ${minutes(c.left)} · ${money(c.dollars.warm)}`}
@@ -96,7 +96,7 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
         <div className="head-sub">
           <span className={`status-pill st-${m.status}`}>{m.compacting ? 'compacting' : STATUS_LABEL[m.status]}</span>
           <span className="muted mono path" title={m.cwd}>{'\u200E' + m.cwd.replace(/^\/Users\/[^/]+/, '~') + '\u200E'}</span>
-          {model && <span className="muted" title={m.model?.includes('-') ? undefined : 'The model Claude Code ran for this choice last time'}>{model}</span>}
+          {model && <span className="muted" title={m.model?.includes('-') ? undefined : 'Model used for this choice last time'}>{model}</span>}
         </div>
       </div>
       <div className="head-side">
@@ -138,9 +138,9 @@ function SessionMenu({ m }: { m: SessionMeta }) {
   const act = (f: () => unknown) => () => { setOpen(false); void f() }
   const items = [
     busy && <button key="stop" className="danger" onClick={act(() => api(`/api/sessions/${m.id}/interrupt`))}>Stop</button>,
-    m.kind === 'worker' && !m.archived && <button key="close" title="End the session and move it to Archived (reopenable)" onClick={act(() => closeSession(m.id))}>Close</button>,
+    m.kind === 'worker' && !m.archived && <button key="close" title="Archive session" onClick={act(() => closeSession(m.id))}>Close</button>,
     m.kind === 'worker' && m.archived && <button key="reopen" onClick={act(() => api(`/api/sessions/${m.id}`, 'PATCH', { archived: false }))}>Reopen</button>,
-    m.kind === 'worker' && m.archived && <button key="delete" className="danger" title="Remove from Codiner. Claude Code keeps its own copy, so it stays in Resume." onClick={act(() => { if (confirm(`Delete "${m.title}" from Codiner? Claude Code's own transcript is kept, so you can still find it under Resume.`)) return api(`/api/sessions/${m.id}`, 'DELETE').then(() => select('lead')) })}>Delete</button>,
+    m.kind === 'worker' && m.archived && <button key="delete" className="danger" title="Remove from Codiner (it stays in Resume)" onClick={act(() => { if (confirm(`Delete "${m.title}" from Codiner? Claude Code's own transcript is kept, so you can still find it under Resume.`)) return api(`/api/sessions/${m.id}`, 'DELETE').then(() => select('lead')) })}>Delete</button>,
   ].filter(Boolean)
   if (!items.length) return null
   return (
@@ -163,9 +163,9 @@ function Inbox({ m }: { m: SessionMeta }) {
           <div className="inbox-head">
             <span className="inbox-from">From the {i.from === 'master' ? 'lead' : i.from}</span>
             {i.key
-              ? <button className="link inbox-on" title="Show it in the conversation" onClick={() => revealItem(i.key!)}>{inboxLabel(i)}</button>
+              ? <button className="link inbox-on" title="Show in conversation" onClick={() => revealItem(i.key!)}>{inboxLabel(i)}</button>
               : <span className="inbox-on">{inboxLabel(i)}</span>}
-            <button className="icon-btn" title="Remove this draft" onClick={() => void remove(i.id)}><XIcon size={13} /></button>
+            <button className="icon-btn" title="Remove draft" onClick={() => void remove(i.id)}><XIcon size={13} /></button>
           </div>
           {!!i.choices?.length && <div className="inbox-choices">{i.choices.map((c) => <span key={c} className="chip static">{c}</span>)}</div>}
           {i.kind !== 'dismiss' && (
@@ -293,7 +293,7 @@ export function Composer({ m }: { m: SessionMeta }) {
         <div key={nudge} className={`cache-guard${nudge ? ' nudge' : ''}`}>
           <span>
             <b>The prompt cache expired {minutes(-(cache.left ?? 0))} ago.</b> This message writes {kTokens(m.context.used)} tokens to the cache again.{' '}
-            That costs about <button className="link" title="Show in dollars, or as a share of your 5-hour or weekly limit" onClick={toggleMoney}><b>{moneyLong(cache.dollars.cold)}</b></button>
+            That costs about <button className="link" title="Show as dollars or % of 5-hour or weekly limit" onClick={toggleMoney}><b>{moneyLong(cache.dollars.cold)}</b></button>
             {state.money !== 'usd' && shareOf(cache.dollars.cold) != null && limitLeft() != null && <> ({pct(limitLeft()!)} left)</>}, about {cache.times}× a message sent while the cache is warm ({moneyLong(cache.dollars.warm)}).
             {state.money !== 'usd' && shareOf(cache.dollars.cold) == null && <> Codiner is still measuring how much of your usage limit that is.</>}
           </span>
@@ -312,7 +312,7 @@ export function Composer({ m }: { m: SessionMeta }) {
           onKey={slash.onKey}
           minRows={1}
         />
-        <button className="primary send" disabled={!n || sending} onClick={() => send()} title={costly ? 'The prompt cache has expired: use Send anyway above' : undefined}>
+        <button className="primary send" disabled={!n || sending} onClick={() => send()} title={costly ? 'Prompt cache expired: use Send anyway above' : undefined}>
           {sending ? 'Sending…' : isCommand ? 'Run' : warned && open.length ? 'Send anyway' : n > 1 ? `Send ${n}` : 'Send'}
         </button>
       </div>

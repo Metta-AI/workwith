@@ -1,10 +1,12 @@
 import { useState } from 'react'
+import { useEscape } from '../escape.ts'
 import type { ImageRef, PermissionMode, SessionMeta } from '../../../shared/types.ts'
 import { api, select, setComposer, state } from '../store.ts'
 import { DirPicker } from './DirPicker.tsx'
 import { RichInput } from './Inputs.tsx'
 
 export function NewSession({ cwd: initial, onClose }: { cwd: string; onClose(): void }) {
+  useEscape(onClose)
   const [cwd, setCwd] = useState(initial)
   const [title, setTitle] = useState('')
   const [model, setModel] = useState('')
@@ -30,8 +32,8 @@ export function NewSession({ cwd: initial, onClose }: { cwd: string; onClose(): 
   }
 
   return (
-    <div className="modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <form className="modal wide" onSubmit={(e) => { e.preventDefault(); void create() }} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
+    <div className="modal-back top" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <form className="modal wide" onSubmit={(e) => { e.preventDefault(); void create() }}>
         <h2>New session</h2>
         <div className="field">Directory
           <DirPicker value={cwd} onChange={setCwd} autoFocus />

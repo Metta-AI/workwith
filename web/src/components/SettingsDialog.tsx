@@ -5,6 +5,7 @@
 // links to the conversations that made them.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEscape } from '../escape.ts'
 import type { Token, Tokens } from 'marked'
 import DOMPurify from 'dompurify'
 import { api, changed, revealEvent, select, state, useStore } from '../store.ts'
@@ -63,6 +64,8 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
   }, [sel, tick])
 
   const dirty = tab === 'edit' && !!blame && text !== blame.text
+  // Esc does what the X does: with unsaved edits, it asks first.
+  useEscape(() => { if (!dirty || confirm('Discard your changes?')) onClose() })
   const save = async () => {
     setBusy(true)
     try { const b = await api<Blame>(`/api/files?path=${encodeURIComponent(sel)}`, 'PUT', { text }); setBlame(b); setText(b.text); void loadFiles() } finally { setBusy(false) }
@@ -89,7 +92,6 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
   return (
     <div className="modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget && !dirty) onClose() }}>
       <div className="modal files-modal" onKeyDown={(e) => {
-        if (e.key === 'Escape' && !dirty) onClose()
         if (e.key === 's' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (dirty) void save() }
       }}>
         <div className="files-head">
@@ -105,29 +107,29 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
               <input type="checkbox" checked={st.showSteps} onChange={(e) => { state.showSteps = e.target.checked; changed() }} />
               Show Claude's in-between messages
             </label>
-            <label className="settings-check" title="For working on Codiner itself: a banner offers to restart the server when its code changes">
+            <label className="settings-check" title="For work on Codiner itself: a banner offers a server restart">
               <input type="checkbox" checked={!!st.settings.selfRestart} onChange={(e) => void api('/api/settings', 'PUT', { selfRestart: e.target.checked })} />
               Offer to restart when Codiner's code changes
             </label>
-            <label className="settings-check" title="Once a session's prompt cache expires, the next message writes its whole context to the cache again, at full price">
+            <label className="settings-check" title="When the prompt cache expires, the next message re-caches the whole context at full price">
               Ask before re-caching more than
               <select value={guard} onChange={(e) => void api('/api/settings', 'PUT', { cacheGuard: Number(e.target.value) })}>
                 {[...new Set([...GUARDS, guard])].sort((x, y) => x - y).map((g) => <option key={g} value={g}>{g ? `${g / 1000}k tokens` : 'never ask'}</option>)}
               </select>
             </label>
-            <label className="settings-check" data-tip="A new session then has only Codiner's own tools. Its MCP chip turns servers on, and so can Claude. Sessions that exist now keep what they have.">
+            <label className="settings-check" data-tip="New sessions get only Codiner's tools. The MCP chip or Claude turns servers on. Current sessions do not change.">
               <input type="checkbox" checked={st.settings.mcpStartOff !== false} onChange={(e) => void api('/api/settings', 'PUT', { mcpStartOff: e.target.checked })} />
               Start new sessions with my MCP servers off
             </label>
-            <label className="settings-check" data-tip="Without this, Claude asks you before it turns on an MCP server. It applies to sessions that start after you change it.">
+            <label className="settings-check" data-tip="When off, Claude asks you first. Applies to new sessions only.">
               <input type="checkbox" checked={st.settings.mcpClaude !== false} onChange={(e) => void api('/api/settings', 'PUT', { mcpClaude: e.target.checked })} />
               Let Claude turn on an MCP server when the task needs it
             </label>
-            <label className="settings-check" title="After 20 quiet minutes, a call on the conversation writes compact notes to .codiner/notes/ in its folder, to start a new session from">
+            <label className="settings-check" title="After 20 idle minutes, a call writes notes to the folder's .codiner/notes/, to start a new session from">
               <input type="checkbox" checked={st.settings.notes !== false} onChange={(e) => void api('/api/settings', 'PUT', { notes: e.target.checked })} />
               Write notes on quiet sessions
             </label>
-            <label className="settings-check" title="A short call before the 1-hour cache expires keeps it warm. It reads the context at the cache price, so a later message does not write it all again">
+            <label className="settings-check" title="A short call keeps the 1-hour cache warm at the cache-read price. A later message then does not re-cache it all">
               Keep the cache warm for
               <select value={st.settings.keepWarmHours ?? KEEP_WARM.hours} onChange={(e) => void api('/api/settings', 'PUT', { keepWarmHours: Number(e.target.value) })}>
                 {[...new Set([...WARM_HOURS, st.settings.keepWarmHours ?? KEEP_WARM.hours])].sort((x, y) => x - y).map((h) => <option key={h} value={h}>{h ? `${h} ${h === 1 ? 'hour' : 'hours'}` : 'no time (off)'}</option>)}
@@ -140,7 +142,7 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
                 {[...new Set([...WARM_MAX, st.settings.keepWarmMax ?? KEEP_WARM.max])].sort((x, y) => x - y).map((t) => <option key={t} value={t}>{t / 1000}k tokens</option>)}
               </select>
             </label>
-            <label className="settings-check" title="Codiner makes no notes or keep-warm calls when one would take your 5-hour usage past this">
+            <label className="settings-check" title="No notes or keep-warm calls that would take your 5-hour usage past this">
               Stop the calls at
               <select value={st.settings.keepWarmUsage ?? KEEP_WARM.usage} onChange={(e) => void api('/api/settings', 'PUT', { keepWarmUsage: Number(e.target.value) })}>
                 {[...new Set([...WARM_USAGE, st.settings.keepWarmUsage ?? KEEP_WARM.usage])].sort((x, y) => x - y).map((u) => <option key={u} value={u}>{u === 100 ? 'never' : `${u}%`}</option>)}

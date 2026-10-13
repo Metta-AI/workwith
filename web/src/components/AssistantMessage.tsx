@@ -283,18 +283,18 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     const own = here ? r.items.find((it) => it.key === target!.key) : undefined
     const ack = (
       <div key="ack" className="rail-ack">
-        <button className={`ack-btn${on.size ? ' on' : ''}${own ? ' over' : ''}`} title={own ? 'Comment, or change reactions (hold or drag up for more)' : 'React (click for your last emoji; hold or drag up for more)'} onPointerDown={press}
+        <button className={`ack-btn${on.size ? ' on' : ''}${own ? ' over' : ''}`} title={own ? 'Comment or change reactions (hold or drag up for more)' : 'React with last emoji (hold or drag up for more)'} onPointerDown={press}
           onMouseEnter={() => focusPassage(sid, own ? { anchor: own.anchor } : null)} onMouseLeave={() => focusPassage(sid, null)}>
           <span>{own ? own.emoji.join('') : lastEmoji()}</span>
         </button>
         {row && (
           <div className="ack-pop">
           {/* Takes your reactions off this paragraph: outside the row, so it can't be mistaken for an emoji. */}
-          {on.size > 0 && <button className="ack-clear" data-emoji="remove" title="Remove your reactions from this paragraph" onClick={() => toggle('remove')}><XIcon size={14} /></button>}
+          {on.size > 0 && <button className="ack-clear" data-emoji="remove" title="Remove your reactions" onClick={() => toggle('remove')}><XIcon size={14} /></button>}
           <div className="ack-row">
-            {[...new Set([...on, ...topEmoji(8)])].slice(0, Math.max(8, on.size)).map((e) => <button key={e} data-emoji={e} className={on.has(e) ? 'on' : ''} title={on.has(e) ? `Remove ${e} from this paragraph` : `Add ${e}`} onClick={() => toggle(e)}>{e}</button>)}
+            {[...new Set([...on, ...topEmoji(8)])].slice(0, Math.max(8, on.size)).map((e) => <button key={e} data-emoji={e} className={on.has(e) ? 'on' : ''} title={on.has(e) ? `Remove ${e}` : `Add ${e}`} onClick={() => toggle(e)}>{e}</button>)}
             <button className="more-emoji" data-emoji="+" title="Search emoji" onClick={() => toggle('+')}>+</button>
-            <button className="more-emoji" data-emoji="comment" title="Comment on this" onClick={() => toggle('comment')}><CommentIcon size={14} /></button>
+            <button className="more-emoji" data-emoji="comment" title="Comment" onClick={() => toggle('comment')}><CommentIcon size={14} /></button>
           </div>
           </div>
         )}
@@ -488,12 +488,12 @@ function DraftCard({ c, ask, compact }: { c: Ctx; ask: Ask & { draft: string }; 
       <RichInput value={text} onChange={(t) => patch({ text: t, approved: false })} images={[]} onImages={() => {}} placeholder="Draft" minRows={2} />
       <div className="draft-actions">
         {!edited && (
-          <button className={`reply-btn draft-approve${approved ? ' on' : ''}`} title={approved ? 'Goes back with your next message, as it is. Click to undo.' : 'Send it back as it is, with your next message'} onClick={() => patch({ approved: !approved })}>
+          <button className={`reply-btn draft-approve${approved ? ' on' : ''}`} title={approved ? 'Sends as is with your next message. Click to undo' : 'Send as is with your next message'} onClick={() => patch({ approved: !approved })}>
             <CheckIcon size={13} /> {approved ? 'Approved' : 'Approve'}
           </button>
         )}
         {edited && (
-          <button className={`reply-btn${confirm ? ' draft-confirm' : ''}`} title="Put back the text as Claude wrote it" onClick={() => {
+          <button className={`reply-btn${confirm ? ' draft-confirm' : ''}`} title="Restore Claude's original text" onClick={() => {
             if (!confirm) return setConfirm(true)
             setConfirm(false)
             if (draft) removeDraft(c.sid, draft.id)

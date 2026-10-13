@@ -8,6 +8,8 @@
 // command line in `ps` starts ": codiner-task <id> session <sid>", and it and
 // everything it starts have CODINER_TASK and CODINER_SESSION in their environment.
 //
+// An ended task, and its log, goes after a week; the panel can remove one sooner.
+//
 // Stop sends SIGTERM to the task's process group (the exact pid Codiner started),
 // then SIGKILL if it is still there after 5 seconds.
 
@@ -44,8 +46,13 @@ export function startTasks(c: Ctx) {
   check()
 }
 
+const WEEK = 7 * 24 * 3_600_000
+
 function check() {
   let any = false
+  const old = tasks.filter((t) => t.ended && t.ended < Date.now() - WEEK && t.told)
+  for (const t of old) for (const f of [logPath(t.id), exitPath(t.id)]) fs.rmSync(f, { force: true })
+  if (old.length) { tasks = tasks.filter((t) => !old.includes(t)); any = true }
   for (const t of tasks) {
     if (t.ended || alive(t.pid)) continue
     const code = Number.parseInt(fs.readFileSync(exitPath(t.id), { encoding: 'utf8', flag: 'a+' }).trim(), 10)

@@ -51,7 +51,7 @@ export function DirPicker({ value, onChange, autoFocus }: { value: string; onCha
           }}
         />
         <button type="button" onClick={() => { setBrowsing(!browsing); setOpen(false) }}>{browsing ? 'Close' : 'Browse…'}</button>
-        {state.platform === 'darwin' && <button type="button" disabled={picking} onClick={finder} title="Open the macOS folder dialog">{picking ? 'Waiting…' : 'Finder…'}</button>}
+        {state.platform === 'darwin' && <button type="button" disabled={picking} onClick={finder} title="Choose a folder in Finder">{picking ? 'Waiting…' : 'Finder…'}</button>}
       </div>
       {open && !browsing && shown.length > 0 && (
         <div className="dir-menu" onMouseDown={(e) => e.preventDefault()}>

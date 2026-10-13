@@ -60,13 +60,13 @@ export function LeadView({ id }: { id: string }) {
         <SessionView
           id={id}
           extra={<>
-            {drafts > 0 && <button title="Send the lead's drafts to every session that has no open questions, no reply of yours in progress, and is between turns" onClick={() => void sendDrafts()}>Send {drafts} {drafts === 1 ? 'draft' : 'drafts'}</button>}
+            {drafts > 0 && <button title="Send drafts to sessions that are idle, with no open questions or unsent reply" onClick={() => void sendDrafts()}>Send {drafts} {drafts === 1 ? 'draft' : 'drafts'}</button>}
             {sentNote && <span className="muted" title={sentNote.title}>{sentNote.text}</span>}
-            <label className="toggle" title="When on, the lead's drafts go to a session on their own once nothing there waits for you: no open questions, no reply of yours in progress, not mid-turn">
+            <label className="toggle" title="Send each draft when its session is idle, with no open questions or unsent reply">
               <input type="checkbox" checked={st.settings.leadAutoSend} onChange={(e) => void api('/api/settings', 'PUT', { leadAutoSend: e.target.checked })} />
               Auto-send
             </label>
-            <button title="Start the lead over with an empty context (it keeps LEAD_NOTES.md)" onClick={() => { if (confirm('Give the lead a fresh start? It forgets this conversation but keeps its LEAD_NOTES.md.')) { void api('/api/lead/reset') } }}>Fresh start</button>
+            <button title="Clear the lead's context (keeps LEAD_NOTES.md)" onClick={() => { if (confirm('Give the lead a fresh start? It forgets this conversation but keeps its LEAD_NOTES.md.')) { void api('/api/lead/reset') } }}>Fresh start</button>
           </>}
         />
       </section>

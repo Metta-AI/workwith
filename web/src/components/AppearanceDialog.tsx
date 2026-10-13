@@ -3,6 +3,7 @@
 // shows the same picks in a tab. Each pick shows at once and is saved.
 
 import { useEffect } from 'react'
+import { useEscape } from '../escape.ts'
 import { ACCENTS, DEFAULT_APPEARANCE, FONTS, SURFACES, TEXT_SIZES, THEMES, type Appearance } from '../../../shared/appearance.ts'
 import { api, changed, state, useStore } from '../store.ts'
 import { applyAppearance, holdAppearance, loadFonts } from '../appearance.ts'
@@ -10,14 +11,14 @@ import { Mascot } from './Mascot.tsx'
 import { XIcon } from './Icons.tsx'
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1)
-const SURFACE_NOTE: Record<string, [string, string?]> = { warm: ['Paper'], neutral: ['Grey'], cool: ['Blue-grey'], black: ['Black', 'Pure black in dark mode, for OLED screens; grey in light mode'] }
+const SURFACE_NOTE: Record<string, [string, string?]> = { warm: ['Paper'], neutral: ['Grey'], cool: ['Blue-grey'], black: ['Black', 'Pure black in dark mode (for OLED); grey in light mode'] }
 const THEME_NOTE = { system: 'Follows your computer', light: '', dark: '' }
 const FONT_NOTE: Record<string, [string, string]> = {
-  system: ['System', "Your computer's usual font"],
+  system: ['System', "Your computer's font"],
   rounded: ['Rounded', 'Softer letter shapes'],
   serif: ['Serif', 'Like a printed page'],
-  hyperlegible: ['Hyperlegible', 'Atkinson Hyperlegible: letters made hard to mistake, for low vision'],
-  dyslexic: ['OpenDyslexic', 'Weighted letter shapes that some readers with dyslexia find easier'],
+  hyperlegible: ['Hyperlegible', 'Atkinson Hyperlegible: clear letters for low vision'],
+  dyslexic: ['OpenDyslexic', 'Weighted letters that can help readers with dyslexia'],
 }
 const SIZE_NOTE = { small: 'S', medium: 'M', large: 'L', larger: 'XL' }
 
@@ -37,11 +38,7 @@ function setAppearance(patch: Partial<Appearance>) {
 export function AppearanceDialog({ welcome, onClose }: { welcome?: boolean; onClose(): void }) {
   // Closing the welcome keeps the default, so it does not ask again.
   const close = () => { if (!state.settings.appearance) setAppearance({}); onClose() }
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
-    document.addEventListener('keydown', key)
-    return () => document.removeEventListener('keydown', key)
-  })
+  useEscape(close)
 
   return (
     <div className="modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) close() }}>
@@ -78,7 +75,7 @@ export function AppearancePanel() {
           </button>
         ))}
         {/* Any colour: the swatch is a colour input under a critter of that colour. */}
-        <label className={`swatch${a.accent === 'custom' ? ' on' : ''}`} title="Pick any colour">
+        <label className={`swatch${a.accent === 'custom' ? ' on' : ''}`} title="Custom colour">
           <input type="color" value={custom} onClick={() => { if (a.accent !== 'custom') set({ accent: 'custom', custom }) }}
             onChange={(e) => set({ accent: 'custom', custom: e.target.value })} />
           <Mascot status="idle" fatigue={0} body={custom} look={a.accent === 'custom' ? { hat: 'party' } : {}} size={38} />
@@ -111,7 +108,7 @@ export function AppearancePanel() {
         <span className="appearance-label">Text size</span>
         <div className="seg">
           {(Object.keys(TEXT_SIZES) as (keyof typeof TEXT_SIZES)[]).map((z) => (
-            <button key={z} className={(a.textSize ?? 'medium') === z ? 'on' : ''} title={`${cap(z)} text in the conversation`} style={{ fontSize: `${13 * TEXT_SIZES[z]}px` }} onClick={() => set({ textSize: z })}>{SIZE_NOTE[z]}</button>
+            <button key={z} className={(a.textSize ?? 'medium') === z ? 'on' : ''} title={`${cap(z)} conversation text`} style={{ fontSize: `${13 * TEXT_SIZES[z]}px` }} onClick={() => set({ textSize: z })}>{SIZE_NOTE[z]}</button>
           ))}
         </div>
       </div>

@@ -2,6 +2,7 @@
 // dialog with the notes, how keep-warm stands, and a new session from the notes.
 
 import { useEffect, useState } from 'react'
+import { useEscape } from '../escape.ts'
 import type { SessionMeta } from '../../../shared/types.ts'
 import { api, select, setComposer, useStore } from '../store.ts'
 import { kTokens, renderMd, timeAgo } from '../util.ts'
@@ -24,7 +25,7 @@ function keepWarm(m: SessionMeta): string {
 
 // Past this size, a new session from the notes is usually the better way on.
 const big = (m: SessionMeta, max: number) => m.context.used >= max
-  ? `The context is over ${kTokens(max)} tokens. It is slow and costly even with a warm cache: think about a new session from the notes.` : null
+  ? `The context is over ${kTokens(max)} tokens: slow and costly, even with a warm cache. A new session from the notes may be better.` : null
 
 export function NotesPill({ m }: { m: SessionMeta }) {
   const [open, setOpen] = useState(false)
@@ -40,6 +41,7 @@ export function NotesPill({ m }: { m: SessionMeta }) {
 }
 
 function NotesDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
+  useEscape(onClose)
   const st = useStore()
   const [notes, setNotes] = useState<{ path: string; text: string | null } | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -66,7 +68,7 @@ function NotesDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
   }
   return (
     <div className="modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal wide notes-modal" onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
+      <div className="modal wide notes-modal">
         <div className="files-head">
           <h2>Notes</h2>
           <button className="icon-btn" title="Close" onClick={onClose}><XIcon size={14} /></button>
@@ -89,7 +91,7 @@ function NotesDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
           : null}
         <div className="modal-actions">
           <button disabled={!!n.running || m.status === 'working'} onClick={() => void update()}>{n.running === 'notes' ? 'Writing…' : 'Update notes now'}</button>
-          <button className="primary" disabled={!notes?.text || busy} onClick={() => void fresh()} title="A new session in the same folder, with a first message that points it to these notes">New session from notes</button>
+          <button className="primary" disabled={!notes?.text || busy} onClick={() => void fresh()} title="Same folder; its first message points to these notes">New session from notes</button>
         </div>
       </div>
     </div>

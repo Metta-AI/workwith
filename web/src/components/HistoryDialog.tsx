@@ -2,12 +2,14 @@
 // newest first. Resuming brings one into Codiner with its transcript.
 
 import { useEffect, useState } from 'react'
+import { useEscape } from '../escape.ts'
 import type { HistoryItem, SessionMeta } from '../../../shared/types.ts'
 import { api, select } from '../store.ts'
 import { timeAgo } from '../util.ts'
 import { shortPath } from './DirPicker.tsx'
 
 export function HistoryDialog({ onClose }: { onClose(): void }) {
+  useEscape(onClose)
   const [q, setQ] = useState('')
   const [items, setItems] = useState<HistoryItem[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -31,8 +33,8 @@ export function HistoryDialog({ onClose }: { onClose(): void }) {
   }
 
   return (
-    <div className="modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal wide" onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
+    <div className="modal-back top" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal wide">
         <h2>Resume a Claude Code session</h2>
         <input autoFocus placeholder="Search titles, folders and prompts…" value={q} onChange={(e) => setQ(e.target.value)} />
         {err && <div className="notice error">{err}</div>}

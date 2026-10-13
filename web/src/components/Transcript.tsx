@@ -385,8 +385,8 @@ function SentQuote({ quote }: { quote: string }) {
     <div className={`sent-quote${open ? ' open' : ''}`}>
       {head}
       {rest && (open
-        ? <span className="quote-rest" title="The agent did not get this part">{rest}</span>
-        : <button className="quote-more" title="The agent got only these words. Show the rest" onClick={(ev) => { ev.stopPropagation(); setOpen(true) }}>…</button>)}
+        ? <span className="quote-rest" title="Not sent to the agent">{rest}</span>
+        : <button className="quote-more" title="Show the rest (not sent to the agent)" onClick={(ev) => { ev.stopPropagation(); setOpen(true) }}>…</button>)}
     </div>
   )
 }
@@ -448,9 +448,9 @@ function summary(name: string, input: any): string {
 }
 
 const RESOLUTION: Record<string, { Icon: (p: { size?: number }) => React.ReactElement; title: string }> = {
-  allow: { Icon: CheckIcon, title: 'You allowed this' },
-  always: { Icon: CheckIcon, title: 'You allowed this, always' },
-  deny: { Icon: BlockIcon, title: 'You denied this' },
+  allow: { Icon: CheckIcon, title: 'Allowed' },
+  always: { Icon: CheckIcon, title: 'Always allowed' },
+  deny: { Icon: BlockIcon, title: 'Denied' },
   cancelled: { Icon: DashIcon, title: 'Approval cancelled' },
 }
 
