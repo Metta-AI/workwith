@@ -41,7 +41,15 @@ export function formatAnswer(id: string, question: string, choices: string[] | u
   return lines.join('\n')
 }
 
+// A long passage goes to Claude as its first words and "…": Claude has the text
+// already, and the prompt says such a quote stands for the whole passage.
+export function shortQuote(quote: string, words = 8): string {
+  const q = quote.trim().replace(/\s+/g, ' ')
+  if (q.length <= 100) return quote.trim()
+  return q.split(' ').slice(0, words).join(' ') + ' …'
+}
+
 export function formatNote(quote: string, text: string): string {
-  const q = quote.trim().split('\n').map((l) => `> ${l}`).join('\n')
+  const q = shortQuote(quote).split('\n').map((l) => `> ${l}`).join('\n')
   return text.trim() ? `${q}\n\n${text.trim()}` : q
 }

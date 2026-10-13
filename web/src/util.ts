@@ -1,9 +1,14 @@
 import { Marked } from 'marked'
+import { markedHighlight } from 'marked-highlight'
+import { highlight } from './highlight.ts'
 import DOMPurify from 'dompurify'
 import type { ImageRef } from '../../shared/types.ts'
 import { api } from './store.ts'
 
-export const marked = new Marked({ gfm: true, breaks: false })
+export const marked = new Marked(
+  markedHighlight({ emptyLangClass: 'hljs', langPrefix: 'hljs language-', highlight: (code, lang) => highlight(code, lang) }),
+  { gfm: true, breaks: false },
+)
 
 export function renderMd(md: string): string {
   return DOMPurify.sanitize(marked.parse(md, { async: false }) as string)

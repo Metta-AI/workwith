@@ -1,13 +1,14 @@
 // Settings: the global AGENTS.md that every session is given (server/agentsmd.ts).
 
 import { useEffect, useState } from 'react'
-import { api } from '../store.ts'
+import { api, changed, state, useStore } from '../store.ts'
 import { shortPath } from './DirPicker.tsx'
 
 export function SettingsDialog({ onClose }: { onClose(): void }) {
   const [file, setFile] = useState<{ path: string; text: string } | null>(null)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
+  const st = useStore()
 
   useEffect(() => {
     void api<{ path: string; text: string }>('/api/agents-md', 'GET').then((f) => { setFile(f); setText(f.text) })
@@ -26,6 +27,10 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
         if (e.key === 's' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (dirty) void save() }
       }}>
         <h2>Settings</h2>
+        <label className="settings-check">
+          <input type="checkbox" checked={st.showSteps} onChange={(e) => { state.showSteps = e.target.checked; changed() }} />
+          Show Claude's in-between messages (otherwise they fold into the activity row once a turn ends)
+        </label>
         <div className="settings-file">
           <b>AGENTS.md</b>
           {file && <span className="muted mono">{shortPath(file.path)}</span>}

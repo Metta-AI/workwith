@@ -7,7 +7,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { rangesFor, setHighlights } from '../anchoring.ts'
 import { draftsOf, removeDraft, state, updateDraft, useStore, type NoteDraft } from '../store.ts'
-import { RichInput } from './Inputs.tsx'
+import type { Anchor, Event, ImageRef } from '../../../shared/types.ts'
+import { isReaction, topEmoji, usedEmoji } from '../emoji.ts'
+import { renderMd } from '../util.ts'
+import { EmojiPicker } from './EmojiPicker.tsx'
+import { RichInput, Thumbs } from './Inputs.tsx'
 import { XIcon } from './Icons.tsx'
 
 export const CARD_W = 272
@@ -23,15 +27,41 @@ export const rangesOfNote = (sid: string, d: { anchor: NoteDraft['anchor'] }) =>
 }
 
 // Darken one comment's passage while its card (or its sent copy) is hovered or focused.
+// A quick reaction to a passage: an emoji as (part of) the comment.
+const toggleReaction = (text: string, r: string) =>
+  text.includes(r) ? text.replace(r, '').replace(/ {2,}/g, ' ').trim() : text.trim() ? `${text.trimEnd()} ${r}` : r
+
 export function focusPassage(sid: string, d: { anchor: NoteDraft['anchor'] } | null) {
   setHighlights('focus', 'focus', d ? rangesOfNote(sid, d) : [])
 }
 
-type Props = { sid: string; inner: React.RefObject<HTMLDivElement | null>; column: React.RefObject<HTMLDivElement | null>; gutter: boolean }
+type Props = { sid: string; inner: React.RefObject<HTMLDivElement | null>; column: React.RefObject<HTMLDivElement | null>; gutter: boolean; events: Event[] }
 
-export function Margin({ sid, inner, column, gutter }: Props) {
+// What the margin shows: comments being written, comments already sent (read
+// only), and reactions (an emoji alone), as small badges.
+type Entry = { id: string; anchor: Anchor; kind: 'draft' | 'sent' | 'badge'; text: string; images?: ImageRef[]; draft?: NoteDraft }
+
+function sentEntries(events: Event[], gutter: boolean): Entry[] {
+  const out: Entry[] = []
+  for (const e of events) {
+    if (e.t !== 'user') continue
+    e.parts.forEach((p, i) => {
+      if (p.kind !== 'note') return
+      // Reactions show beside their passage (AssistantMessage); without a gutter, sent cards would sit over the text.
+      if (isReaction(p.text) && !p.images?.length || !gutter) return
+      out.push({ id: `s${e.seq}.${i}`, anchor: p.anchor, kind: 'sent', text: p.text, images: p.images })
+    })
+  }
+  return out
+}
+
+export function Margin({ sid, inner, column, gutter, events }: Props) {
   useStore()
-  const notes = draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note')
+  const drafts = draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note')
+  const notes: Entry[] = [
+    ...sentEntries(events, gutter),
+    ...drafts.filter((d) => !d.reaction).map((d): Entry => ({ id: d.id, anchor: d.anchor, kind: 'draft', text: d.text, images: d.images, draft: d })),
+  ]
   const layer = useRef<HTMLDivElement>(null)
   const focused = useRef<string | null>(null)
 
@@ -50,12 +80,14 @@ export function Margin({ sid, inner, column, gutter }: Props) {
       card.style.display = first ? '' : 'none'
       if (gutter) {
         card.style.left = `${cb.right - ib.left + GUTTER_GAP}px`
-        card.style.width = `${Math.min(CARD_W, ib.right - cb.right - GUTTER_GAP - 12)}px`
+        if (!card.classList.contains('react-badge')) card.style.width = `${Math.min(CARD_W, ib.right - cb.right - GUTTER_GAP - 12)}px`
+      } else if (card.classList.contains('react-badge')) {
+        card.style.left = `${cb.right - ib.left + 2}px`
       } else {
         card.style.left = `${cb.left - ib.left + 12}px`
         card.style.width = `${cb.width - 24}px`
       }
-      const want = !first ? null : gutter ? first.top - ib.top - 6 : last!.bottom - ib.top + 6
+      const want = !first ? null : gutter || card.classList.contains('react-badge') ? first.top - ib.top - 6 : last!.bottom - ib.top + 6
       return { card, want, h: card.offsetHeight, id: card.dataset.id }
     }).filter((it) => it.want != null)
     items.sort((a, b) => a.want! - b.want!)
@@ -87,6 +119,7 @@ export function Margin({ sid, inner, column, gutter }: Props) {
     if (layer.current) for (const c of layer.current.children) ro.observe(c)
     return () => ro.disconnect()
   }, [notes.length, gutter])
+  useEffect(() => { layoutRef.current() }, [events])
 
   // Highlights are painted, not elements, so hovering one is found by testing the
   // pointer against each comment's text boxes. The hovered comment's card lights
@@ -124,12 +157,23 @@ export function Margin({ sid, inner, column, gutter }: Props) {
 
   return (
     <div className="margin" ref={layer}>
-      {notes.map((n) => (
+      {notes.map((n) => n.kind === 'draft' ? (
         <NoteCard
-          key={n.id} sid={sid} note={n}
+          key={n.id} sid={sid} note={n.draft!}
           onFocus={() => { focused.current = n.id; layout(); focusPassage(sid, n) }}
           onBlur={() => { if (focused.current === n.id) focused.current = null; focusPassage(sid, null) }}
         />
+      ) : n.kind === 'badge' ? (
+        <button
+          key={n.id} data-id={n.id} className={`react-badge${n.draft ? ' draft' : ''}`} title={n.draft ? 'Remove' : undefined}
+          onMouseEnter={() => focusPassage(sid, n)} onMouseLeave={() => focusPassage(sid, null)}
+          onClick={() => { if (n.draft) { focusPassage(sid, null); removeDraft(sid, n.id) } }}
+        >{n.text.trim()}</button>
+      ) : (
+        <div key={n.id} data-id={n.id} className="note-card sent" onMouseEnter={() => focusPassage(sid, n)} onMouseLeave={() => focusPassage(sid, null)}>
+          <div className="md" dangerouslySetInnerHTML={{ __html: renderMd(n.text) }} />
+          <Thumbs images={n.images} />
+        </div>
       ))}
     </div>
   )
@@ -139,9 +183,21 @@ function NoteCard({ sid, note, onFocus, onBlur }: { sid: string; note: NoteDraft
   const [focus] = useState(() => state.focus === note.id)
   useEffect(() => { if (state.focus === note.id) state.focus = null }, [note.id])
   const card = useRef<HTMLDivElement>(null)
+  const [picking, setPicking] = useState(false)
+  // The passage's reactions (not sent yet), which the emoji row shows as on.
+  const k = JSON.stringify(note.anchor)
+  const reactions = draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note' && !!d.reaction && !d.whole && JSON.stringify(d.anchor) === k)
+  const react = (r: string) => {
+    const same = reactions.find((d) => d.text.trim() === r)
+    if (isEmpty(note) && same) return removeDraft(sid, same.id)
+    if (!note.text.includes(r)) usedEmoji(r)
+    // On an empty card the emoji is a reaction: it moves to the left of the passage and the card goes.
+    if (isEmpty(note)) { focusPassage(sid, null); updateDraft(sid, note.id, { text: r, reaction: true }); return }
+    updateDraft(sid, note.id, { text: toggleReaction(note.text, r) })
+  }
   return (
     <div
-      className={`note-card${isEmpty(note) ? ' empty' : ''}`}
+      className={`note-card${isEmpty(note) ? ' blank' : ''}`}
       data-id={note.id}
       ref={card}
       onFocus={onFocus}
@@ -168,6 +224,13 @@ function NoteCard({ sid, note, onFocus, onBlur }: { sid: string; note: NoteDraft
         minRows={1}
         onEscape={() => { if (isEmpty(note)) removeDraft(sid, note.id); else (document.activeElement as HTMLElement | null)?.blur() }}
       />
+      <div className="reactions" onMouseDown={(e) => e.preventDefault()}>
+        {topEmoji(6).map((r) => (
+          <button key={r} className={note.text.includes(r) || reactions.some((d) => d.text.trim() === r) ? 'on' : ''} onClick={() => react(r)}>{r}</button>
+        ))}
+        <button className="more-emoji" title="Search emoji" onClick={() => setPicking(true)}>+</button>
+        {picking && <EmojiPicker onPick={(r) => { react(r); setPicking(false) }} onClose={() => setPicking(false)} />}
+      </div>
     </div>
   )
 }

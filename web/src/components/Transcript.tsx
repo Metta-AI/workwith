@@ -3,9 +3,12 @@ import type { Anchor, Block, Event, ImageRef, Part } from '../../../shared/types
 import { addDraft, api, draftsOf, removeDraft, rewind, uid, useStore } from '../store.ts'
 import { anchorFromRange } from '../anchoring.ts'
 import { renderInline, renderMd } from '../util.ts'
-import { AssistantMessage } from './AssistantMessage.tsx'
+import { AssistantMessage, type Reaction } from './AssistantMessage.tsx'
 import { RichInput, Thumbs } from './Inputs.tsx'
 import { foldItems, revealItem, trackItems, type TrackedItem } from '../items.ts'
+import { itemsOf } from '../../../shared/blocks.ts'
+import { isReaction } from '../emoji.ts'
+import { highlight, langOfPath } from '../highlight.ts'
 import { CARD_W, GUTTER_GAP, Margin, focusPassage, rangesOfNote } from './Margin.tsx'
 import { AgentsIcon, BlockIcon, CheckIcon, ChevronIcon, DashIcon, XIcon, FileIcon, GlobeIcon, ListIcon, PencilIcon, SearchIcon, TerminalIcon, ToolIcon, TrashIcon } from './Icons.tsx'
 
@@ -15,6 +18,7 @@ type Folded = {
   resolved: Map<string, string>
   items: Map<string, TrackedItem>     // questions and items to consider, by "<msg>:<id>"
   sent: Map<string, Anchor[]>
+  reacts: Map<string, Reaction[]>    // reactions sent, by message
   permOf: Map<string, PermEvent>     // tool_use id → its approval request
   linked: Set<string>                // approval requests shown on their tool line
 }
@@ -22,7 +26,7 @@ type Folded = {
 const inputKey = (input: unknown) => JSON.stringify(input ?? null)
 
 function fold(events: Event[]): Folded {
-  const f: Folded = { results: new Map(), resolved: new Map(), items: new Map(), sent: new Map(), permOf: new Map(), linked: new Set() }
+  const f: Folded = { results: new Map(), resolved: new Map(), items: new Map(), sent: new Map(), reacts: new Map(), permOf: new Map(), linked: new Set() }
   const uses: { id: string; name: string; key: string }[] = []
   for (const e of events) {
     if (e.t === 'tool_result') f.results.set(e.toolUseId, e)
@@ -40,7 +44,8 @@ function fold(events: Event[]): Folded {
       }
       if (id) { f.permOf.set(id, e); f.linked.add(e.requestId) }
     } else if (e.t === 'user') for (const p of e.parts) {
-      if (p.kind === 'note') f.sent.set(p.anchor.msg, [...(f.sent.get(p.anchor.msg) ?? []), p.anchor])
+      if (p.kind === 'note' && isReaction(p.text) && !p.images?.length) f.reacts.set(p.anchor.msg, [...(f.reacts.get(p.anchor.msg) ?? []), { anchor: p.anchor, emoji: p.text.trim(), whole: !!p.whole, quote: p.quote }])
+      else if (p.kind === 'note') f.sent.set(p.anchor.msg, [...(f.sent.get(p.anchor.msg) ?? []), p.anchor])
     }
   }
   return f
@@ -58,7 +63,10 @@ export function Transcript({ sid }: { sid: string }) {
   const itemFold = useMemo(() => foldItems(events ?? []), [events])
   // Item status also follows the drafts, so it is worked out on every render.
   const folded: Folded = { ...base, items: new Map(trackItems(sid, events ?? [], itemFold).map((t) => [t.key, t])) }
-  const groups = useMemo(() => group(events ?? [], base), [events, base])
+  // Comments on a message keep it in view.
+  const drafted = draftsOf(sid).flatMap((d) => d.kind === 'note' ? [d.anchor.msg] : []).sort().join(' ')
+  const steps = useMemo(() => st.showSteps ? new Set<string>() : interim(events ?? [], base, new Set(drafted.split(' '))), [events, base, drafted, st.showSteps])
+  const groups = useMemo(() => group(events ?? [], base, steps), [events, base, steps])
   const scroller = useRef<HTMLDivElement>(null)
   const inner = useRef<HTMLDivElement>(null)
   const column = useRef<HTMLDivElement>(null)
@@ -71,6 +79,9 @@ export function Transcript({ sid }: { sid: string }) {
     if (el && stick.current) el.scrollTop = el.scrollHeight
   }, [events?.length, streaming, sid])
   useEffect(() => { stick.current = true }, [sid])
+
+  // The composer lines up with the text column, which moves over for the margin.
+  useEffect(() => { scroller.current?.closest('.session-main')?.classList.toggle('gutter', gutter) }, [gutter, !!events])
 
   useEffect(() => {
     const el = scroller.current
@@ -90,7 +101,7 @@ export function Transcript({ sid }: { sid: string }) {
       const el = msgOf(r.startContainer)
       if (!el || el !== msgOf(r.endContainer) || el.dataset.sid !== sid) return
       const at = (n: Node) => (n.nodeType === 1 ? n as Element : n.parentElement)
-      if (at(r.commonAncestorContainer)?.closest('.ask-card, textarea, input, button, summary')) return
+      if (at(r.commonAncestorContainer)?.closest('.ask-card, .ri-edit, textarea, input, button, summary')) return
       const anchor = anchorFromRange(r, el)
       if (!anchor) return
       const quote = sel.toString().trim().replace(/\n{3,}/g, '\n\n')
@@ -109,10 +120,13 @@ export function Transcript({ sid }: { sid: string }) {
 
   return (
     <div className="transcript-wrap">
-    <div className="transcript" ref={scroller} onScroll={(e) => {
-      const el = e.currentTarget
-      stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-    }}>
+    <div
+      className="transcript" ref={scroller}
+      // New output is followed only while you are at the very bottom; any move up lets go at once.
+      onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 4 }}
+      onWheel={(e) => { if (e.deltaY < 0) stick.current = false }}
+      onKeyDown={(e) => { if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) stick.current = false }}
+    >
       <div className={`transcript-inner${gutter ? ' gutter' : ''}`} ref={inner}>
         <div className="column" ref={column}>
           {groups.map((g, i) => g.kind === 'one'
@@ -121,7 +135,7 @@ export function Transcript({ sid }: { sid: string }) {
           {streaming && <AssistantMessage sid={sid} msg="live" text={streaming} live />}
           {meta?.status === 'working' && !streaming && <div className="working-dots"><span /><span /><span /></div>}
         </div>
-        <Margin sid={sid} inner={inner} column={column} gutter={gutter} />
+        <Margin sid={sid} inner={inner} column={column} gutter={gutter} events={events} />
       </div>
     </div>
     <OpenToast scroller={scroller} keys={[...folded.items.values()].filter((t) => t.status === 'open').map((t) => t.key)} />
@@ -170,12 +184,29 @@ function OpenToast({ scroller, keys }: { scroller: React.RefObject<HTMLDivElemen
 type Item = { key: string; e: Event; block?: Block; i?: number; activity: boolean }
 type Group = { kind: 'one'; item: Item } | { kind: 'activity'; items: Item[] }
 
-function items(events: Event[], f: Folded): Item[] {
+// Claude's text between tool calls is a step on the way. Once the turn is over,
+// all but its last text fold into the activity rows, unless they hold questions,
+// items to consider or comments.
+function interim(events: Event[], f: Folded, drafted: Set<string>): Set<string> {
+  const out = new Set<string>()
+  let texts: { key: string; text: string }[] = []
+  for (const e of events) {
+    if (e.t === 'user') texts = []
+    else if (e.t === 'assistant' && !e.synthetic) e.blocks.forEach((b, i) => { if (b.type === 'text') texts.push({ key: `${e.seq}.${i}`, text: b.text }) })
+    else if (e.t === 'result') {
+      for (const t of texts.slice(0, -1)) if (!f.sent.has(t.key) && !f.reacts.has(t.key) && !drafted.has(t.key) && !itemsOf(t.text).length) out.add(t.key)
+      texts = []
+    }
+  }
+  return out
+}
+
+function items(events: Event[], f: Folded, steps: Set<string>): Item[] {
   const out: Item[] = []
   for (const e of events) {
     switch (e.t) {
       case 'assistant':
-        e.blocks.forEach((b, i) => out.push({ key: `${e.seq}.${i}`, e, block: b, i, activity: b.type !== 'text' }))
+        e.blocks.forEach((b, i) => out.push({ key: `${e.seq}.${i}`, e, block: b, i, activity: b.type !== 'text' || steps.has(`${e.seq}.${i}`) }))
         break
       case 'permission': {
         const resolved = f.resolved.has(e.requestId)
@@ -191,7 +222,7 @@ function items(events: Event[], f: Folded): Item[] {
   return out
 }
 
-function group(events: Event[], f: Folded): Group[] {
+function group(events: Event[], f: Folded, steps: Set<string>): Group[] {
   const out: Group[] = []
   let run: Item[] = []
   const flush = () => {
@@ -199,7 +230,7 @@ function group(events: Event[], f: Folded): Group[] {
     else if (run.length) out.push({ kind: 'activity', items: run })
     run = []
   }
-  for (const it of items(events, f)) {
+  for (const it of items(events, f, steps)) {
     if (it.activity) run.push(it)
     else { flush(); out.push({ kind: 'one', item: it }) }
   }
@@ -222,7 +253,7 @@ function ItemView({ sid, item, f }: { sid: string; item: Item; f: Folded }) {
 function BlockView({ sid, b, msg, f, synthetic }: { sid: string; b: Block; msg: string; f: Folded; synthetic?: boolean }) {
   if (b.type === 'text') {
     if (synthetic) return <div className="notice info md" dangerouslySetInnerHTML={{ __html: renderMd(b.text) }} />
-    return <AssistantMessage sid={sid} msg={msg} text={b.text} items={f.items} sent={f.sent.get(msg) ?? []} />
+    return <AssistantMessage sid={sid} msg={msg} text={b.text} items={f.items} sent={f.sent.get(msg) ?? []} reacts={f.reacts.get(msg)} />
   }
   if (b.type === 'thinking') return <details className="thinking" open><summary>Thinking</summary><div className="md" dangerouslySetInnerHTML={{ __html: renderMd(b.text) }} /></details>
   const perm = f.permOf.get(b.id)
@@ -244,9 +275,10 @@ const kindOf = (name: string) =>
 
 function tally(items: Item[], f: Folded): string {
   const n: Record<string, number> = {}
-  let thinking = false, denied = 0, failed = 0
+  let thinking = false, denied = 0, failed = 0, said = 0
   for (const { e, block } of items) {
     if (block?.type === 'thinking') thinking = true
+    else if (block?.type === 'text') said++
     else if (block?.type === 'tool_use') {
       const k = kindOf(block.name)
       n[k] = (n[k] ?? 0) + 1
@@ -256,6 +288,7 @@ function tally(items: Item[], f: Folded): string {
     } else if (e.t === 'permission' && f.resolved.get(e.requestId) === 'deny') denied++
   }
   const parts = thinking ? ['Thinking'] : []
+  if (said) parts.push(`${said} ${said === 1 ? 'update' : 'updates'}`)
   for (const [k, one, many] of KINDS) if (n[k]) parts.push(`${n[k]} ${n[k] === 1 ? one : many}`)
   if (denied) parts.push(`${denied} denied`)
   if (failed) parts.push(`${failed} failed`)
@@ -282,21 +315,25 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
   const [editing, setEditing] = useState(false)
   const [confirm, setConfirm] = useState(false)
   const [busy, setBusy] = useState(false)
+  // Comments, reactions and answers live beside what they answer; here they fold into one line.
+  const [open, setOpen] = useState(false)
   const run = async (f: () => Promise<void>) => {
     setBusy(true)
     try { await f() } finally { setBusy(false) }
   }
   if (editing) return <UserEdit sid={sid} e={e} onDone={() => setEditing(false)} />
+  const replies = e.parts.filter((p) => p.kind !== 'text')
+  const shown = open ? e.parts : e.parts.filter((p) => p.kind === 'text')
   return (
-    <div className="user-turn" onMouseLeave={() => setConfirm(false)}>
-      <div className="user-actions">
-        <button className="icon-btn" title="Edit" disabled={busy} onClick={() => setEditing(true)}><PencilIcon size={13} /></button>
-        {confirm
-          ? <button className="link danger" disabled={busy} onClick={() => run(() => rewind(sid, e.seq))}>Delete from here</button>
-          : <button className="icon-btn" title="Delete from here" disabled={busy} onClick={() => setConfirm(true)}><TrashIcon size={13} /></button>}
-      </div>
+    <div className="user-wrap" onMouseLeave={() => setConfirm(false)}>
+    <div className="user-turn">
       {e.from && <div className="from">via {e.from}</div>}
-      {e.parts.map((p, i) => (
+      {replies.length > 0 && (
+        <button className={`replies-sum${open ? ' open' : ''}`} onClick={() => setOpen(!open)}>
+          <ChevronIcon size={11} className="chevron" /> {repliesSummary(replies)}
+        </button>
+      )}
+      {shown.map((p, i) => (
         <div
           key={i}
           className={`user-part ${p.kind}`}
@@ -317,13 +354,33 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
         </div>
       ))}
     </div>
+      <div className="user-actions">
+        <button className="icon-btn" title="Edit" disabled={busy} onClick={() => setEditing(true)}><PencilIcon size={13} /></button>
+        {confirm
+          ? <button className="link danger" disabled={busy} onClick={() => run(() => rewind(sid, e.seq))}>Delete from here</button>
+          : <button className="icon-btn" title="Delete from here" disabled={busy} onClick={() => setConfirm(true)}><TrashIcon size={13} /></button>}
+      </div>
+    </div>
   )
+}
+
+function repliesSummary(parts: Part[]): string {
+  const reactions = parts.flatMap((p) => p.kind === 'note' && isReaction(p.text) && !p.images?.length ? [p.text.trim()] : [])
+  const n = (k: Part['kind']) => parts.filter((p) => p.kind === k).length
+  const comments = n('note') - reactions.length
+  const done = parts.reduce((s, p) => s + (p.kind === 'done' ? p.items.length : 0), 0)
+  const dismissed = parts.reduce((s, p) => s + (p.kind === 'dismiss' ? p.items.length : 0), 0)
+  const out: string[] = []
+  const add = (k: number, one: string, many: string) => { if (k) out.push(`${k} ${k === 1 ? one : many}`) }
+  add(comments, 'comment', 'comments'); add(reactions.length, 'reaction', 'reactions'); add(n('answer'), 'answer', 'answers'); add(done, 'done', 'done'); add(dismissed, 'dismissed', 'dismissed')
+  return out.join(', ')
 }
 
 function PartHead({ p }: { p: Part }) {
   return <>
     {p.kind === 'note' && p.quote.trim() && <div className="sent-quote">{p.quote.trim()}</div>}
     {p.kind === 'dismiss' && <div className="sent-dismiss"><XIcon size={11} /> {p.items.map((i) => i.label).join(' · ')}</div>}
+    {p.kind === 'done' && <div className="sent-dismiss sent-done"><CheckIcon size={11} /> {p.items.map((i) => i.text ? `${i.label} (${i.text})` : i.label).join(' · ')}</div>}
     {p.kind === 'answer' && <div className="answer-q" dangerouslySetInnerHTML={{ __html: renderInline(p.question.split('\n')[0]) }} />}
     {p.kind === 'answer' && p.choices?.length ? <div className="answer-choices">{p.choices.join('; ')}</div> : null}
   </>
@@ -336,7 +393,7 @@ function UserEdit({ sid, e, onDone }: { sid: string; e: Extract<Event, { t: 'use
   const [parts, setParts] = useState<Part[]>(() => e.parts.some((p) => p.kind === 'text') ? e.parts : [...e.parts, { kind: 'text', text: '' }])
   const [busy, setBusy] = useState(false)
   const set = (i: number, patch: { text?: string; images?: ImageRef[] }) => setParts((ps) => ps.map((p, j) => j === i ? { ...p, ...patch } as Part : p))
-  const kept = parts.filter((p) => p.kind === 'dismiss' || p.text.trim() || p.images?.length || (p.kind === 'answer' && p.choices?.length))
+  const kept = parts.filter((p) => p.kind === 'dismiss' || p.kind === 'done' || p.text.trim() || p.images?.length || (p.kind === 'answer' && p.choices?.length))
   const submit = async () => {
     if (!kept.length || busy) return
     setBusy(true)
@@ -347,7 +404,7 @@ function UserEdit({ sid, e, onDone }: { sid: string; e: Extract<Event, { t: 'use
       {parts.map((p, i) => (
         <div key={i} className={`user-part ${p.kind}`}>
           <PartHead p={p} />
-          {p.kind !== 'dismiss' && (
+          {p.kind !== 'dismiss' && p.kind !== 'done' && (
             <RichInput value={p.text} onChange={(text) => set(i, { text })} images={p.images ?? []} onImages={(images) => set(i, { images })}
               placeholder={p.kind === 'note' ? 'Comment' : p.kind === 'answer' ? 'Answer' : 'Message Claude'}
               autoFocus={i === parts.length - 1} minRows={1} onSubmit={submit} onEscape={onDone} />
@@ -398,15 +455,24 @@ function ToolCall({ b, result, resolution }: { b: Extract<Block, { type: 'tool_u
       {open && (
         <div className="tool-body">
           {b.name === 'Edit' && b.input?.old_string != null
-            ? <div className="diff"><pre className="del">{b.input.old_string}</pre><pre className="add">{b.input.new_string}</pre></div>
-            : b.name === 'Write' ? <pre>{b.input?.content}</pre>
-            : b.name === 'Bash' ? <pre>$ {b.input?.command}</pre>
+            ? <Diff path={b.input.file_path} del={b.input.old_string} add={b.input.new_string} />
+            : b.name === 'Write' ? <Code code={b.input?.content ?? ''} lang={langOfPath(b.input?.file_path)} />
+            : b.name === 'Bash' ? <Code code={b.input?.command ?? ''} lang="bash" prompt />
             : <pre>{JSON.stringify(b.input, null, 2)}</pre>}
           {result && <pre className="tool-result">{result.text || '(no output)'}</pre>}
         </div>
       )}
     </div>
   )
+}
+
+export function Code({ code, lang, prompt, className }: { code: string; lang?: string; prompt?: boolean; className?: string }) {
+  return <pre className={`hljs${className ? ` ${className}` : ''}`} dangerouslySetInnerHTML={{ __html: (prompt ? '<span class="hljs-meta">$</span> ' : '') + highlight(code, lang) }} />
+}
+
+function Diff({ path, del, add }: { path?: string; del: string; add: string }) {
+  const lang = langOfPath(path)
+  return <div className="diff"><Code className="del" code={del} lang={lang} /><Code className="add" code={add} lang={lang} /></div>
 }
 
 function PermissionCard({ sid, e, resolution }: { sid: string; e: PermEvent; resolution?: string }) {
@@ -434,8 +500,8 @@ function PermissionCard({ sid, e, resolution }: { sid: string; e: PermEvent; res
   return (
     <div className="perm">
       <div className="perm-head">Claude wants to use <b>{e.toolName}</b>{e.description ? <>: {e.description}</> : null}</div>
-      <pre>{detail}</pre>
-      {e.toolName === 'Edit' && e.input?.old_string != null && <div className="diff"><pre className="del">{e.input.old_string}</pre><pre className="add">{e.input.new_string}</pre></div>}
+      {e.toolName === 'Bash' ? <Code code={detail ?? ''} lang="bash" /> : <pre>{detail}</pre>}
+      {e.toolName === 'Edit' && e.input?.old_string != null && <Diff path={e.input.file_path} del={e.input.old_string} add={e.input.new_string} />}
       <div className="perm-actions">
         <button className="primary" disabled={busy} onClick={() => decide('allow')}>Allow</button>
         {e.canAlways && <button disabled={busy} onClick={() => decide('always')}>Always allow</button>}

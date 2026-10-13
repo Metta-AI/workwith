@@ -2,13 +2,19 @@
 // Components re-render on any change; at this scale that's plenty.
 
 import { useSyncExternalStore } from 'react'
-import type { Anchor, Event, ImageRef, Part, ServerMsg, SessionMeta, Settings, Usage } from '../../shared/types.ts'
+import type { Anchor, AuthState, Event, ImageRef, Part, ServerMsg, SessionMeta, Settings, Usage } from '../../shared/types.ts'
 
-export type NoteDraft = { id: string; kind: 'note'; anchor: Anchor; quote: string; text: string; images: ImageRef[]; createdAt: number; itemKey?: string }
+// reaction: an emoji alone, shown at the left of its passage, not as a card;
+// whole: on a whole paragraph or list item (the reaction button), so not highlighted.
+export type NoteDraft = { id: string; kind: 'note'; anchor: Anchor; quote: string; text: string; images: ImageRef[]; createdAt: number; itemKey?: string; reaction?: boolean; whole?: boolean }
 export type AnswerDraft = { id: string; kind: 'answer'; askKey: string; question: string; choices: string[]; text: string; images: ImageRef[]; createdAt: number }
 // A question or item set aside without a reply ("<msg>:<id>").
 export type DismissDraft = { id: string; kind: 'dismiss'; key: string; label: string; createdAt: number }
-export type Draft = NoteDraft | AnswerDraft | DismissDraft
+// An item you did ("<msg>:<id>"); text: a problem you hit doing it.
+export type DoneDraft = { id: string; kind: 'done'; key: string; label: string; text: string; result?: string; createdAt: number }
+// A command opened in Terminal from a <run> block (by token), and how it ended.
+export type Run = { sid: string; card: string; command: string; item?: { key: string; label: string }; code?: number; tail?: string }
+export type Draft = NoteDraft | AnswerDraft | DismissDraft | DoneDraft
 export type Composer = { text: string; images: ImageRef[] }
 
 type State = {
@@ -26,6 +32,10 @@ type State = {
   error: string | null
   platform: string
   home: string
+  auth: AuthState
+  lightbox: string | null     // an image shown full size
+  showSteps: boolean          // keep Claude's in-between messages out of the activity rows
+  runs: Record<string, Run>
 }
 
 const saved = <T,>(k: string, d: T): T => { try { return JSON.parse(localStorage.getItem(k) ?? '') ?? d } catch { return d } }
@@ -45,6 +55,10 @@ export const state: State = {
   error: null,
   platform: '',
   home: '',
+  auth: { state: 'ok' },
+  lightbox: null,
+  showSteps: saved('codiner.showSteps', false),
+  runs: {},
 }
 
 let version = 0
@@ -58,6 +72,7 @@ export function changed() {
     localStorage.setItem('codiner.drafts', JSON.stringify(state.drafts))
     localStorage.setItem('codiner.composer', JSON.stringify(state.composer))
     localStorage.setItem('codiner.selected', JSON.stringify(state.selected))
+    localStorage.setItem('codiner.showSteps', JSON.stringify(state.showSteps))
   }, 300)
 }
 export function useStore(): State {
@@ -98,12 +113,25 @@ function onServer(m: ServerMsg) {
   switch (m.type) {
     case 'hello':
       state.sessions = m.sessions; state.settings = m.settings; state.usage = m.usage
-      state.platform = m.platform; state.home = m.home
+      state.platform = m.platform; state.home = m.home; state.auth = m.auth ?? { state: 'ok' }
       if (!m.sessions.some((s) => s.id === state.selected)) state.selected = 'master'
       break
     case 'sessions': state.sessions = m.sessions; break
     case 'settings': state.settings = m.settings; break
     case 'usage': state.usage = m.usage; break
+    case 'auth': state.auth = m.auth; break
+    case 'run': {
+      const run = state.runs[m.token]
+      if (!run) break
+      Object.assign(run, { code: m.code, tail: m.tail })
+      // The command an item asked for ended: the item is done, with how it went.
+      if (run.item && !draftsOf(run.sid).some((d) => d.kind === 'dismiss' && d.key === run.item!.key)) {
+        markDone(run.sid, run.item.key, run.item.label)
+        const result = `$ ${run.command}\nexit code ${m.code}${m.tail ? `\n${m.tail}` : ''}`
+        state.drafts[run.sid] = draftsOf(run.sid).map((d) => d.kind === 'done' && d.key === run.item!.key ? { ...d, result } : d)
+      }
+      break
+    }
     case 'event': {
       const list = state.events[m.sessionId]
       if (list && (!list.length || list[list.length - 1].seq < m.event.seq)) state.events[m.sessionId] = [...list, m.event]
@@ -180,7 +208,7 @@ const order = (msg: string) => msg.split(/[.:]/).map(Number)
 const cmp = (a: number[], b: number[]) => { for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) - (b[i] ?? 0); return 0 }
 
 export function hasContent(d: Draft): boolean {
-  if (d.kind === 'dismiss') return true
+  if (d.kind === 'dismiss' || d.kind === 'done') return true
   return !!(d.text.trim() || d.images.length || (d.kind === 'answer' && d.choices.length))
 }
 
@@ -192,7 +220,18 @@ export function dismissItem(sid: string, key: string, label: string) {
   changed()
 }
 export function undismissItem(sid: string, key: string) {
-  state.drafts[sid] = draftsOf(sid).filter((d) => !(d.kind === 'dismiss' && d.key === key))
+  state.drafts[sid] = draftsOf(sid).filter((d) => !((d.kind === 'dismiss' || d.kind === 'done') && d.key === key))
+  changed()
+}
+
+export function markDone(sid: string, key: string, label: string) {
+  if (draftsOf(sid).some((d) => d.kind === 'done' && d.key === key)) return
+  const keep = draftsOf(sid).filter((d) => !(d.kind === 'dismiss' && d.key === key) && !(d.kind === 'note' && d.itemKey === key && !hasContent(d)))
+  state.drafts[sid] = [...keep, { id: uid(), kind: 'done', key, label, text: '', createdAt: Date.now() }]
+  changed()
+}
+export function setDoneText(sid: string, key: string, text: string) {
+  state.drafts[sid] = draftsOf(sid).map((d) => d.kind === 'done' && d.key === key ? { ...d, text } : d)
   changed()
 }
 
@@ -200,13 +239,15 @@ export function undismissItem(sid: string, key: string) {
 // order their passages appear, then whatever is in the composer.
 export function queuedParts(sid: string, alsoDismiss: { key: string; label: string }[] = []): Part[] {
   const dismissed = [...draftsOf(sid).flatMap((d) => d.kind === 'dismiss' ? [{ key: d.key, label: d.label }] : []), ...alsoDismiss]
-  const keyed = draftsOf(sid).filter((d): d is NoteDraft | AnswerDraft => d.kind !== 'dismiss' && hasContent(d)).map((d) => {
+  const done = draftsOf(sid).flatMap((d) => d.kind === 'done' ? [{ key: d.key, label: d.label, ...(d.text.trim() ? { text: d.text.trim() } : {}), ...(d.result ? { result: d.result } : {}) }] : [])
+  const keyed = draftsOf(sid).filter((d): d is NoteDraft | AnswerDraft => (d.kind === 'note' || d.kind === 'answer') && hasContent(d)).map((d) => {
     const k = d.kind === 'note' ? [...order(d.anchor.msg), d.anchor.pieces.at(-1)?.block ?? 0] : [...order(d.askKey.split(':')[0]), 9999]
     return { d, k }
   }).sort((a, b) => cmp(a.k, b.k) || a.d.createdAt - b.d.createdAt)
   const parts: Part[] = keyed.map(({ d }) => d.kind === 'note'
-    ? { kind: 'note', text: d.text, quote: d.quote, anchor: d.anchor, images: d.images, ...(d.itemKey ? { itemKey: d.itemKey } : {}) }
+    ? { kind: 'note', text: d.text, quote: d.quote, anchor: d.anchor, images: d.images, ...(d.itemKey ? { itemKey: d.itemKey } : {}), ...(d.whole ? { whole: true } : {}) }
     : { kind: 'answer', text: d.text, askKey: d.askKey, question: d.question, choices: d.choices, images: d.images })
+  if (done.length) parts.push({ kind: 'done', text: '', items: done })
   if (dismissed.length) parts.push({ kind: 'dismiss', text: '', items: dismissed })
   const c = composerOf(sid)
   if (c.text.trim() || c.images.length) parts.push({ kind: 'text', text: c.text, images: c.images })

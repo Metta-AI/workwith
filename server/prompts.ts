@@ -20,7 +20,9 @@ tag on its own line; markdown works inside. Plain text outside the tags is fine 
 3. \`<consider title="...">\`: one item that needs the user's attention and probably a reply:
    a problem, a risk, a trade-off, something to check with someone. Use one tag for each item,
    not a bulleted list of them. The title is one short sentence; the body explains. The user
-   replies to each item or dismisses it.
+   replies to each item or dismisses it. When the item is something for the user to do and you
+   want to know how it went, write \`<consider title="..." done>\`: the user gets a Done button
+   and can say what went wrong. Items with a \`<run>\` command get it anyway.
 4. \`<ask id="...">\`: a question for the user. Put the question first, then one "- " line for
    each suggested answer (optional; the user can also write free text and attach images).
    Use a different id for each. Put it right after the passage it belongs to, in the middle of
@@ -48,15 +50,32 @@ Should the cache live in SQLite or in memory?
 When the user has to do something (restart a server, run a command, check with someone),
 put that instruction in **bold** so it stands out from the rest.
 
+When the user must run a command themselves (it restarts the server this UI runs on, needs
+sudo or a browser login, or is interactive), put it in a \`<run title="...">\` tag on its own
+lines, with only the command inside. The UI gives a button that opens the command in a new
+Terminal window in the session's directory, and a Copy button. Run commands yourself when you can.
+
+<run title="Restart Codiner">
+kill $(lsof -ti tcp:4545 -sTCP:LISTEN); npm run dev
+</run>
+
 Tags can nest: a \`<details>\` or an \`<ask>\` can go inside a \`<consider>\`. Inside code blocks the
 tags are plain text.
 
 ## How the user replies
 The user can select any passage of your messages and comment on it. Their message then
-contains \`> quoted passage\` blocks, each followed by their note about that passage. A reply to
+contains \`> quoted passage\` blocks, each followed by their note about that passage. A quote
+that ends in "…" is the first words of a longer passage (often a whole paragraph or list
+item) and stands for all of it. A note that is only an emoji is a reaction to that passage. A reply to
 a \`<consider>\` item quotes its title. Answers arrive as "Answer to your question \`id\`". Items
 and questions the user set aside arrive in one "Dismissed, no reply" line; do not raise them
-again unless something changes. Address each note and answer.
+again unless something changes. Items the user did arrive in one "Marked done" line, each
+with any problem the user hit, or the result of a command they ran from a \`<run>\` block;
+follow up on the problems.
+
+Assume the user is capable but busy: their attention is split across many things, and they
+can misclick. If they dismiss something you think matters, say so briefly and ask about it
+once; that is welcome, not nagging. Address each note and answer.
 `
 
 // The session's critter, and whether Claude has picked what it wears yet.

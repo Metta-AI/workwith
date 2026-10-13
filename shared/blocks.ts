@@ -2,8 +2,10 @@
 //
 //   <answer> … </answer>                the direct answer; the UI marks it
 //   <details title="…"> … </details>    supporting detail, shown closed
-//   <consider title="…"> … </consider>  an item that wants the user's reply or dismissal
+//   <consider title="…"> … </consider>  an item that wants the user's reply or dismissal;
+//                                       with `done`, something to do, marked done when it is
 //   <ask id="…"> … </ask>               a question: its text, then "- " lines as choices
+//   <run title="…"> … </run>            a command for the user to run; the UI offers a button
 //
 // Markdown works inside, and sections nest. Lines inside code fences are left
 // alone. A section still open at the end (a reply still streaming) holds what
@@ -12,19 +14,19 @@
 
 import { parseAskBody, parseAsks, type Ask } from './asks.ts'
 
-export type SectionKind = 'answer' | 'details' | 'consider' | 'ask'
+export type SectionKind = 'answer' | 'details' | 'consider' | 'ask' | 'run'
 export type Section = { kind: SectionKind; title: string; attrs: Record<string, string>; body: Segment[]; closed: boolean }
 export type Segment = { text: string } | Section
 
-const TAGS = 'answer|details|consider|ask'
-const OPEN = new RegExp(`^\\s*<(${TAGS})((?:\\s+[\\w-]+\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]+))*)\\s*>(.*)$`)
+const TAGS = 'answer|details|consider|ask|run'
+const OPEN = new RegExp(`^\\s*<(${TAGS})((?:\\s+[\\w-]+(?:\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]+))?)*)\\s*>(.*)$`)
 const CLOSE = new RegExp(`^(.*?)</(${TAGS})>\\s*$`)
 const LEGACY = /^:::\s*(summary|more|consider)\b\s*(.*)$/
 const LEGACY_KIND: Record<string, SectionKind> = { summary: 'answer', more: 'details', consider: 'consider' }
 
 function attrsOf(s: string): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const m of s.matchAll(/([\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g)) out[m[1]] = m[2] ?? m[3] ?? m[4]
+  for (const m of s.matchAll(/([\w-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g)) out[m[1]] = m[2] ?? m[3] ?? m[4] ?? ''
   return out
 }
 
@@ -89,9 +91,18 @@ export function askOf(sec: Section, index: number): Ask {
   return parseAskBody(sec.attrs.id ? `id=${sec.attrs.id}` : '', body, index)
 }
 
+// The command in a <run> section, without a code fence around it.
+export function commandOf(sec: Section): string {
+  const body = sec.body.map((s) => ('text' in s ? s.text : '')).join('\n').trim()
+  return (/^(`{3,}|~{3,})[^\n]*\n([\s\S]*?)\n\1\s*$/.exec(body)?.[2] ?? body).trim()
+}
+
 // Things in a message that want a response: questions and items to consider.
 // Ids match what the UI renders: asks by their id (or q1, q2…), items c1, c2…
-export type Item = { kind: 'ask'; id: string; label: string; ask: Ask } | { kind: 'consider'; id: string; label: string }
+// done: the item is something to do, so it can be marked done (`done`, or it holds a <run>).
+export type Item = { kind: 'ask'; id: string; label: string; ask: Ask } | { kind: 'consider'; id: string; label: string; done: boolean }
+
+export const isTask = (sec: Section): boolean => 'done' in sec.attrs || sec.body.some((s) => !('text' in s) && (s.kind === 'run' || isTask(s)))
 
 export function itemsOf(text: string): Item[] {
   const out: Item[] = []
@@ -106,13 +117,20 @@ export function itemsOf(text: string): Item[] {
         const a = askOf(s, asks++)
         out.push({ kind: 'ask', id: a.id, label: a.question.split('\n')[0], ask: a })
       } else {
-        if (s.kind === 'consider') out.push({ kind: 'consider', id: `c${++considers}`, label: s.title || 'Item' })
+        if (s.kind === 'consider') out.push({ kind: 'consider', id: `c${++considers}`, label: s.title || 'Item', done: isTask(s) })
         walk(s.body)
       }
     }
   }
   walk(segmentsOf(text))
   return out
+}
+
+// The text Claude receives for items the user marked done.
+export function formatDone(items: { key: string; label: string; text?: string; result?: string }[]): string {
+  const one = (i: (typeof items)[number]) => `\`${i.key.split(':').pop()}\` (${i.label.slice(0, 120)})${i.text?.trim() ? `, with a problem: ${i.text.trim()}` : ''}`
+  const results = items.filter((i) => i.result).map((i) => `\n\nResult for \`${i.key.split(':').pop()}\`:\n\`\`\`\n${i.result}\n\`\`\``).join('')
+  return `**Marked done:** ${items.map(one).join('; ')}${results}`
 }
 
 // The text Claude receives for items the user saw and set aside.

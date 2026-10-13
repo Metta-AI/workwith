@@ -15,9 +15,12 @@
   },
   "dependencies": {
     "dompurify": "^3.4.17",
+    "highlight.js": "^11.12.0",
     "marked": "^18.1.1",
+    "marked-highlight": "^2.2.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "unicode-emoji-json": "^0.9.0",
     "ws": "^8.22.0"
   },
   "devDependencies": {

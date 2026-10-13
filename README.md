@@ -33,16 +33,37 @@ ever reports a key-based auth source. The sidebar footer shows your plan's 5-hou
   disappears when you click away; the X discards one. When the window is too narrow for a
   margin, cards sit under their passage instead. Selecting text just to copy it opens a
   card too, which vanishes as soon as you click elsewhere.
-- **Four kinds of content.** Claude is told (via `--append-system-prompt`) to mark its
+- **Five kinds of content.** Claude is told (via `--append-system-prompt`) to mark its
   replies with XML tags on their own lines, and each kind looks different:
   - `<answer>`: the direct answer, marked in the accent colour;
   - `<details title="…">`: supporting detail, folded to its title;
-  - `<consider title="…">`: an item that wants your attention, as an amber card with
-    Comment and X (dismiss) icons;
-  - `<ask id="…">`: a question with suggested answers to click, a text box, and an X.
+  - `<consider title="…">`: an item that wants your attention, as an amber card with an X
+    (dismiss) at the top and a Reply button at the bottom;
+  - `<ask id="…">`: a question with suggested answers to click, a text box, and an X;
+  - `<run title="…">`: a command for you to run yourself (one that restarts Codiner, needs
+    sudo, or is interactive), with **Run in Terminal** (macOS: a new Terminal window in the
+    session's directory, via a self-deleting `.command` file) and **Copy**.
 
   Sections render as the reply streams in. The older ` ```ask ` and `:::more` forms still
   parse. Parsing is in `shared/blocks.ts`.
+- **Done.** Items that are something to do (`<consider title="…" done>`, or any item with a
+  `<run>` command) get a Done button, with room to say what went wrong; Claude gets one
+  "Marked done" line. A command run from an item reports its exit code and output back
+  (the Terminal script runs it under `script` and calls the server when it ends), and that
+  result goes into the item's Done.
+- **Reactions.** Move the pointer level with a paragraph or list item (over it, or in the left
+  gutter) and a 👍 shows at its left: click it, or press and hold (or drag up) for your most
+  used emoji and let go on one, or on + to search them all. Reactions stay at the left of their
+  passage; hovering one shows the passage. An emoji on an empty comment card is a reaction too,
+  so it moves to the left; the right margin is for comments with words. Most used come first.
+- **Markdown keys.** In every input, Cmd+B, Cmd+I, Cmd+E (code), Cmd+Shift+X (strikethrough)
+  and Cmd+K (link) wrap the selection, or unwrap it.
+- **Sent replies stay put.** Sent comments stay in the margin as read-only cards; your sent
+  message shows what you typed, with comments, reactions and answers folded into one line
+  ("2 comments, 1 reaction").
+- **Steps fold away.** Once a turn ends, Claude's in-between messages fold into the activity
+  row ("2 updates · 3 edits"), unless they hold questions, items or comments. Settings has a
+  switch to keep them in view.
 - **Nothing slips past.** The panel on the right lists the open questions and items, to
   answer or dismiss there. Completed ones (answered or dismissed) fold into a group below,
   with what you replied, and carry a check or an X in the transcript. Hide the panel with
@@ -54,24 +75,45 @@ ever reports a key-based auth source. The sidebar footer shows your plan's 5-hou
 - **In the sent message** each comment shows its quoted passage, each answer its question,
   and the dismissed items one line.
 - **Images anywhere.** Paste, drop or attach images into a comment, an answer, or the
-  composer. Large ones are scaled down before upload. The composer's float above it, over
-  the transcript.
+  composer. Each one sits in the text where you put it, as a small thumbnail (click for full
+  size), and Claude gets text and images in that order. Large ones are scaled down before
+  upload. In the text they are markdown image links (`shared/images.ts`).
 - **Send.** One message carries everything, in reading order: each comment as
   `> quoted passage` + your note (Marginer's format), each answer, then the composer.
   Drafts survive a reload (localStorage). Hover a sent comment to darken its passage; click
   it to scroll there.
 
-The anchoring (quote text plus which occurrence of it) is Marginer's own `anchor.ts`, imported
-from `../marginer/src` by a Vite alias. Each markdown block is its own anchoring root, so
+The anchoring (quote text plus which occurrence of it) is Marginer's own `anchor.ts`, vendored
+in `web/src/vendor/anchor.ts` (from [huttj/marginer](https://github.com/huttj/marginer)). Each markdown block is its own anchoring root, so
 cards inserted between blocks never shift a quote, and highlights are painted with the
 CSS Custom Highlight API instead of DOM changes.
 
-- **Edit, or delete from here.** Hover one of your messages for a pencil and a bin. Edit
+- **Edit, or delete from here.** Hover one of your messages for a pencil and a bin under it. Edit
   reopens it in place; Send drops it and everything after it, then sends the new version.
   The bin (click twice) just drops it and everything after. Claude forgets them too: the
   next start resumes its transcript cut just before that message
   (`--resume-session-at`, as a `--fork-session`, so the original stays in Claude Code's
   history). Files Claude changed after that point stay changed.
+
+## Signing in
+
+If Claude Code's login is missing (checked at start) or a turn fails because it expired,
+Codiner runs `claude auth login`, which opens the sign-in page in your browser. A banner
+shows while it waits, with the page's link and a box for the code that page shows if the
+sign-in can't finish by itself. Once signed in, the message that failed is sent again in its
+own place. Only a missing login at start or an auth failure starts it by itself (not again
+within a minute of a sign-in that worked); the banner's Sign in button starts it any time. The code is in `server/auth.ts`.
+
+## Code
+
+Commands, the files Claude writes or edits, `<run>` blocks and fenced code in messages are
+syntax highlighted (highlight.js, common languages only: `web/src/highlight.ts`).
+
+## Other agents
+
+Before each message to a worker, if `~/.claude/bin/agents` exists, the server runs
+`agents active <dir>` and adds the result to the message, out of the transcript, so Claude
+knows who else is at work there without checking.
 
 ## Sessions
 

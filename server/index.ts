@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { Part, PermissionMode, ServerMsg, SessionMeta, Settings, Usage } from '../shared/types.ts'
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import os from 'node:os'
 import { Session, type Hooks, type Launch, type SlashCommand } from './session.ts'
 import { findHistory, importTranscript, listDirs, listHistory } from './history.ts'
@@ -20,6 +20,7 @@ import { MASTER_PROMPT, WORKER_PROMPT, lookPrompt } from './prompts.ts'
 import { LOOK_OPTIONS, LOOK_SLOTS, cleanLook, describeLook } from '../shared/looks.ts'
 import { AGENTS_FILE, agentsPrompt, readAgentsMd, writeAgentsMd } from './agentsmd.ts'
 import { handleMcp, type Tool } from './mcp.ts'
+import { authState, cancelLogin, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
 import {
   DATA, MASTER_DIR, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, loadSessions, loadSettings, saveImage, saveSessions, saveSettings,
 } from './store.ts'
@@ -41,6 +42,8 @@ const sockets = new Set<WebSocket>()
 // list, and the last one seen for sessions that haven't started yet.
 const COMMANDS_FILE = path.join(DATA, 'commands.json')
 const commands = new Map<string, SlashCommand[]>()
+// Commands opened in Terminal from a <run> block, by token, until they report back.
+const runs = new Map<string, { sid: string; log: string }>()
 let lastCommands: SlashCommand[] = (() => { try { return JSON.parse(fs.readFileSync(COMMANDS_FILE, 'utf8')) } catch { return [] } })()
 
 const metas = () => [...sessions.values()].map((s) => s.meta)
@@ -59,6 +62,7 @@ const hooks: Hooks = {
   meta: metaChanged,
   event: (s, event) => { broadcast({ type: 'event', sessionId: s.meta.id, event }); metaChanged() },
   delta: (s, text, reset) => broadcast({ type: 'delta', sessionId: s.meta.id, text, reset }),
+  authFailed: () => authNeeded(),
   truncate: (s, seq) => { broadcast({ type: 'truncate', sessionId: s.meta.id, seq }); metaChanged() },
   usage: (u) => { usage = u; broadcast({ type: 'usage', usage }) },
   commands: (s, list) => {
@@ -159,6 +163,20 @@ function resumeHistory(claudeId: string): Session {
   if (Date.now() - item.mtime < 3 * 60_000) s.notice('This session was active in the last few minutes. If it is still open in a terminal, close it there first, or both will write to the same conversation.', 'warn')
   metaChanged()
   return s
+}
+
+// Context added to each message you send, out of the transcript: the master gets
+// the board; a worker gets who else is at work in its directory, from the
+// ~/.claude/bin/agents helper when there is one, so it need not check first.
+const AGENTS_BIN = path.join(os.homedir(), '.claude', 'bin', 'agents')
+function hiddenFor(s: Session): { hidden?: string } {
+  if (s.meta.kind === 'master') return { hidden: board() }
+  if (!fs.existsSync(AGENTS_BIN)) return {}
+  let out = ''
+  try { out = execFileSync(AGENTS_BIN, ['active', s.meta.cwd, '--other', s.meta.claudeSessionId.slice(0, 8)], { timeout: 3000, encoding: 'utf8' }) }
+  catch (e) { out = String((e as { stdout?: string }).stdout ?? '') } // exit code 1: someone is active
+  const who = out.trim()
+  return { hidden: `[Codiner, ${new Date().toISOString().slice(0, 16)}Z] Other agents active in ${s.meta.cwd} (from \`agents active\`): ${who ? `\n${who}` : 'none.'}` }
 }
 
 // What the master sees at the end of each message you send it.
@@ -399,6 +417,25 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     })
     return send(res, 200, { path: picked })
   }
+  if (a === 'runs' && id && method === 'POST') {
+    // A command run from a <run> block ended (the Terminal script calls this).
+    const run = runs.get(id)
+    if (!run) throw new HttpError(404, 'No such run')
+    runs.delete(id)
+    let out = ''
+    try { out = fs.readFileSync(run.log, 'utf8'); fs.rmSync(run.log, { force: true }) } catch { /* nothing recorded */ }
+    // eslint-disable-next-line no-control-regex
+    const tail = out.replace(/\x1b\[[\d;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\r|\x04|\x08/g, '').replace(/^\^D/, '').trimEnd().split('\n').slice(-20).join('\n').slice(-3000)
+    broadcast({ type: 'run', sessionId: run.sid, token: id, code: Number(url.searchParams.get('code') ?? -1), tail })
+    return send(res, 200, { ok: true })
+  }
+  if (a === 'login' && method === 'POST') {
+    if (!id) startLogin()
+    else if (id === 'code') { try { submitCode(String((await json(req)).code ?? '')) } catch (e) { throw new HttpError(400, (e as Error).message) } }
+    else if (id === 'cancel') cancelLogin()
+    else throw new HttpError(404, 'Not found')
+    return send(res, 200, authState())
+  }
   if (a === 'master' && id === 'reset' && method === 'POST') {
     const s = get(MASTER_ID)
     s.stop()
@@ -433,15 +470,37 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   switch (b) {
     case 'send': {
       const p: Part[] = Array.isArray(body.parts) ? body.parts : []
-      s.send(p, s.meta.kind === 'master' ? { hidden: board() } : {})
+      s.send(p, hiddenFor(s))
       return send(res, 200, { ok: true })
     }
     case 'rewind': {
       // Delete from a message on; with parts, send them in its place (an edit).
       try { s.rewind(Number(body.seq)) } catch (e) { throw new HttpError(400, (e as Error).message) }
       const p: Part[] = Array.isArray(body.parts) ? body.parts : []
-      if (p.length) s.send(p, s.meta.kind === 'master' ? { hidden: board() } : {})
+      if (p.length) s.send(p, hiddenFor(s))
       return send(res, 200, { ok: true })
+    }
+    case 'run': {
+      // A command Claude asked you to run, opened in a new Terminal window in the session's
+      // directory. A .command file opens in the default terminal app and needs no Automation permission.
+      if (process.platform !== 'darwin') throw new HttpError(400, 'Run in Terminal is macOS-only')
+      const cmd = String(body.command ?? '').trim()
+      if (!cmd) throw new HttpError(400, 'No command')
+      // `script` keeps the terminal interactive and records what the command prints; when the
+      // command ends, the script reports its exit code back, and the result goes to the item.
+      const token = randomUUID().slice(0, 12)
+      const file = path.join(os.tmpdir(), `codiner-${token}.command`)
+      const log = path.join(os.tmpdir(), `codiner-${token}.log`)
+      const q = (x: string) => `'${x.replace(/'/g, `'\\''`)}'`
+      runs.set(token, { sid: s.meta.id, log })
+      fs.writeFileSync(file, [
+        '#!/bin/sh', 'rm -f "$0"', `cd ${q(s.meta.cwd)} || exit 1`,
+        `cat <<'CODINER_CMD'`, `$ ${cmd}`, 'CODINER_CMD',
+        `script -q ${q(log)} /bin/sh -c ${q(cmd)}`, 'code=$?',
+        `curl -s -m 5 -X POST "http://127.0.0.1:${PORT}/api/runs/${token}?code=$code" >/dev/null 2>&1`, 'exit $code', '',
+      ].join('\n'), { mode: 0o755 })
+      execFile('open', [file], (err) => { if (err) console.error('open', err.message) })
+      return send(res, 200, { token })
     }
     case 'command':
       if (!/^\/[\w:.-]+/.test(body.cmd ?? '')) throw new HttpError(400, 'Not a slash command')
@@ -497,7 +556,7 @@ server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => {
     sockets.add(ws)
     ws.on('close', () => sockets.delete(ws))
-    ws.send(JSON.stringify({ type: 'hello', sessions: metas(), settings, usage, platform: process.platform, home: os.homedir() } satisfies ServerMsg))
+    ws.send(JSON.stringify({ type: 'hello', sessions: metas(), settings, usage, platform: process.platform, home: os.homedir(), auth: authState() } satisfies ServerMsg))
   })
 })
 
@@ -510,6 +569,12 @@ if (DEV) {
     appType: 'spa',
   })
 }
+
+// A missing or expired login starts a sign-in; once signed in, what failed goes again.
+initAuth({
+  change: (auth) => broadcast({ type: 'auth', auth }),
+  signedIn: () => { for (const s of sessions.values()) s.retryAfterSignIn(hiddenFor(s)) },
+})
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Codiner on http://localhost:${PORT}${DEV ? ' (dev)' : ''}`)

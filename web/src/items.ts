@@ -12,20 +12,23 @@ export type ItemStatus =
   | 'dismissing'  // set aside, not sent yet
   | 'answered'    // a reply was sent
   | 'dismissed'   // set aside and sent
+  | 'completing'  // marked done, not sent yet
+  | 'completed'   // marked done and sent
   | 'skipped'     // an earlier turn moved on without it
 
 export type TrackedItem = Item & { key: string; msg: string; status: ItemStatus; reply?: Part }
 
-export type ItemFold = { replies: Map<string, Part>; dismissed: Set<string> }
+export type ItemFold = { replies: Map<string, Part>; dismissed: Set<string>; done: Set<string> }
 
 export function foldItems(events: Event[]): ItemFold {
-  const f: ItemFold = { replies: new Map(), dismissed: new Set() }
+  const f: ItemFold = { replies: new Map(), dismissed: new Set(), done: new Set() }
   for (const e of events) {
     if (e.t !== 'user') continue
     for (const p of e.parts) {
       if (p.kind === 'answer') f.replies.set(p.askKey, p)
       else if (p.kind === 'note' && p.itemKey) f.replies.set(p.itemKey, p)
       else if (p.kind === 'dismiss') for (const i of p.items) f.dismissed.add(i.key)
+      else if (p.kind === 'done') for (const i of p.items) f.done.add(i.key)
     }
   }
   return f
@@ -34,6 +37,7 @@ export function foldItems(events: Event[]): ItemFold {
 export function draftStatus(sid: string, key: string): ItemStatus | null {
   for (const d of draftsOf(sid)) {
     if (d.kind === 'dismiss' && d.key === key) return 'dismissing'
+    if (d.kind === 'done' && d.key === key) return 'completing'
     if (d.kind === 'answer' && d.askKey === key && hasContent(d)) return 'drafted'
     if (d.kind === 'note' && d.itemKey === key && hasContent(d)) return 'drafted'
   }
@@ -51,7 +55,8 @@ export function trackItems(sid: string, events: Event[], fold: ItemFold): Tracke
       for (const it of itemsOf(b.text)) {
         const key = `${msg}:${it.id}`
         const reply = fold.replies.get(key)
-        const status: ItemStatus = reply ? 'answered'
+        const status: ItemStatus = fold.done.has(key) ? 'completed'
+          : reply ? 'answered'
           : fold.dismissed.has(key) ? 'dismissed'
           : idx < lastUser ? 'skipped'
           : draftStatus(sid, key) ?? 'open'

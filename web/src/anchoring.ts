@@ -3,7 +3,7 @@
 // Here each rendered markdown block is its own root, so the reply cards we
 // insert between blocks never shift the text being counted.
 
-import { quotePiecesFromRange, resolveNthQuote } from '@marginer/anchor.ts'
+import { quotePiecesFromRange, resolveNthQuote } from './vendor/anchor.ts'
 import type { Anchor, AnchorPiece } from '../../shared/types.ts'
 
 // Blocks can sit inside a "more details" section, so they are found at any depth.

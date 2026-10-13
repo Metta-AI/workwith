@@ -1,13 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PermissionMode, SessionMeta, SlashCommand } from '../../../shared/types.ts'
-import { api, closeSession, composerOf, draftsOf, hasContent, loadEvents, queuedParts, select, sendQueued, setComposer, useStore } from '../store.ts'
+import { api, closeSession, composerOf, draftsOf, hasContent, loadEvents, queuedParts, select, sendQueued, setComposer, undismissItem, useStore } from '../store.ts'
 import { fatigue, kTokens } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { RichInput } from './Inputs.tsx'
 import { Transcript } from './Transcript.tsx'
 import { AttentionPanel } from './AttentionPanel.tsx'
 import { revealItem, useItems } from '../items.ts'
-import { ListIcon } from './Icons.tsx'
+import { MoreIcon, PanelIcon, UndoIcon } from './Icons.tsx'
+import { renderInline } from '../util.ts'
+import { isReaction } from '../emoji.ts'
 import { Splitter, useWidth } from './Splitter.tsx'
 
 export function ContextGauge({ m, onCompact }: { m: SessionMeta; onCompact?: () => void }) {
@@ -60,16 +62,37 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
             </select>
           )}
           {extra}
-          {(m.status === 'working' || m.status === 'permission') && <button className="danger" onClick={() => void api(`/api/sessions/${m.id}/interrupt`)}>Stop</button>}
-          {m.kind === 'worker' && (m.archived
-            ? <>
-                <button onClick={() => void api(`/api/sessions/${m.id}`, 'PATCH', { archived: false })}>Reopen</button>
-                <button className="danger" title="Remove from Codiner. Claude Code keeps its own copy, so it stays in Resume." onClick={() => { if (confirm(`Delete "${m.title}" from Codiner? Claude Code's own transcript is kept, so you can still find it under Resume.`)) void api(`/api/sessions/${m.id}`, 'DELETE').then(() => select('master')) }}>Delete</button>
-              </>
-            : <button title="End the session and move it to Archived (reopenable)" onClick={() => void closeSession(m.id)}>Close</button>)}
+          <SessionMenu m={m} />
         </div>
       </div>
     </header>
+  )
+}
+
+// Stop, Close and the rest, out of the way behind one button.
+function SessionMenu({ m }: { m: SessionMeta }) {
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const down = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', down)
+    return () => document.removeEventListener('mousedown', down)
+  }, [open])
+  const busy = m.status === 'working' || m.status === 'permission'
+  const act = (f: () => unknown) => () => { setOpen(false); void f() }
+  const items = [
+    busy && <button key="stop" className="danger" onClick={act(() => api(`/api/sessions/${m.id}/interrupt`))}>Stop</button>,
+    m.kind === 'worker' && !m.archived && <button key="close" title="End the session and move it to Archived (reopenable)" onClick={act(() => closeSession(m.id))}>Close</button>,
+    m.kind === 'worker' && m.archived && <button key="reopen" onClick={act(() => api(`/api/sessions/${m.id}`, 'PATCH', { archived: false }))}>Reopen</button>,
+    m.kind === 'worker' && m.archived && <button key="delete" className="danger" title="Remove from Codiner. Claude Code keeps its own copy, so it stays in Resume." onClick={act(() => { if (confirm(`Delete "${m.title}" from Codiner? Claude Code's own transcript is kept, so you can still find it under Resume.`)) return api(`/api/sessions/${m.id}`, 'DELETE').then(() => select('master')) })}>Delete</button>,
+  ].filter(Boolean)
+  if (!items.length) return null
+  return (
+    <div className="menu-wrap" ref={box}>
+      <button className={`icon-tall${busy ? ' busy' : ''}`} title="More" onClick={() => setOpen(!open)}><MoreIcon size={15} /></button>
+      {open && <div className="menu">{items}</div>}
+    </div>
   )
 }
 
@@ -131,13 +154,37 @@ function useSlashMenu(sid: string, text: string, setText: (t: string) => void) {
   return { onKey, menu }
 }
 
+// What you set aside for this message: each one to look at again or take back.
+function DismissedChip({ sid }: { sid: string }) {
+  const [open, setOpen] = useState(false)
+  const list = draftsOf(sid).flatMap((d) => d.kind === 'dismiss' ? [d] : [])
+  useEffect(() => { if (!list.length) setOpen(false) }, [list.length])
+  return (
+    <span className="dismissed-wrap">
+      <button className="chip open-chip" onClick={() => setOpen(!open)}>{list.length} dismissed</button>
+      {open && (
+        <div className="dismissed-list">
+          {list.map((d) => (
+            <div key={d.id}>
+              <button className="link" title={d.label} onClick={() => revealItem(d.key)} dangerouslySetInnerHTML={{ __html: renderInline(d.label) }} />
+              <button className="icon-btn" title="Undo" onClick={() => undismissItem(sid, d.key)}><UndoIcon size={13} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+    </span>
+  )
+}
+
 export function Composer({ m }: { m: SessionMeta }) {
   useStore()
   const c = composerOf(m.id)
   const drafts = draftsOf(m.id).filter(hasContent)
-  const notes = drafts.filter((d) => d.kind === 'note').length
+  const reactions = drafts.filter((d) => d.kind === 'note' && isReaction(d.text) && !d.images.length).length
+  const notes = drafts.filter((d) => d.kind === 'note').length - reactions
   const answers = drafts.filter((d) => d.kind === 'answer').length
   const dismissed = drafts.filter((d) => d.kind === 'dismiss').length
+  const done = drafts.filter((d) => d.kind === 'done').length
   const [sending, setSending] = useState(false)
   // Sending while questions or items are still open warns once; sending again
   // dismisses the rest.
@@ -163,11 +210,13 @@ export function Composer({ m }: { m: SessionMeta }) {
   return (
     <div className="composer">
       <Inbox m={m} />
-      {(notes > 0 || answers > 0 || dismissed > 0 || open.length > 0) && (
+      {(notes > 0 || reactions > 0 || answers > 0 || dismissed > 0 || done > 0 || open.length > 0) && (
         <div className="queue">
           {notes > 0 && <span className="chip static">{notes} {notes === 1 ? 'comment' : 'comments'}</span>}
+          {reactions > 0 && <span className="chip static">{reactions} {reactions === 1 ? 'reaction' : 'reactions'}</span>}
           {answers > 0 && <span className="chip static">{answers} {answers === 1 ? 'answer' : 'answers'}</span>}
-          {dismissed > 0 && <span className="chip static">{dismissed} dismissed</span>}
+          {done > 0 && <span className="chip static">{done} done</span>}
+          {dismissed > 0 && <DismissedChip sid={m.id} />}
           {open.length > 0 && <button className={`chip open-chip${warned ? ' warn' : ''}`} onClick={() => revealItem(open[0].key)}>{open.length} open</button>}
         </div>
       )}
@@ -181,7 +230,7 @@ export function Composer({ m }: { m: SessionMeta }) {
           placeholder={m.kind === 'master' ? 'Message the master' : 'Message Claude'}
           onSubmit={send}
           onKey={slash.onKey}
-          thumbs="overlay"
+          minRows={1}
         />
         <button className="primary send" disabled={!n || sending} onClick={send}>
           {sending ? 'Sending…' : isCommand ? 'Run' : warned && open.length ? 'Send anyway' : n > 1 ? `Send ${n}` : 'Send'}
@@ -205,7 +254,7 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
     <div className="session">
       <SessionHeader m={m} extra={<>
         {extra}
-        {items.length > 0 && <button className={`panel-toggle${panel ? ' on' : ''}`} title="Questions and items" onClick={togglePanel}><ListIcon size={13} />{open > 0 && <span className="count">{open}</span>}</button>}
+        {items.length > 0 && <button className={`panel-toggle icon-tall${panel ? ' on' : ''}`} title="Questions and items" onClick={togglePanel}><PanelIcon size={15} />{open > 0 && <span className="count">{open}</span>}</button>}
       </>} />
       <div className="session-body">
         <div className="session-main">

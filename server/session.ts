@@ -9,8 +9,10 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import { formatAnswer, formatNote } from '../shared/asks.ts'
-import { formatDismissed, itemsOf } from '../shared/blocks.ts'
+import { formatDismissed, formatDone, itemsOf } from '../shared/blocks.ts'
+import { mediaTypeOf, splitImages, withoutImages } from '../shared/images.ts'
 import type { Block, Event, Part, PermissionMode, SessionMeta, Status, Usage } from '../shared/types.ts'
+import { AUTH_ERROR, childEnv } from './auth.ts'
 import { entryBefore } from './history.ts'
 import { appendEvent, imageFile, knownWindow, learnWindow, readEvents, writeEvents } from './store.ts'
 
@@ -19,6 +21,7 @@ export type Hooks = {
   event(s: Session, e: Event): void
   delta(s: Session, text: string, reset: boolean): void
   truncate(s: Session, seq: number): void
+  authFailed(s: Session): void
   usage(u: Usage): void
   commands(s: Session, list: SlashCommand[]): void
 }
@@ -43,6 +46,7 @@ export class Session {
   private sleepTimer: NodeJS.Timeout | null = null
   private stopping = false       // we asked the process to end (sleep, close, delete)
   private interrupted = false
+  private authRetry: number | null = null  // a message that failed for want of a login, to send again
   private terminalOnly = new Set(['doctor', 'color', 'focus', 'reload-plugins', 'heapdump'])
   private pending = new Map<string, { input: any; suggestions: any[] }>()
   private hooks: Hooks
@@ -133,13 +137,7 @@ export class Session {
       '--append-system-prompt', prompt,
       ...args,
     ]
-    const env = { ...process.env }
-    // Never bill per token: without these, claude uses your subscription login.
-    delete env.ANTHROPIC_API_KEY
-    delete env.ANTHROPIC_AUTH_TOKEN
-    // Don't let the child think it is nested inside another Claude Code.
-    delete env.CLAUDECODE
-    delete env.CLAUDE_CODE_ENTRYPOINT
+    const env = childEnv()
     if (!fs.existsSync(m.cwd)) throw new Error(`Directory not found: ${m.cwd}`)
     const p = spawn(process.env.CODINER_CLAUDE ?? 'claude', full, { cwd: m.cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
     this.proc = p
@@ -233,14 +231,18 @@ export class Session {
       if (prev?.type === 'text') prev.text += `\n\n${text}`
       else content.push({ type: 'text', text })
     }
+    const addImage = (url: string, mediaType: string) => {
+      const file = imageFile(url)
+      if (!file || !fs.existsSync(file)) return
+      content.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: fs.readFileSync(file).toString('base64') } })
+    }
     for (const p of parts) {
-      const text = partText(p)
-      if (text.trim()) addText(text)
-      for (const img of p.images ?? []) {
-        const file = imageFile(img.url)
-        if (!file || !fs.existsSync(file)) continue
-        content.push({ type: 'image', source: { type: 'base64', media_type: img.mediaType, data: fs.readFileSync(file).toString('base64') } })
+      // Images pasted into the text go to Claude where they sit in it.
+      for (const r of splitImages(partText(p))) {
+        if ('url' in r) addImage(r.url, mediaTypeOf(r.url))
+        else if (r.text.trim()) addText(r.text.trim())
       }
+      for (const img of p.images ?? []) addImage(img.url, img.mediaType)
     }
     if (!content.length) throw new Error('Nothing to send')
     if (hidden) addText(hidden)
@@ -301,6 +303,25 @@ export class Session {
     m.lastText = last?.t === 'assistant' ? overview(last.blocks.flatMap((b) => b.type === 'text' ? [b.text] : []).join('\n')) : ''
     this.hooks.truncate(this, seq)
     this.refresh()
+  }
+
+  // The login was missing or expired.
+  private authError() {
+    const last = this.getEvents().findLast((e) => e.t === 'user')
+    if (last) this.authRetry = last.seq
+    this.hooks.authFailed(this)
+  }
+
+  // Signed in again: the message that failed goes again, in its own place.
+  retryAfterSignIn(opts: { hidden?: string } = {}) {
+    const seq = this.authRetry
+    this.authRetry = null
+    if (seq == null) return
+    const ev = this.getEvents()
+    const e = ev.find((x) => x.seq === seq)
+    if (e?.t !== 'user' || ev.some((x) => x.t === 'user' && x.seq > seq)) return
+    try { this.rewind(seq) } catch { this.detach() }
+    this.send(e.parts, { ...opts, ...(e.from ? { from: e.from } : {}) })
   }
 
   interrupt() {
@@ -379,6 +400,7 @@ export class Session {
           else if (b.type === 'tool_use') blocks.push({ type: 'tool_use', id: b.id, name: b.name, input: b.input })
         }
         const synthetic = a.model === '<synthetic>'
+        if (synthetic && blocks.some((b) => b.type === 'text' && AUTH_ERROR.test(b.text))) this.authError()
         if (!synthetic && a.usage) {
           const u = a.usage
           m.context.used = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.output_tokens ?? 0)
@@ -418,6 +440,7 @@ export class Session {
           this.notice('Interrupted.')
         } else if (msg.is_error) {
           m.error = String(msg.result ?? msg.subtype ?? 'error').slice(0, 500)
+          if (AUTH_ERROR.test(m.error) && this.authRetry == null) this.authError()
         }
         if (!this.outstanding) this.interrupted = false
         if (msg.num_turns > 0 || msg.is_error) {
@@ -497,7 +520,7 @@ export class Session {
     while (start > 0 && seen < turns) { start--; if (ev[start].t === 'user') seen++ }
     const lines: string[] = []
     for (const e of ev.slice(start)) {
-      if (e.t === 'user') lines.push(`USER${e.from ? ` (via ${e.from})` : ''}: ${e.parts.map((p) => p.kind === 'note' ? formatNote(p.quote, p.text) : p.kind === 'answer' ? `[answer ${p.askKey}] ${p.choices?.join('; ') ?? ''} ${p.text}` : p.kind === 'dismiss' ? formatDismissed(p.items) : p.text).join('\n')}`)
+      if (e.t === 'user') lines.push(`USER${e.from ? ` (via ${e.from})` : ''}: ${e.parts.map((p) => p.kind === 'note' ? formatNote(p.quote, p.text) : p.kind === 'answer' ? `[answer ${p.askKey}] ${p.choices?.join('; ') ?? ''} ${p.text}` : p.kind === 'dismiss' ? formatDismissed(p.items) : p.kind === 'done' ? formatDone(p.items) : p.text).join('\n')}`)
       else if (e.t === 'assistant') for (const b of e.blocks) {
         if (b.type === 'text') lines.push(`CLAUDE: ${b.text}`)
         else if (b.type === 'tool_use') lines.push(`  [${b.name}] ${toolSummary(b.name, b.input)}`)
@@ -505,7 +528,7 @@ export class Session {
       else if (e.t === 'permission') lines.push(`  [waiting for permission: ${e.toolName}]`)
       else if (e.t === 'notice' && e.level !== 'info') lines.push(`  [${e.level}: ${e.text}]`)
     }
-    const s = lines.join('\n')
+    const s = withoutImages(lines.join('\n'))
     return s.length > maxChars ? '…' + s.slice(-maxChars) : s
   }
 }
@@ -515,6 +538,7 @@ function partText(p: Part): string {
   return p.kind === 'note' ? formatNote(p.quote, p.text)
     : p.kind === 'answer' ? formatAnswer(p.askKey.split(':').pop()!, p.question, p.choices, p.text)
     : p.kind === 'dismiss' ? formatDismissed(p.items)
+    : p.kind === 'done' ? formatDone(p.items)
     : p.text
 }
 
@@ -523,7 +547,7 @@ function overview(text: string): string {
   return text
     .replace(/^```ask\b[^\n]*\n([\s\S]*?)^```[ \t]*$/gm, (_, body: string) => `Q: ${body.split('\n')[0]}`)
     .replace(/^\s*<ask\b[^>]*>\s*\n?([^\n]*)[\s\S]*?<\/ask>\s*$/gm, (_, q: string) => `Q: ${q}`)
-    .replace(/^\s*<\/?(answer|details|consider)\b[^>]*>\s*$/gm, '')
+    .replace(/^\s*<\/?(answer|details|consider|run)\b[^>]*>\s*$/gm, '')
     .trim().slice(-400)
 }
 

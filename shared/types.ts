@@ -53,10 +53,14 @@ export type Anchor = { msg: string; pieces: AnchorPiece[] }
 export type Part =
   | { kind: 'text'; text: string; images?: ImageRef[] }
   // itemKey: the <consider> item this comment replies to ("<msg>:<id>").
-  | { kind: 'note'; text: string; quote: string; anchor: Anchor; images?: ImageRef[]; itemKey?: string }
+  // whole: a reaction to a whole paragraph or list item.
+  | { kind: 'note'; text: string; quote: string; anchor: Anchor; images?: ImageRef[]; itemKey?: string; whole?: boolean }
   | { kind: 'answer'; text: string; askKey: string; question: string; choices?: string[]; images?: ImageRef[] }
   // Questions and items the user saw and set aside.
   | { kind: 'dismiss'; text: string; items: { key: string; label: string }[]; images?: ImageRef[] }
+  // Items the user marked done; `text` on one is a problem they hit doing it.
+  // result: how a command the item asked for went.
+  | { kind: 'done'; text: string; items: { key: string; label: string; text?: string; result?: string }[]; images?: ImageRef[] }
 
 export type Block =
   | { type: 'text'; text: string }
@@ -76,11 +80,17 @@ export type Event =
   | E<'notice', { text: string; level: 'info' | 'warn' | 'error' }>
   | E<'result', { durationMs: number; isError: boolean; text?: string }>
 
+// Claude Code's login: 'pending' while `claude auth login` waits for you (url: its sign-in page).
+export type AuthState = { state: 'ok' | 'needed' | 'pending' | 'failed'; url?: string; error?: string }
+
 export type Usage = { fiveHour?: number; sevenDay?: number; resetsAt?: number; status?: string }
 export type Settings = { masterAutoSend: boolean; autoModeMigrated?: boolean }
 
 export type ServerMsg =
-  | { type: 'hello'; sessions: SessionMeta[]; settings: Settings; usage: Usage; platform: string; home: string }
+  | { type: 'hello'; sessions: SessionMeta[]; settings: Settings; usage: Usage; platform: string; home: string; auth: AuthState }
+  | { type: 'auth'; auth: AuthState }
+  // A command run from a <run> block ended.
+  | { type: 'run'; sessionId: string; token: string; code: number; tail: string }
   | { type: 'sessions'; sessions: SessionMeta[] }
   | { type: 'event'; sessionId: string; event: Event }
   | { type: 'delta'; sessionId: string; text: string; reset?: boolean }

@@ -1,14 +1,15 @@
 // The session's questions and items to consider in one place: the open ones
 // to answer or dismiss from here, and earlier ones for reference.
 
-import { dismissItem, undismissItem } from '../store.ts'
+import { dismissItem, markDone, undismissItem } from '../store.ts'
 import { revealItem, useItems, type TrackedItem } from '../items.ts'
 import { AskCard } from './AssistantMessage.tsx'
 import { useState } from 'react'
 import { CheckIcon, ChevronIcon, CommentIcon, DashIcon, UndoIcon, XIcon } from './Icons.tsx'
 import { renderInline } from '../util.ts'
+import { withoutImages } from '../../../shared/images.ts'
 
-const OPEN = new Set(['open', 'drafted', 'dismissing'])
+const OPEN = new Set(['open', 'drafted', 'dismissing', 'completing'])
 
 export function AttentionPanel({ sid, width, onHide }: { sid: string; width: number; onHide(): void }) {
   const [showDone, setShowDone] = useState(() => localStorage.getItem('codiner.panel.done') === '1')
@@ -48,26 +49,32 @@ function PanelConsider({ sid, item }: { sid: string; item: TrackedItem }) {
   // Commenting happens on the item itself, so its margin card sits beside it.
   const comment = () => {
     revealItem(item.key)
-    document.querySelector<HTMLButtonElement>(`[data-item="${CSS.escape(item.key)}"] .item-actions button[title="Comment"]`)?.click()
+    document.querySelector<HTMLButtonElement>(`[data-item="${CSS.escape(item.key)}"] > .consider-foot > .reply-btn`)?.click()
   }
   return (
     <div className={`panel-item consider st-${item.status}`}>
       <div className="consider-head">
         <button className="link panel-title" onClick={() => revealItem(item.key)} dangerouslySetInnerHTML={{ __html: renderInline(item.label) }} />
         <span className="item-actions">
-          {item.status !== 'dismissing' && <button className="icon-btn" title="Comment" onClick={comment}><CommentIcon size={14} /></button>}
           {item.status === 'open' && <button className="icon-btn" title="Dismiss" onClick={() => dismissItem(sid, item.key, item.label)}><XIcon size={13} /></button>}
-          {item.status === 'dismissing' && <button className="icon-btn" title="Undo" onClick={() => undismissItem(sid, item.key)}><UndoIcon size={14} /></button>}
+          {(item.status === 'dismissing' || item.status === 'completing') && <button className="icon-btn" title="Undo" onClick={() => undismissItem(sid, item.key)}><UndoIcon size={14} /></button>}
         </span>
       </div>
+      {(item.status === 'open' || item.status === 'drafted') && (
+        <div className="consider-foot">
+          {item.kind === 'consider' && item.done && <button className="reply-btn" onClick={() => markDone(sid, item.key, item.label)}><CheckIcon size={13} /> Done</button>}
+          <button className="reply-btn" onClick={comment}><CommentIcon size={13} /> Reply</button>
+        </div>
+      )}
+      {item.status === 'completing' && <div className="consider-foot"><span className="done-mark"><CheckIcon size={12} /> Done</span></div>}
     </div>
   )
 }
 
 function Done({ item }: { item: TrackedItem }) {
   const r = item.reply
-  const reply = r?.kind === 'answer' ? [r.choices?.join('; '), r.text].filter(Boolean).join(' · ') : r?.kind === 'note' ? r.text : ''
-  const Icon = item.status === 'answered' ? CheckIcon : item.status === 'dismissed' ? XIcon : DashIcon
+  const reply = withoutImages(r?.kind === 'answer' ? [r.choices?.join('; '), r.text].filter(Boolean).join(' · ') : r?.kind === 'note' ? r.text : '')
+  const Icon = item.status === 'answered' || item.status === 'completed' ? CheckIcon : item.status === 'dismissed' ? XIcon : DashIcon
   return (
     <button className={`panel-done st-${item.status}`} onClick={() => revealItem(item.key)}>
       <span className="panel-done-icon"><Icon size={12} /></span>
