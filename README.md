@@ -51,6 +51,14 @@ ever reports a key-based auth source. The sidebar footer shows your plan's 5-hou
 
   Sections render as the reply streams in. The older ` ```ask ` and `:::more` forms still
   parse. Parsing is in `shared/blocks.ts`.
+- **Tasks.** For a dev server, a watcher or a long build, an agent calls `start_task`.
+  Codiner runs the command in its own process group, with no time limit, and logs it to
+  `~/.codiner/tasks/<id>.log`; it keeps running when the session sleeps or Codiner
+  restarts. In `ps` its command line starts `: codiner-task <id> session <sid>`, and it
+  and its children have `CODINER_TASK` and `CODINER_SESSION` set. The Tasks panel (the
+  terminal icon at the foot of the sidebar) lists every task with its agent's critter,
+  follows and searches its log, and stops it. The agent hears when a task ends: with its
+  next message, in a turn of its own, or by stopping its turn, as it chose.
 - **Done.** Items that are something to do (`<consider title="…" done>`, or any item with a
   `<run>` command) get a Done button, with room to say what went wrong; Claude gets one
   "Marked done" line. A command run from an item reports its exit code and output back

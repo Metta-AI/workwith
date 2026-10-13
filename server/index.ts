@@ -23,6 +23,8 @@ import { cleanAppearance } from '../shared/appearance.ts'
 import * as meter from './meter.ts'
 import { notesDir, notesNow, notesPath, readNotes, resumeKeepWarm, startNotes } from './notes.ts'
 import { notesFile } from '../shared/notes.ts'
+import { allTasks, endText, logPath, markTold, readLog, removeTask, searchLog, startTask, startTasks, statusLine, stopTask, taskOf } from './tasks.ts'
+import type { Task, TaskNotify } from '../shared/types.ts'
 import { configsFor, probe, serversFor } from './mcpservers.ts'
 import { DEFAULT_CACHE_GUARD, cacheLeft, knownTtl } from '../shared/cache.ts'
 import { AGENTS_FILE, agentsPrompt, readAgentsMd, writeAgentsMd } from './agentsmd.ts'
@@ -108,7 +110,7 @@ const hooks: Hooks = {
   event: (s, event) => {
     broadcast({ type: 'event', sessionId: s.meta.id, event })
     metaChanged()
-    if (event.t === 'result') setImmediate(() => autoSend(s))
+    if (event.t === 'result') setImmediate(() => { autoSend(s); taskTurn(s) })
     // A tool call that finished may have changed a tracked file: record it with this message.
     if (event.t === 'tool_result') {
       const ev = s.getEvents()
@@ -141,7 +143,7 @@ function launchFor(meta: SessionMeta): () => Launch {
         '--mcp-config', JSON.stringify({ mcpServers: { codiner: { type: 'http', url: `http://127.0.0.1:${PORT}/mcp/${MCP_TOKEN}/look/${meta.id}` } } }),
         // Started with your MCP servers off: only Codiner's, until one is turned on (server/mcpservers.ts).
         ...(meta.mcp ? ['--strict-mcp-config'] : []),
-        '--allowedTools', `mcp__codiner__set_look,mcp__codiner__set_title${meta.mcp && settings.mcpClaude !== false ? ',mcp__codiner__use_mcp_server' : ''}`,
+        '--allowedTools', `mcp__codiner__set_look,mcp__codiner__set_title,mcp__codiner__start_task,mcp__codiner__stop_task,mcp__codiner__list_tasks${meta.mcp && settings.mcpClaude !== false ? ',mcp__codiner__use_mcp_server' : ''}`,
       ],
       prompt: WORKER_PROMPT + lookPrompt(meta.look) + titlePrompt(meta) + mcpPrompt(meta) + (notes ? workerNotesPrompt(notesFile(meta.id)) : '') + agentsPrompt(),
     }
@@ -209,6 +211,7 @@ if (!settings.autoModeMigrated) {
   metaChanged()
 }
 startNotes({ sessions: () => sessions.values(), settings: () => settings, usage: () => usage, changed: metaChanged })
+startTasks({ changed: (tasks) => broadcast({ type: 'tasks', tasks }), ended: taskEnded })
 
 function get(id: string): Session {
   const s = sessions.get(id)
@@ -258,12 +261,94 @@ function resumeHistory(claudeId: string): Session {
 const AGENTS_BIN = path.join(os.homedir(), '.claude', 'bin', 'agents')
 function hiddenFor(s: Session): { hidden?: string } {
   if (s.meta.kind === 'lead') return { hidden: board() }
-  if (!fs.existsSync(AGENTS_BIN)) return {}
-  let out = ''
-  try { out = execFileSync(AGENTS_BIN, ['active', s.meta.cwd, '--other', s.meta.claudeSessionId.slice(0, 8)], { timeout: 3000, encoding: 'utf8' }) }
-  catch (e) { out = String((e as { stdout?: string }).stdout ?? '') } // exit code 1: someone is active
-  const who = out.trim()
-  return { hidden: `[Codiner, ${new Date().toISOString().slice(0, 16)}Z] Other agents active in ${s.meta.cwd} (from \`agents active\`): ${who ? `\n${who}` : 'none.'}` }
+  const out: string[] = []
+  if (fs.existsSync(AGENTS_BIN)) {
+    let who = ''
+    try { who = execFileSync(AGENTS_BIN, ['active', s.meta.cwd, '--other', s.meta.claudeSessionId.slice(0, 8)], { timeout: 3000, encoding: 'utf8' }) }
+    catch (e) { who = String((e as { stdout?: string }).stdout ?? '') } // exit code 1: someone is active
+    who = who.trim()
+    out.push(`[Codiner, ${new Date().toISOString().slice(0, 16)}Z] Other agents active in ${s.meta.cwd} (from \`agents active\`): ${who ? `\n${who}` : 'none.'}`)
+  }
+  // Tasks that ended since it last heard.
+  out.push(...tasksEnded(s))
+  return out.length ? { hidden: out.join('\n\n') } : {}
+}
+
+// ---- tasks (server/tasks.ts) ------------------------------------------------
+
+// The session's tasks that ended and it has not heard of: their texts, now marked heard.
+function tasksEnded(s: Session): string[] {
+  const t = allTasks().filter((x) => x.sid === s.meta.id && x.ended && !x.told)
+  if (t.length) markTold(t.map((x) => x.id))
+  return t.map(endText)
+}
+
+const busy = (s: Session) => s.meta.status === 'working' || s.meta.status === 'permission'
+
+// A task ended. The session always hears of it with its next message; "turn" and
+// "interrupt" make that happen now, unless a send would write an expired cache again.
+function taskEnded(t: Task) {
+  const s = sessions.get(t.sid)
+  if (!s) return
+  s.notice(`Task "${t.title}" ${t.stopped ? `was stopped by ${t.stopped === 'user' ? 'you' : 'Claude'}` : `ended${t.code != null ? ` with exit code ${t.code}` : ''}`}.`, t.code && !t.stopped ? 'warn' : 'info')
+  if (t.notify === 'next' || t.stopped === 'agent') return
+  if (holdReasons(s, true).length) { s.notice(`Claude hears of it with your next message: its prompt cache has expired, so a message now would write it all again.`); return }
+  if (busy(s) && t.notify === 'interrupt') s.interrupt()
+  else if (busy(s)) return // taskTurn sends it when the turn ends
+  sendTasks(s)
+}
+
+// A turn ended: tasks that asked for a turn of their own get it.
+function taskTurn(s: Session) {
+  if (busy(s) || !allTasks().some((x) => x.sid === s.meta.id && x.ended && !x.told && x.notify !== 'next')) return
+  if (holdReasons(s, true).length) return
+  sendTasks(s)
+}
+
+function sendTasks(s: Session) {
+  const texts = tasksEnded(s)
+  if (texts.length) s.send([{ kind: 'text', text: texts.join('\n\n') }], { from: 'codiner', ...hiddenFor(s) })
+}
+
+function taskTools(id: string): Tool[] {
+  const mine = (tid: unknown) => { const t = taskOf(String(tid ?? '')); if (!t || t.sid !== id) throw new Error(`You have no task "${tid}". Call list_tasks.`); return t }
+  return [
+    {
+      name: 'start_task',
+      description: 'Run a long or lasting shell command (a dev server, a watcher, a long build or test run) apart from this session, with no time limit. The user can watch its log and stop it in Codiner, and it keeps running if this session stops. Returns its id and log path; read the log with your usual tools.',
+      inputSchema: {
+        type: 'object', required: ['title', 'command'],
+        properties: {
+          title: { type: 'string', description: 'A short name for the user, like "Dev server" or "Full test run"' },
+          command: { type: 'string', description: 'The shell command (run with /bin/sh -c)' },
+          cwd: { type: 'string', description: "The directory to run it in; your session's by default" },
+          notify: { type: 'string', enum: ['next', 'turn', 'interrupt'], description: 'How you hear that it ended. next (default): with the next message to you. turn: in a turn of your own as soon as you are between turns; use it when you wait on the result. interrupt: stop your current turn; only when its end changes what you are doing.' },
+        },
+      },
+      run: (args) => {
+        const s = get(id)
+        const command = String(args?.command ?? '').trim()
+        if (!command) return 'Give a command.'
+        const cwd = expandHome(String(args?.cwd ?? '') || s.meta.cwd)
+        if (!fs.existsSync(cwd)) return `There is no directory ${cwd}.`
+        const notify = (['next', 'turn', 'interrupt'] as const).includes(args?.notify) ? args.notify as TaskNotify : 'next'
+        const t = startTask(id, { title: String(args?.title ?? '').trim().slice(0, 80) || command.slice(0, 40), command, cwd, notify })
+        return `Started task \`${t.id}\` (pid ${t.pid}). Log: ${logPath(t.id)}. You will hear when it ends (${notify}).`
+      },
+    },
+    {
+      name: 'stop_task',
+      description: 'Stop one of your tasks: SIGTERM to its process group, then SIGKILL after 5 seconds.',
+      inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } },
+      run: (args) => { const t = mine(args?.id); if (t.ended) return `It already ended.`; stopTask(t.id, 'agent'); return `Stopping task \`${t.id}\`.` },
+    },
+    {
+      name: 'list_tasks',
+      description: 'Your tasks, running and ended, with their status and log paths.',
+      inputSchema: { type: 'object', properties: {} },
+      run: () => { const t = allTasks().filter((x) => x.sid === id); return t.length ? t.map(statusLine).join('\n') : 'You have no tasks.' },
+    },
+  ]
 }
 
 // What the lead sees at the end of each message you send it.
@@ -623,6 +708,13 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     fs.createReadStream(file).pipe(res)
     return
   }
+  if (a === 'tasks') {
+    if (!id && method === 'GET') return send(res, 200, allTasks())
+    if (id && b === 'log' && method === 'GET') { const f = url.searchParams.get('from'); return send(res, 200, readLog(id, f == null ? undefined : Number(f))) }
+    if (id && b === 'search' && method === 'GET') return send(res, 200, searchLog(id, url.searchParams.get('q') ?? ''))
+    if (id && b === 'stop' && method === 'POST') return send(res, 200, stopTask(id, 'user'))
+    if (id && !b && method === 'DELETE') { removeTask(id); return send(res, 200, { ok: true }) }
+  }
   if (a === 'images' && method === 'POST') return send(res, 200, saveImage(String((await json(req)).dataUrl ?? '')))
   if (a === 'restart' && method === 'POST') {
     send(res, 200, { ok: true })
@@ -939,7 +1031,7 @@ const server = http.createServer(async (req, res) => {
       return await handleMcp(req, res, lead ? [...tools, lookTool(lead.meta.id)] : tools)
     }
     const look = url.pathname.startsWith(`/mcp/${MCP_TOKEN}/look/`) && url.pathname.split('/').pop()
-    if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look), mcpTool(look)])
+    if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look), mcpTool(look), ...taskTools(look)])
     if (url.pathname.startsWith('/api/')) return await api(req, res, url)
     if (vite) return vite.middlewares(req, res)
     serveStatic(url.pathname, res)
@@ -970,6 +1062,7 @@ server.on('upgrade', (req, socket, head) => {
     sockets.add(ws)
     ws.on('close', () => sockets.delete(ws))
     ws.send(JSON.stringify({ type: 'hello', sessions: metas(), settings, usage, platform: process.platform, home: os.homedir(), auth: authState(), stale } satisfies ServerMsg))
+    ws.send(JSON.stringify({ type: 'tasks', tasks: allTasks() } satisfies ServerMsg))
   })
 })
 

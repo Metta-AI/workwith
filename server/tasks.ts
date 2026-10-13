@@ -1,0 +1,148 @@
+// Long-running commands an agent starts with the start_task tool: dev servers,
+// watchers, long builds and test runs. Codiner runs each one in its own process
+// group, apart from the claude process, so it has no time limit and keeps running
+// when the session sleeps or Codiner restarts. Its output goes to
+// ~/.codiner/tasks/<id>.log; a wrapper shell writes the exit code to <id>.exit.
+//
+// Each task is marked as Codiner's and the agent's, outside Codiner too: its
+// command line in `ps` starts ": codiner-task <id> session <sid>", and it and
+// everything it starts have CODINER_TASK and CODINER_SESSION in their environment.
+//
+// Stop sends SIGTERM to the task's process group (the exact pid Codiner started),
+// then SIGKILL if it is still there after 5 seconds.
+
+import { spawn } from 'node:child_process'
+import fs from 'node:fs'
+import path from 'node:path'
+import { randomUUID } from 'node:crypto'
+import type { Task, TaskNotify } from '../shared/types.ts'
+import { DATA } from './store.ts'
+import { childEnv } from './auth.ts'
+
+const DIR = path.join(DATA, 'tasks')
+const INDEX = path.join(DIR, 'tasks.json')
+fs.mkdirSync(DIR, { recursive: true })
+
+export const logPath = (id: string) => path.join(DIR, `${id}.log`)
+const exitPath = (id: string) => path.join(DIR, `${id}.exit`)
+
+type Ctx = { changed: (tasks: Task[]) => void; ended: (t: Task) => void }
+let ctx: Ctx
+let tasks: Task[] = []
+try { tasks = JSON.parse(fs.readFileSync(INDEX, 'utf8')) } catch { /* none yet */ }
+
+const save = () => { fs.writeFileSync(INDEX + '.tmp', JSON.stringify(tasks, null, 1)); fs.renameSync(INDEX + '.tmp', INDEX); ctx?.changed(tasks) }
+export const allTasks = () => tasks
+export const taskOf = (id: string) => tasks.find((t) => t.id === id)
+
+const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM' } }
+
+export function startTasks(c: Ctx) {
+  ctx = c
+  // Tasks that ended while Codiner was down are found on the first check.
+  setInterval(check, 2000).unref()
+  check()
+}
+
+function check() {
+  let any = false
+  for (const t of tasks) {
+    if (t.ended || alive(t.pid)) continue
+    const code = Number.parseInt(fs.readFileSync(exitPath(t.id), { encoding: 'utf8', flag: 'a+' }).trim(), 10)
+    Object.assign(t, { ended: Date.now(), code: Number.isNaN(code) ? null : code })
+    any = true
+    ctx.ended(t)
+  }
+  if (any) save()
+}
+
+export function startTask(sid: string, o: { title: string; command: string; cwd: string; notify?: TaskNotify }): Task {
+  const id = randomUUID().slice(0, 8)
+  const fd = fs.openSync(logPath(id), 'a')
+  fs.writeSync(fd, `# codiner task ${id} · session ${sid} · ${o.title} · ${new Date().toISOString()}\n# in ${o.cwd}\n$ ${o.command}\n\n`)
+  // The inner shell runs the command, so an `exit` in it still leaves the wrapper to write the code.
+  const wrapper = `: codiner-task ${id} session ${sid}; /bin/sh -c "$CODINER_TASK_COMMAND"; echo $? > '${exitPath(id)}'`
+  const p = spawn('/bin/sh', ['-c', wrapper], {
+    cwd: o.cwd, detached: true, stdio: ['ignore', fd, fd],
+    env: { ...childEnv(), CODINER_TASK: id, CODINER_SESSION: sid, CODINER_TASK_COMMAND: o.command },
+  })
+  fs.closeSync(fd)
+  if (!p.pid) throw new Error('The task did not start')
+  p.unref()
+  p.on('error', () => {})
+  const t: Task = { id, sid, title: o.title, command: o.command, cwd: o.cwd, pid: p.pid, started: Date.now(), notify: o.notify ?? 'next' }
+  tasks.push(t)
+  save()
+  return t
+}
+
+export function stopTask(id: string, by: 'user' | 'agent'): Task {
+  const t = taskOf(id)
+  if (!t) throw new Error(`No task ${id}`)
+  if (t.ended) return t
+  t.stopped = by
+  save()
+  // The whole group: the wrapper, the command and whatever it started.
+  try { process.kill(-t.pid, 'SIGTERM') } catch { /* gone */ }
+  setTimeout(() => { if (!t.ended && alive(t.pid)) try { process.kill(-t.pid, 'SIGKILL') } catch { /* gone */ } }, 5000).unref()
+  return t
+}
+
+export function markTold(ids: string[]) {
+  for (const t of tasks) if (ids.includes(t.id)) t.told = true
+  save()
+}
+
+// Forget an ended task and its log.
+export function removeTask(id: string) {
+  const t = taskOf(id)
+  if (!t || !t.ended) throw new Error('Only an ended task can be removed')
+  tasks = tasks.filter((x) => x.id !== id)
+  for (const f of [logPath(id), exitPath(id)]) fs.rmSync(f, { force: true })
+  save()
+}
+
+// ---- the log ------------------------------------------------------------------
+
+// The log from byte `from` on, at most `max` bytes; with no `from`, its last `max` bytes.
+// next: the byte to read from next time.
+export function readLog(id: string, from?: number, max = 256 * 1024): { text: string; size: number; start: number; next: number } {
+  let fd: number
+  try { fd = fs.openSync(logPath(id), 'r') } catch { return { text: '', size: 0, start: 0, next: from ?? 0 } }
+  try {
+    const size = fs.fstatSync(fd).size
+    const start = from == null ? Math.max(0, size - max) : Math.min(from, size)
+    const len = Math.min(max, size - start)
+    const buf = Buffer.alloc(len)
+    fs.readSync(fd, buf, 0, len, start)
+    return { text: buf.toString('utf8'), size, start, next: start + len }
+  } finally { fs.closeSync(fd) }
+}
+
+// Lines that contain `q` (case-insensitive), with their line numbers.
+export function searchLog(id: string, q: string, limit = 500): { n: number; line: string }[] {
+  const needle = q.toLowerCase()
+  if (!needle) return []
+  let text = ''
+  try { text = fs.readFileSync(logPath(id), 'utf8') } catch { return [] }
+  const out: { n: number; line: string }[] = []
+  text.split('\n').forEach((line, i) => { if (out.length < limit && line.toLowerCase().includes(needle)) out.push({ n: i + 1, line: line.slice(0, 1000) }) })
+  return out
+}
+
+export function tailLines(id: string, n = 20): string {
+  return readLog(id, undefined, 16 * 1024).text.split('\n').filter((l, i, a) => l || i < a.length - 1).slice(-n).join('\n')
+}
+
+const span = (ms: number) => ms < 60_000 ? `${Math.round(ms / 1000)}s` : ms < 3_600_000 ? `${Math.floor(ms / 60_000)}m ${Math.round(ms / 1000) % 60}s` : `${Math.floor(ms / 3_600_000)}h ${Math.floor(ms / 60_000) % 60}m`
+
+// What the agent is told when its task ends.
+export function endText(t: Task): string {
+  const how = t.stopped === 'user' ? 'was stopped by the user' : t.stopped === 'agent' ? 'was stopped by you' : t.code == null ? 'ended (exit code unknown)' : `ended with exit code ${t.code}`
+  return `[Codiner] Your task \`${t.id}\` ("${t.title}") ${how}, after ${span((t.ended ?? Date.now()) - t.started)}. Log: ${logPath(t.id)}. Its last lines:\n~~~\n${tailLines(t.id)}\n~~~`
+}
+
+export function statusLine(t: Task): string {
+  const state = !t.ended ? `running for ${span(Date.now() - t.started)}` : t.stopped ? `stopped by the ${t.stopped === 'user' ? 'user' : 'agent'}` : `ended, exit code ${t.code ?? 'unknown'}`
+  return `- \`${t.id}\` "${t.title}": ${state}. Command: ${t.command.slice(0, 200)}. Log: ${logPath(t.id)}`
+}

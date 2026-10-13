@@ -5,7 +5,8 @@ import { HistoryDialog } from './HistoryDialog.tsx'
 import { fatigue, timeAgo } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { NewSession } from './NewSession.tsx'
-import { BackIcon, GearIcon, XIcon } from './Icons.tsx'
+import { ArchiveIcon, BackIcon, GearIcon, TerminalIcon, XIcon } from './Icons.tsx'
+import { TasksDialog } from './TasksDialog.tsx'
 import { SettingsDialog } from './SettingsDialog.tsx'
 import { cacheOf, minutes, spendOf, toggleMoney, useNow, usd } from '../cache.ts'
 
@@ -100,6 +101,7 @@ export function Sidebar({ width }: { width: number }) {
   const [newIn, setNewIn] = useState<string | null>(null)
   const [history, setHistory] = useState(false)
   const [settings, setSettings] = useState(false)
+  const [tasks, setTasks] = useState(false)
   const lead = st.sessions.find((s) => s.kind === 'lead')
   const groups = groupSessions(st.sessions, st.showArchived, st.settings.groupOrder)
   const { start, sortable } = useDragSort((key, ids) => {
@@ -158,20 +160,26 @@ export function Sidebar({ width }: { width: number }) {
       <div className="side-foot">
         {/* Floats above the line, so it takes no room from the footer. */}
         {custom && <button className="reset-order" title="Folders go back to latest activity first, and sessions to oldest first" onClick={() => void api('/api/sessions/order', 'DELETE')}>Reset order</button>}
-        <div className="side-foot-left">
-          <button className="link" title="Settings" onClick={() => setSettings(true)}><GearIcon size={14} /></button>
+        <button className="link" title="Settings" onClick={() => setSettings(true)}><GearIcon size={14} /></button>
+        <div className="side-foot-mid">
           {(u.fiveHour != null || u.sevenDay != null) && (
             <div className="usage" data-tip={limitsTip(u)} onClick={toggleMoney}>
-              {u.fiveHour != null && <span>5h {limitLabel(u.fiveHour, u.rate?.fiveHour, st.money)}</span>}
-              {u.sevenDay != null && <span>7d {limitLabel(u.sevenDay, u.rate?.sevenDay, st.money)}</span>}
+              {u.fiveHour != null && <span className={level(u.fiveHour)}>5h {limitLabel(u.fiveHour, u.rate?.fiveHour, st.money)}</span>}
+              {u.fiveHour != null && u.sevenDay != null && <span className="usage-dot">·</span>}
+              {u.sevenDay != null && <span className={level(u.sevenDay)}>7d {limitLabel(u.sevenDay, u.rate?.sevenDay, st.money)}</span>}
             </div>
           )}
         </div>
-        <button className="link" onClick={() => { state.showArchived = !state.showArchived; changed() }}>{st.showArchived ? <><BackIcon size={12} /> Active sessions</> : 'Archived'}</button>
+        {st.tasks.length > 0 && (() => {
+          const running = st.tasks.filter((t) => !t.ended).length
+          return <button className="link side-tasks" title={`Tasks: ${running} running`} onClick={() => setTasks(true)}><TerminalIcon size={14} />{running > 0 && <span>{running}</span>}</button>
+        })()}
+        <button className="link" title={st.showArchived ? undefined : 'Archived sessions'} onClick={() => { state.showArchived = !state.showArchived; changed() }}>{st.showArchived ? <><BackIcon size={12} /> Active sessions</> : <ArchiveIcon size={14} />}</button>
       </div>
       {newIn !== null && <NewSession cwd={newIn} onClose={() => setNewIn(null)} />}
       {history && <HistoryDialog onClose={() => setHistory(false)} />}
       {settings && <SettingsDialog onClose={() => setSettings(false)} />}
+      {tasks && <TasksDialog onClose={() => setTasks(false)} />}
     </aside>
   )
 }
@@ -198,6 +206,9 @@ function limitLabel(used: number, rate: number | undefined, mode: string) {
   if (mode !== 'usd' || !rate) return `${Math.round(used * 100)}%`
   return `${dollars(used / rate)}/${dollars(1 / rate)}`
 }
+
+// A limit close to used up: yellow from 80%, red from 90%.
+const level = (used: number) => used >= 0.9 ? 'usage-bad' : used >= 0.8 ? 'usage-warn' : ''
 
 // Dollars in few characters: $4.7, $48, $282, $1.8k, $18k.
 function dollars(x: number): string {

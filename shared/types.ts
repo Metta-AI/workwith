@@ -160,6 +160,17 @@ export type ServerMsg =
   | { type: 'truncate'; sessionId: string; seq: number }
   | { type: 'usage'; usage: Usage }
   | { type: 'settings'; settings: Settings }
+  | { type: 'tasks'; tasks: Task[] }
+
+// A long-running command an agent started with start_task (server/tasks.ts).
+// notify: how the agent hears that it ended: with its next message, in a turn of
+// its own, or by stopping the turn it is in. told: it has heard.
+export type TaskNotify = 'next' | 'turn' | 'interrupt'
+export type Task = {
+  id: string; sid: string; title: string; command: string; cwd: string; pid: number
+  started: number; ended?: number; code?: number | null; stopped?: 'user' | 'agent'
+  notify: TaskNotify; told?: boolean
+}
 
 export type SlashCommand = { name: string; description: string; argumentHint: string }
 export type HistoryItem = {

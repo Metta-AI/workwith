@@ -108,14 +108,15 @@ body.resizing { cursor: col-resize; user-select: none; }
 .count { background: var(--blue); color: #fff; border-radius: 9px; font-size: calc(11px * var(--fs, 1)); padding: 0 6px; }
 .side-foot { position: relative; border-top: 1px solid var(--line); padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; font-size: calc(12px * var(--fs, 1)); }
 .side-foot button.link { display: inline-flex; align-items: center; gap: 3px; }
-.side-foot-left { display: flex; align-items: center; gap: 6px; }
-.reset-order { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); z-index: 2; white-space: nowrap; font-size: calc(12px * var(--fs, 1)); padding: 3px 12px; border-radius: 14px; color: var(--muted); box-shadow: 0 2px 10px rgba(0, 0, 0, .15); }
-.reset-order:hover { color: var(--text); }
+.side-foot-mid { flex: 1; display: flex; justify-content: center; min-width: 0; }
+.reset-order { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 2; white-space: nowrap; font-size: calc(12px * var(--fs, 1)); padding: 0 4px; border: none; background: none; box-shadow: none; color: var(--muted); }
+.reset-order:hover { color: var(--text); text-decoration: underline; background: none; }
 .settings-check { display: flex; gap: 8px; align-items: center; font-size: calc(13px * var(--fs, 1)); margin: 0 0 12px; }
 .settings-file { display: flex; gap: 10px; align-items: baseline; font-size: calc(13px * var(--fs, 1)); }
 .settings-file .mono { font-size: calc(12px * var(--fs, 1)); }
 textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; resize: vertical; min-height: 200px; max-height: 65vh; }
-.usage { display: flex; gap: 8px; color: var(--muted); }
+.usage { display: flex; gap: 6px; color: var(--muted); }
+.usage .usage-warn { color: var(--warn); } .usage .usage-bad { color: var(--bad); }
 
 /* ---- mascot ---- */
 .mascot { flex: none; overflow: visible; }
@@ -402,11 +403,10 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .note-card .ri-edit, .note-card .ri-edit:focus { border: none; background: none; padding: 2px 24px 2px 4px; outline: none; min-height: 24px !important; }
 .note-card .rich-input .attach { top: 3px; right: 0; }
 .note-card .thumbs { margin: 0 0 4px; }
-.reactions { position: relative; display: flex; gap: 1px; margin: 2px 0 0 1px; opacity: .45; transition: opacity .1s; }
-.note-card:hover .reactions, .note-card:focus-within .reactions, .note-card.blank .reactions { opacity: 1; }
-.reactions button { border: none; background: none; padding: 1px 4px; font-size: calc(14px * var(--fs, 1)); line-height: 1.3; border-radius: 6px; filter: grayscale(.6); }
-.reactions button:hover { background: rgba(127, 127, 127, .15); filter: none; }
-.reactions button.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); filter: none; }
+.reactions { position: relative; display: flex; gap: 1px; margin: 2px 0 0 1px; }
+.reactions button { border: none; background: none; padding: 1px 4px; font-size: calc(14px * var(--fs, 1)); line-height: 1.3; border-radius: 6px; }
+.reactions button:hover { background: rgba(127, 127, 127, .15); }
+.reactions button.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
 .card-x { position: absolute; top: 4px; right: 4px; border: none; background: none; padding: 2px; line-height: 0; color: var(--muted); border-radius: 4px; }
 .card-x:hover { color: var(--text); background: rgba(127, 127, 127, .15); }
 .ask-card { margin: .7em 0 .9em; border-left: 3px solid var(--blue); background: var(--card); border-radius: 0 10px 10px 0; padding: 8px 10px; box-shadow: 0 1px 3px rgba(0, 0, 0, .06); }
@@ -675,4 +675,31 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .mcp-table { border-collapse: collapse; font-size: calc(13px * var(--fs, 1)); }
 .mcp-table th { text-align: left; font-weight: 500; color: var(--muted); padding: 2px 12px 4px 0; }
 .mcp-table td { padding: 3px 12px 3px 0; border-top: 1px solid var(--line); }
+
+/* Tasks (TasksDialog.tsx): the list on the left, the chosen task's log on the right. */
+.side-tasks span { font-variant-numeric: tabular-nums; }
+.tasks-modal { width: min(1040px, 96vw); height: min(720px, 84vh); }
+.tasks-head { display: flex; justify-content: space-between; align-items: center; }
+.tasks-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 260px 1fr; gap: 14px; }
+.tasks-list { overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.task-row { display: flex; align-items: center; gap: 8px; text-align: left; border: none; background: none; padding: 6px 8px; border-radius: 8px; }
+.task-row:hover { background: rgba(127, 127, 127, .1); }
+.task-row.on { background: var(--accent-soft); }
+.task-nobody { width: 22px; }
+.task-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.task-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-sub { font-size: calc(12px * var(--fs, 1)); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); }
+.task-dot.running { background: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 25%, transparent); }
+.task-dot.ok { background: var(--ok); } .task-dot.failed { background: var(--bad); }
+.task-view { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.task-cmd { font-size: calc(12.5px * var(--fs, 1)); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.5em; overflow-y: auto; }
+.task-meta { font-size: calc(12px * var(--fs, 1)); }
+.task-tools { display: flex; align-items: center; gap: 8px; font-size: calc(12px * var(--fs, 1)); }
+.task-search { flex: 1; display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 7px; padding: 0 8px; background: var(--card); color: var(--muted); }
+.task-search input { flex: 1; border: none; background: none; padding: 5px 0; outline: none; color: var(--text); }
+.task-tools button.danger { color: var(--bad); border-color: var(--bad); }
+.task-log { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 8px 10px; background: var(--panel); border-radius: 8px; font-size: calc(12px * var(--fs, 1)); line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.task-log mark { background: color-mix(in srgb, var(--warn) 45%, transparent); color: inherit; border-radius: 2px; }
+.task-ln { display: inline-block; min-width: 4ch; margin-right: 10px; text-align: right; color: var(--muted); user-select: none; }
 .mcp-pill.ask { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }

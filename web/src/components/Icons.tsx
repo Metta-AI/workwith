@@ -24,6 +24,7 @@ export const ListIcon = (p: P) => <Svg {...p}><path d="M6 4.5h7M6 8h7M6 11.5h7" 
 export const ToolIcon = (p: P) => <Svg {...p}><circle cx="8" cy="8" r="2" /><path d="M8 2v2M8 12v2M2 8h2M12 8h2M3.8 3.8l1.4 1.4M10.8 10.8l1.4 1.4M3.8 12.2l1.4-1.4M10.8 5.2l1.4-1.4" /></Svg>
 export const FolderIcon = (p: P) => <Svg {...p}><path d="M2 4.5V12a1 1 0 001 1h10a1 1 0 001-1V6a1 1 0 00-1-1H8L6.5 3.5H3A1 1 0 002 4.5z" /></Svg>
 export const UpIcon = (p: P) => <Svg {...p}><path d="M8 13V3M4 7l4-4 4 4" /></Svg>
+export const ArchiveIcon = (p: P) => <Svg {...p}><rect x="2" y="3" width="12" height="3" rx="1" /><path d="M3 6v6.5a1 1 0 001 1h8a1 1 0 001-1V6M6.5 8.5h3" /></Svg>
 export const CheckIcon = (p: P) => <Svg {...p}><path d="M3 8.5l3 3 7-7" /></Svg>
 export const BlockIcon = (p: P) => <Svg {...p}><circle cx="8" cy="8" r="5.5" /><path d="M4.2 11.8l7.6-7.6" /></Svg>
 export const DashIcon = (p: P) => <Svg {...p}><path d="M4 8h8" /></Svg>

@@ -135,7 +135,16 @@ When the session is quiet, Codiner also brings the notes up to date from the con
 
 export const WORKER_PROMPT = `
 # This session runs inside Codiner, a web UI over Claude Code
-${UI_PROMPT}`
+${UI_PROMPT}
+## Long-running commands
+For a command that runs longer than about a minute, or must keep running (a dev server, a
+watcher, a long build or test run), use the start_task tool, not Bash with run_in_background.
+Codiner runs it apart from you with no time limit: the user can watch its log and stop it, and
+it keeps running if this session stops. Read its log with your usual tools. Set notify for how
+you hear that it ended: "next" (the default) with the next message to you; "turn" in a turn of
+your own when you wait on it; "interrupt" only when its end changes what you are doing. Stop
+a task with stop_task when you no longer need it; list_tasks shows yours.
+`
 
 export const LEAD_PROMPT = `
 # You are the lead agent in Codiner

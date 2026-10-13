@@ -2,7 +2,7 @@
 // Components re-render on any change; at this scale that's plenty.
 
 import { useSyncExternalStore } from 'react'
-import type { Anchor, AuthState, Event, ImageRef, InboxItem, Part, ServerMsg, SessionMeta, Settings, Usage } from '../../shared/types.ts'
+import type { Anchor, AuthState, Event, ImageRef, InboxItem, Part, ServerMsg, SessionMeta, Settings, Task, Usage } from '../../shared/types.ts'
 import { inboxParts } from '../../shared/inbox.ts'
 import { itemsOf } from '../../shared/blocks.ts'
 import { applyAppearance, holdingAppearance } from './appearance.ts'
@@ -41,6 +41,7 @@ type State = {
   showSteps: boolean          // keep Claude's in-between messages out of the activity rows
   money: 'usd' | 'pct' | 'week'   // costs in dollars, or as a share of the 5-hour or weekly limit (web/src/cache.ts)
   runs: Record<string, Run>
+  tasks: Task[]   // long-running commands agents started (server/tasks.ts)
   fileTick: Record<string, number>   // bumped when a tracked file gets a new version
   stale: boolean                     // the server's code on disk is newer than the server
   restarting: boolean
@@ -71,6 +72,7 @@ export const state: State = {
   // 'both' was a choice until October 2026.
   money: (['usd', 'pct', 'week'] as const).find((x) => x === saved('codiner.money', 'pct')) ?? 'pct',
   runs: {},
+  tasks: [],
   fileTick: {},
   stale: false,
   restarting: false,
@@ -161,6 +163,7 @@ function onServer(m: ServerMsg) {
       if (holdingAppearance()) { state.settings = { ...m.settings, appearance: state.settings.appearance }; break }
       state.settings = m.settings; applyAppearance(m.settings.appearance); break
     case 'usage': state.usage = m.usage; break
+    case 'tasks': state.tasks = m.tasks; break
     case 'auth': state.auth = m.auth; break
     case 'stale': state.stale = m.stale; break
     case 'file': state.fileTick = { ...state.fileTick, [m.path]: (state.fileTick[m.path] ?? 0) + 1 }; break

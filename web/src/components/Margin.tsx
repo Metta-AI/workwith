@@ -2,7 +2,8 @@
 // level with the first line of its highlight, cards that would overlap stack
 // downward, and the focused card is pinned to its highlight, pushing its
 // neighbours out of the way. When the transcript is too narrow for a gutter,
-// cards sit under their highlight instead, over the text that follows.
+// a card shows only while you write in it or after you click its highlight:
+// under the highlight's last line, centred on it, over the text that follows.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { rangesFor, setHighlights } from '../anchoring.ts'
@@ -65,6 +66,10 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
   ]
   const layer = useRef<HTMLDivElement>(null)
   const focused = useRef<string | null>(null)
+  // Without a gutter: the one card showing.
+  const [open, setOpen] = useState<string | null>(null)
+  const openRef = useRef(open)
+  openRef.current = open
 
   const layout = () => {
     const box = inner.current, col = column.current, el = layer.current
@@ -78,17 +83,23 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
       const first = ranges[0]?.getClientRects()[0]
       const lastRects = ranges.at(-1)?.getClientRects()
       const last = lastRects?.[lastRects.length - 1]
-      card.style.display = first ? '' : 'none'
+      const badge = card.classList.contains('react-badge')
+      const hidden = !first || (!gutter && !badge && card.dataset.id !== openRef.current)
+      card.style.display = hidden ? 'none' : ''
+      if (hidden) return { card, want: null, h: 0, id: card.dataset.id }
       if (gutter) {
         card.style.left = `${cb.right - ib.left + GUTTER_GAP}px`
-        if (!card.classList.contains('react-badge')) card.style.width = `${Math.min(CARD_W, ib.right - cb.right - GUTTER_GAP - 12)}px`
-      } else if (card.classList.contains('react-badge')) {
+        if (!badge) card.style.width = `${Math.min(CARD_W, ib.right - cb.right - GUTTER_GAP - 12)}px`
+      } else if (badge) {
         card.style.left = `${cb.right - ib.left + 2}px`
       } else {
-        card.style.left = `${cb.left - ib.left + 12}px`
-        card.style.width = `${cb.width - 24}px`
+        // Centred on the highlight's last line, inside the column.
+        const w = Math.min(CARD_W, cb.width - 8)
+        const mid = (last!.left + last!.right) / 2 - ib.left
+        card.style.width = `${w}px`
+        card.style.left = `${Math.max(cb.left - ib.left + 4, Math.min(mid - w / 2, cb.right - ib.left - w - 4))}px`
       }
-      const want = !first ? null : gutter || card.classList.contains('react-badge') ? first.top - ib.top - 6 : last!.bottom - ib.top + 6
+      const want = gutter || badge ? first!.top - ib.top - 6 : last!.bottom - ib.top + 6
       return { card, want, h: card.offsetHeight, id: card.dataset.id }
     }).filter((it) => it.want != null)
     items.sort((a, b) => a.want! - b.want!)
@@ -120,7 +131,23 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
     if (layer.current) for (const c of layer.current.children) ro.observe(c)
     return () => ro.disconnect()
   }, [notes.length, gutter])
-  useEffect(() => { layoutRef.current() }, [events])
+  useEffect(() => { layoutRef.current() }, [events, open])
+
+  // Without a gutter, a click on a highlight shows its card and puts the caret in it.
+  useEffect(() => {
+    const box = inner.current
+    if (!box || gutter) return
+    const click = (e: MouseEvent) => {
+      if (!getSelection()?.isCollapsed || (e.target as Element).closest?.('.note-card')) return
+      const hit = notesRef.current.find((n) => n.kind === 'draft' && rangesOfNote(sid, n).some((r) => [...r.getClientRects()].some((b) =>
+        e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom)))
+      if (!hit) return
+      setOpen(hit.id)
+      requestAnimationFrame(() => layer.current?.querySelector<HTMLElement>(`.note-card[data-id="${hit.id}"] .ri-edit`)?.focus())
+    }
+    box.addEventListener('click', click)
+    return () => box.removeEventListener('click', click)
+  }, [sid, gutter])
 
   // Highlights are painted, not elements, so hovering one is found by testing the
   // pointer against each comment's text boxes. The hovered comment's card lights
@@ -161,8 +188,13 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
       {notes.map((n) => n.kind === 'draft' ? (
         <NoteCard
           key={n.id} sid={sid} note={n.draft!}
-          onFocus={() => { focused.current = n.id; layout(); focusPassage(sid, n) }}
-          onBlur={() => { if (focused.current === n.id) focused.current = null; focusPassage(sid, null) }}
+          onFocus={() => { focused.current = n.id; setOpen(n.id); layout(); focusPassage(sid, n) }}
+          onBlur={() => {
+            if (focused.current === n.id) focused.current = null
+            focusPassage(sid, null)
+            // Without a gutter, the card goes once the focus has left it.
+            setTimeout(() => { if (!layer.current?.querySelector(`.note-card[data-id="${n.id}"]`)?.contains(document.activeElement)) setOpen((o) => o === n.id ? null : o) }, 250)
+          }}
         />
       ) : n.kind === 'badge' ? (
         <button
