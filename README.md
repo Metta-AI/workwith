@@ -255,6 +255,8 @@ server/agentsmd.ts  the global AGENTS.md: defaults, reading, editing
 shared/             types and ask-block parsing used by both sides
 web/src/            React UI: store.ts (state + socket), anchoring.ts (Marginer), components/
 site/               the codiner.app landing page (static; `npx wrangler deploy` from site/)
+tools/demo-home.mjs made-up sessions in a throwaway CODINER_HOME, for screenshots of the real app
+tools/og-image.sh   renders site/og.png (the link preview) from the page with headless Chrome
 ```
 
 ## License

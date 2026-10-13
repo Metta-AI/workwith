@@ -116,6 +116,9 @@
   .tip { position: relative; border-bottom: 1px dotted var(--muted); cursor: help; }
   .tip::after { content: attr(data-tip); position: absolute; left: 50%; bottom: calc(100% + 6px); transform: translateX(-50%); white-space: nowrap; background: var(--fg); color: var(--bg); font-size: .82rem; font-weight: 600; padding: .25rem .6rem; border-radius: 6px; opacity: 0; pointer-events: none; transition: opacity .15s; }
   .tip:hover::after, .tip:focus::after { opacity: 1; }
+  /* #og: the layout tools/og-image.sh renders into og.png */
+  .og header, .og .hero .lede, .og .hero .cta, .og .try { display: none; }
+  .og .hero { padding-top: 2.2rem; } .og .hero-demo { margin-top: 1rem; }
   footer { padding: 2.5rem 0 3rem; color: var(--muted); font-size: .92rem; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; }
 </style>
 
@@ -263,6 +266,7 @@ npm start</code></pre>
   </footer>
 </div>
 
+<script>if (location.hash === '#og') document.documentElement.classList.add('og')</script>
 <script src="demo.js"></script>
 <script>
 // The critter, as in web/src/components/Mascot.tsx and looks.tsx (a subset of the looks).
