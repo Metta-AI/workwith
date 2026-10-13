@@ -6,7 +6,7 @@ A web UI over Claude Code where you reply the way you'd mark up a draft: select 
 passage of Claude's answer and comment on it in the margin, answer its questions
 where it asks them, and send everything you've queued in one go. Several sessions run
 side by side, each with a little critter showing what it's doing and how tired it is,
-and a master agent watches over the lot.
+and a lead agent watches over the lot.
 
 ```bash
 npm install
@@ -116,7 +116,7 @@ within a minute of a sign-in that worked); the banner's Sign in button starts it
 ## Where your notes came from
 
 Settings keeps the history of the notes files you and Claude keep: `~/.codiner/AGENTS.md`,
-your global `~/.claude/CLAUDE.md`, the master's `NOTES.md`, and any file you add there. Every
+your global `~/.claude/CLAUDE.md`, the lead's `NOTES.md`, and any file you add there. Every
 version is kept with who made it: you in Settings, a Codiner session (linked to the message
 where Claude edited the file, with Edit/Write or a shell command naming it), a Claude Code
 session elsewhere (found in its transcript), or someone outside. **Read** shows the file
@@ -150,7 +150,7 @@ knows who else is at work there without checking.
 - **Close** (header, or × on a sidebar row) ends the process and moves the session to
   Archived. **Reopen** brings it back; **Delete** removes it from Codiner (Claude Code keeps
   its own copy, so it's still under Resume).
-- The sidebar and the master view's board are resizable: drag the edge, double-click to reset.
+- The sidebar and the lead view's board are resizable: drag the edge, double-click to reset.
 - Grouped by directory in the sidebar; a session started as a sub-task of another
   nests under it.
 - `/clear` gives Claude a new conversation id; Codiner follows it, so a later resume picks up
@@ -161,7 +161,7 @@ knows who else is at work there without checking.
   call in progress shows under that line.
 - Permission requests arrive as cards: Allow, Always allow, or Deny with a reason Claude
   sees. Once answered, the card becomes a mark on its tool's line.
-- Every session, the master included, starts in **auto mode**, Claude Code's
+- Every session, the lead included, starts in **auto mode**, Claude Code's
   classifier-based mode that runs most commands without asking.
 - The header has the permission mode (switchable mid-session), Stop (interrupt), Close,
   and the context gauge with **Compact**.
@@ -185,9 +185,9 @@ context: eyes droop and it sweats past ~55%, it falls asleep past ~85%, and it g
 out as it fills. Tiredness is measured against at most 400k tokens even on 1M-window
 models, since quality slips well before the window is full.
 
-## The master agent
+## The lead agent
 
-The **Master** view shows every session as a card beside a chat with a separate
+The **Lead** view shows every session as a card beside a chat with a separate
 Claude Code session whose only tools are its notes and a small MCP server Codiner hosts:
 
 | Tool | |
@@ -201,7 +201,7 @@ Claude Code session whose only tools are its notes and a small MCP server Codine
 | `find_past_sessions` / `resume_past_session` | search all Claude Code history and bring a session into Codiner |
 
 Because workers are full Claude Code sessions, `send_to_session` with just a slash command
-runs it there. The master can't change permission modes; that stays with you.
+runs it there. The lead can't change permission modes; that stays with you.
 
 Each message you send it carries a one-line-per-session `<board>` snapshot, so it rarely
 needs to call anything just to know what's going on.
@@ -213,7 +213,7 @@ nothing it meant to remember.
 
 ## AGENTS.md: instructions for every session
 
-`~/.codiner/AGENTS.md` is added to the system prompt of every session, workers and master
+`~/.codiner/AGENTS.md` is added to the system prompt of every session, workers and the lead
 alike. Edit it in **Settings** (the gear at the bottom of the sidebar). The first run
 creates it with the rules of ASD-STE100 Simplified Technical English for the text Claude
 writes to you. (How to mark the four kinds of content is Codiner's own prompt, in
@@ -224,7 +224,7 @@ wakes from sleep.
 ## Where things live
 
 `~/.codiner/` (override with `CODINER_HOME`): `AGENTS.md`, `sessions.json`, one append-only
-`events/<id>.jsonl` per session, pasted `images/`, and `master/` (the master's working
+`events/<id>.jsonl` per session, pasted `images/`, and `lead/` (the lead's working
 directory). Claude Code keeps its own transcripts as usual, so any session can also
 be picked up with `claude --resume`.
 
@@ -238,11 +238,11 @@ on every server start.
 ## Layout
 
 ```
-server/index.ts     HTTP + WebSocket, session registry, master tools, Vite in dev
+server/index.ts     HTTP + WebSocket, session registry, lead tools, Vite in dev
 server/session.ts   one claude process: stream-JSON in/out, permissions, status, context
 server/mcp.ts       minimal MCP-over-HTTP (JSON-RPC, no SSE)
 server/history.ts   Claude Code's own history: list, import a transcript, browse folders
-server/prompts.ts   what workers and the master are told
+server/prompts.ts   what workers and the lead are told
 server/agentsmd.ts  the global AGENTS.md: defaults, reading, editing
 shared/             types and ask-block parsing used by both sides
 web/src/            React UI: store.ts (state + socket), anchoring.ts (Marginer), components/

@@ -8,19 +8,19 @@
 <meta property="og:description" content="Reply to your coding agent the way you mark up a draft. Comments in the margin, questions answered in place, many sessions side by side.">
 <meta property="og:image" content="https://codiner.app/og.png">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 -1 16 14' shape-rendering='crispEdges'><rect x='3' y='3' width='10' height='1' fill='%231f9e96'/><rect x='2' y='4' width='12' height='5' fill='%231f9e96'/><rect x='3' y='9' width='10' height='1' fill='%231f9e96'/><rect x='0' y='6' width='2' height='2' fill='%231f9e96'/><rect x='14' y='6' width='2' height='2' fill='%231f9e96'/><rect x='5' y='4' width='1' height='2' fill='%23222'/><rect x='10' y='4' width='1' height='2' fill='%23222'/><rect x='4' y='10' width='2' height='2' fill='%231f9e96'/><rect x='10' y='10' width='2' height='2' fill='%231f9e96'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 -1 16 14' shape-rendering='crispEdges'><rect x='3' y='3' width='10' height='1' fill='%232b98c6'/><rect x='2' y='4' width='12' height='5' fill='%232b98c6'/><rect x='3' y='9' width='10' height='1' fill='%232b98c6'/><rect x='0' y='6' width='2' height='2' fill='%232b98c6'/><rect x='14' y='6' width='2' height='2' fill='%232b98c6'/><rect x='5' y='4' width='1' height='2' fill='%23222'/><rect x='10' y='4' width='1' height='2' fill='%23222'/><rect x='4' y='10' width='2' height='2' fill='%232b98c6'/><rect x='10' y='10' width='2' height='2' fill='%232b98c6'/></svg>">
 <style>
   :root {
     color-scheme: light dark;
     --bg: #faf9f6; --fg: #23201c; --muted: #7a746a; --line: #e3dfd6; --panel: #f2f0eb; --card: #fff;
-    --accent: #0e8279; --accent-ink: #fff; --accent-soft: #d7efec;
+    --accent: #1f7fae; --accent-ink: #fff; --accent-soft: #d8eaf4;
     --hl: rgba(255, 196, 0, .38);
     --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #1d1c1a; --fg: #ebe7df; --muted: #9a948a; --line: #3a3732; --panel: #252420; --card: #2c2a26;
-      --accent: #26a69a; --accent-ink: #0b1f1d; --accent-soft: #173a36; --hl: rgba(255, 196, 0, .30);
+      --accent: #3a9cd0; --accent-ink: #08202c; --accent-soft: #16303e; --hl: rgba(255, 196, 0, .30);
     }
   }
   * { box-sizing: border-box; }
@@ -32,7 +32,13 @@
   nav a { color: var(--muted); text-decoration: none; margin-left: 1.4rem; font-size: .95rem; }
   nav a:hover { color: var(--fg); }
 
-  .hero { padding: 3rem 0 1rem; max-width: 44rem; }
+  .hero-row { display: grid; grid-template-columns: minmax(0, 44rem) 1fr; gap: 2.5rem; }
+  .hero { padding: 3rem 0 1rem; }
+  .margin-note { align-self: start; margin-top: 6.9rem; max-width: 17rem; background: var(--card); border: 1px solid var(--line); border-left: 3px solid #f5b400; border-radius: 10px; padding: .6rem .8rem; font-size: .92rem; line-height: 1.5; box-shadow: 0 8px 24px rgba(0,0,0,.08); transform: rotate(.6deg); }
+  .margin-note .q { color: var(--muted); border-left: 2px solid var(--hl); padding-left: .5rem; margin-bottom: .35rem; font-size: .84rem; }
+  .margin-note .rx { margin-top: .4rem; font-size: .95rem; }
+  .hero-row:has(.margin-note:hover) h1 mark { background: rgba(255, 170, 0, .62); }
+  @media (max-width: 60rem) { .hero-row { grid-template-columns: 1fr; } .margin-note { display: none; } }
   h1 { font-size: clamp(2rem, 5vw, 3rem); line-height: 1.1; margin: 0 0 1rem; letter-spacing: -.01em; }
   mark { background: var(--hl); color: inherit; padding: 0 .12em; border-radius: .2em; }
   .lede { font-size: 1.2rem; color: var(--muted); margin: 0 0 1.6rem; }
@@ -111,6 +117,7 @@
     <nav><a href="#replying">Replying</a><a href="#sessions">Sessions</a><a href="#install">Install</a><a href="https://github.com/huttj/codiner">GitHub</a></nav>
   </header>
 
+  <div class="hero-row">
   <div class="hero">
     <h1>Reply to your coding agent the way you <mark>mark up a draft</mark>.</h1>
     <p class="lede">Codiner is a web UI for Claude Code. Select any passage of the agent's answer and comment on it in the margin. Answer its questions where it asks them. Send everything in one go. Run many sessions side by side, each with a small critter that shows what it is doing.</p>
@@ -119,6 +126,12 @@
       <a class="btn ghost" href="https://github.com/huttj/codiner">Source on GitHub</a>
       <span class="note">Free and open source. Needs Claude Code.</span>
     </div>
+  </div>
+  <aside class="margin-note" aria-label="A comment in the margin">
+    <div class="q">mark up a draft</div>
+    Like this. Select any passage and say what you think. Red pen not included.
+    <div class="rx">✍️ 💪</div>
+  </aside>
   </div>
 
   <figure class="shot">
@@ -192,7 +205,7 @@ Chose: /pricing</code></pre>
       <div><span data-critter='{"spent":true,"size":30}'></span> Time to compact</div>
     </div>
     <div class="grid">
-      <div class="tile"><span class="tag">Master agent</span><h3>One agent to watch the rest</h3><p>The Master view shows every session as a card, beside a chat with one more agent. It can read, message, start and compact the other sessions. Its messages wait in an inbox for you to send, unless you turn on Auto-send.</p></div>
+      <div class="tile"><span class="tag">Lead agent</span><h3>One agent to watch the rest</h3><p>The Lead view shows every session as a card, beside a chat with one more agent. It can read, message, start and compact the other sessions. Its messages wait in an inbox for you to send, unless you turn on Auto-send.</p></div>
       <div class="tile"><span class="tag">History</span><h3>Pick up any conversation</h3><p><b>Resume…</b> lists every Claude Code conversation on your machine, including the ones you started in a terminal. Edit or delete a sent message, and the agent forgets everything after it.</p></div>
       <div class="tile"><span class="tag">Slash commands</span><h3>Your skills, your commands</h3><p>Type <code>/</code> for the commands of the session, with descriptions. A message that is only a slash command runs as if you typed it in the terminal.</p></div>
     </div>
@@ -265,7 +278,7 @@ npm start</code></pre>
 
 <script>
 // The critter, as in web/src/components/Mascot.tsx and looks.tsx (a subset of the looks).
-const BODY = { teal: '#1f9e96', tangerine: '#ff8c1a', ocean: '#3f8fd6', moss: '#5e9e4f', grape: '#8a5cc7', bubblegum: '#e57aa8', slate: '#7d8a99', gold: '#d9a521', midnight: '#3b4a7a' }
+const BODY = { teal: '#2b98c6', tangerine: '#ff8c1a', ocean: '#3f8fd6', moss: '#5e9e4f', grape: '#8a5cc7', bubblegum: '#e57aa8', slate: '#7d8a99', gold: '#d9a521', midnight: '#3b4a7a' }
 const K = '#222', BROWN = '#3a2a1f', RED = '#e5534b', BLUE = '#4c8dff', YELLOW = '#ffd54a', GREEN = '#3fb950', PINK = '#ff6fae', WHITE = '#ffffff', GOLD = '#f2c230'
 const D = {
   hat: {
