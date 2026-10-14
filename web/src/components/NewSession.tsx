@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useEscape } from '../escape.ts'
 import type { ImageRef, PermissionMode, SessionMeta } from '../../../shared/types.ts'
 import { api, select, setComposer, state } from '../store.ts'
@@ -16,11 +16,23 @@ export function NewSession({ cwd: initial, onClose }: { cwd: string; onClose(): 
   const [images, setImages] = useState<ImageRef[]>([])
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Whether the typed directory exists; if it doesn't, Create makes it first.
+  const [missing, setMissing] = useState(false)
+
+  useEffect(() => {
+    if (!cwd.trim()) { setMissing(false); return }
+    let live = true
+    const t = setTimeout(() => {
+      void api<{ kind: 'dir' | 'file' | 'missing' }>(`/api/fs/stat?path=${encodeURIComponent(cwd)}`, 'GET')
+        .then((r) => { if (live) setMissing(r.kind === 'missing') }).catch(() => {})
+    }, 200)
+    return () => { live = false; clearTimeout(t) }
+  }, [cwd])
 
   const create = async () => {
     setBusy(true); setErr(null)
     try {
-      const m = await api<SessionMeta>('/api/sessions', 'POST', { cwd, title, model: model || null, permissionMode: mode, parentId: parentId || null })
+      const m = await api<SessionMeta>('/api/sessions', 'POST', { cwd, title, model: model || null, permissionMode: mode, parentId: parentId || null, mkdir: missing })
       if (prompt.trim() || images.length) await api(`/api/sessions/${m.id}/send`, 'POST', { parts: [{ kind: 'text', text: prompt, images }] })
       else setComposer(m.id, { text: '' })
       select(m.id)
@@ -63,7 +75,7 @@ export function NewSession({ cwd: initial, onClose }: { cwd: string; onClose(): 
         {err && <div className="notice error">{err}</div>}
         <div className="modal-actions">
           <button type="button" onClick={onClose}>Cancel</button>
-          <button type="submit" className="primary" disabled={busy || !cwd.trim()}>{busy ? 'Starting…' : 'Create'}</button>
+          <button type="submit" className="primary" disabled={busy || !cwd.trim()}>{busy ? 'Starting…' : missing ? 'Create directory and start' : 'Create'}</button>
         </div>
       </form>
     </div>

@@ -8,6 +8,8 @@ import { api } from './store.ts'
 export const marked = new Marked(
   markedHighlight({ emptyLangClass: 'hljs', langPrefix: 'hljs language-', highlight: (code, lang) => highlight(code, lang) }),
   { gfm: true, breaks: false },
+  // A web URL in inline code is a link too (the hook below opens it in a new tab).
+  { renderer: { codespan: ({ text }) => /^https?:\/\/\S+$/i.test(text) && `<a href="${escapeHtml(text).replace(/"/g, '&quot;')}"><code>${escapeHtml(text)}</code></a>` } },
 )
 
 // Web links open in a new tab, everywhere markdown is rendered (all of it goes through DOMPurify).

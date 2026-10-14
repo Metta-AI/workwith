@@ -54,7 +54,7 @@ function Restart() {
   return (
     <div className="signin restart">
       {st.restarting ? <span>Restarting Codiner…</span> : <>
-        <span>Codiner's server code has changed. Restart to use it.{busy ? ` ${busy} ${busy === 1 ? 'session is' : 'sessions are'} working and will stop.` : ''}</span>
+        <span>Codiner's server code has changed. Restart to use it.{busy ? ` ${busy} ${busy === 1 ? 'session is' : 'sessions are'} working and will keep working.` : ''}</span>
         <button className="primary" onClick={() => { state.restarting = true; changed(); void api('/api/restart').catch(() => {}) }}>Restart</button>
       </>}
     </div>

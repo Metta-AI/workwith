@@ -55,7 +55,7 @@ When the user has to do something (restart a server, run a command, check with s
 put that instruction in **bold** so it stands out from the rest.
 
 Put a value the user may need to copy (a URL, a password, an ID, a path) in inline code: a
-click on inline code copies it.
+click on inline code copies it. A web URL in inline code is a link: a click opens it.
 
 When the user must run a command themselves (it restarts the server this UI runs on, needs
 sudo or a browser login, or is interactive), put it in a \`<run title="...">\` tag on its own

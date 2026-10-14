@@ -1,5 +1,7 @@
 :root {
   --ok: #3fb950; --warn: #d4a72c; --hot: #e08a3c; --bad: #e5534b; --blue: #4c8dff;
+  /* Codiner's own lines about tasks (Transcript.tsx): a purple apart from the accent. */
+  --codiner: light-dark(#7a4cb8, #a98be0);
   --hl-draft: light-dark(rgba(255, 196, 0, .38), rgba(255, 196, 0, .30)); --hl-sent: light-dark(rgba(255, 196, 0, .16), rgba(255, 196, 0, .13)); --hl-focus: light-dark(rgba(255, 170, 0, .62), rgba(255, 180, 0, .5));
   --mono: ui-monospace, 'SF Mono', Menlo, monospace;
   color-scheme: light dark;
@@ -226,6 +228,9 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .md :not(pre) > code { background: var(--panel); padding: 1px 4px; border-radius: 4px; }
 /* A click copies inline code in Claude's replies (AssistantMessage.tsx): a hand with a copy mark. */
 .assistant-text[data-msg] :not(pre, a) > code { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cpath d='M7 3a1.5 1.5 0 0 1 3 0v6.5a1.4 1.4 0 0 1 2.8 0v1a1.4 1.4 0 0 1 2.8 0v1a1.4 1.4 0 0 1 2.8 0V18c0 2.8-2 4.5-4.5 4.5H11c-1.6 0-2.7-.7-3.5-2L3.4 15a1.4 1.4 0 0 1 2.2-1.8L7 15z' fill='white' stroke='black' stroke-width='1.2' stroke-linejoin='round'/%3E%3Crect x='19' y='19' width='7' height='9' rx='1.5' fill='white' stroke='black' stroke-width='1.3'/%3E%3Crect x='22' y='22' width='7' height='8' rx='1.5' fill='white' stroke='black' stroke-width='1.3'/%3E%3C/svg%3E") 8 2, copy; transition: background .6s; }
+/* Shows a path named in inline code in Finder (AssistantMessage.tsx). */
+.md button.reveal { display: inline-flex; vertical-align: -2px; margin-left: 2px; padding: 1px 2px; border: 0; background: none; color: var(--muted); cursor: pointer; border-radius: 4px; }
+.md button.reveal:hover { color: var(--accent); background: var(--panel); }
 .assistant-text[data-msg] code.copied { background: color-mix(in srgb, var(--accent) 30%, transparent); transition: none; }
 .md table { border-collapse: collapse; } .md td, .md th { border: 1px solid var(--line); padding: 3px 8px; }
 /* Quoted text stays readable on any background: the text colour, a little lighter. */
@@ -238,9 +243,11 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .more { margin: .8em 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
 .more > summary { cursor: pointer; padding: 5px 10px; color: var(--muted); font-size: calc(13px * var(--fs, 1)); list-style: none; display: flex; gap: 6px; align-items: center; }
 /* Every fold uses the same chevron: pointing right when closed, down when open. */
-.more > summary::-webkit-details-marker, .thinking > summary::-webkit-details-marker, .run-out > summary::-webkit-details-marker { display: none; }
-.more > summary::before, .thinking > summary::before, .run-out > summary::before { content: ''; width: 6px; height: 6px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .15s; flex: none; }
-.more[open] > summary::before, .thinking[open] > summary::before, .run-out[open] > summary::before { transform: rotate(45deg); }
+/* Every fold opens with the same caret, never the browser's triangle. */
+details > summary { cursor: pointer; list-style: none; display: flex; gap: 6px; align-items: center; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: ''; width: 6px; height: 6px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .15s; flex: none; }
+details[open] > summary::before { transform: rotate(45deg); }
 .more > summary:hover { color: var(--text); }
 .more-body { padding: 0 12px 6px; border-top: 1px solid var(--line); }
 /* Each kind of content has its own colour and shape: the direct answer (accent),
@@ -277,8 +284,15 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .reply-btn:hover:not(:disabled) { color: var(--text); }
 .consider.st-answered { border-left-color: var(--ok); box-shadow: none; background: transparent; }
 .consider.st-dismissing, .consider.st-dismissed, .consider.st-skipped { border-left-color: var(--line); box-shadow: none; background: transparent; opacity: .6; }
-.consider.st-dismissing .consider-body, .consider.st-dismissed .consider-body { display: none; }
+.consider.folded .consider-body { display: none; }
+/* A set-aside item opened again reads at full strength. */
+.consider.unfolded, .ask-card.unfolded { opacity: 1; background: color-mix(in srgb, var(--muted) 8%, transparent); }
+.folded :is(.consider-title, .ask-q), .unfolded :is(.consider-title, .ask-q) { cursor: pointer; }
+/* The chevron hangs left of the text, so the title lines up with what is under it. */
+.consider:is(.folded, .unfolded) { padding-left: 34px; } .ask-card:is(.folded, .unfolded) { padding-left: 32px; }
+.fold-btn { flex: none; margin: 2px 0 0 -26px; } .fold-btn .chevron { transition: transform .15s; } .fold-btn.on .chevron { transform: rotate(90deg); }
 .item-actions { display: flex; gap: 2px; flex: none; margin-top: 2px; }
+.item-aside { flex: none; font-size: calc(12px * var(--fs, 1)); margin-top: 3px; }
 .item-done { flex: none; color: var(--muted); padding: 3px; line-height: 0; } .item-done.ok { color: var(--ok); }
 .icon-btn { border: none; background: none; padding: 3px; line-height: 0; color: var(--muted); border-radius: 5px; }
 .icon-btn:hover:not(:disabled) { color: var(--text); background: rgba(127, 127, 127, .15); }
@@ -298,6 +312,8 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .replies-sum:hover { color: var(--text); }
 .replies-sum .chevron { transition: transform .15s; } .replies-sum.open .chevron { transform: rotate(90deg); }
 .replies-sum + .user-part { margin-top: 4px; }
+/* Task results that went to the agent with a message (Transcript.tsx: UserTurn). */
+.task-results { margin-bottom: 4px; } .task-results .tool { margin-left: -4px; }
 .assistant-text { position: relative; }
 /* The button's box reaches the text, so the pointer never leaves the message on its way over. */
 /* The left rail: per line, a row of reactions running leftward from 6px off the
@@ -305,7 +321,7 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .rail-row { position: absolute; right: calc(100% + 6px); z-index: 3; transform: translateY(-50%); display: flex; flex-direction: row-reverse; gap: 2px; align-items: center; }
 .rail-ack { position: relative; }
 .ack-btn, .react-mark { display: block; border: 1px solid transparent; padding: 0 3px; font-size: calc(14px * var(--fs, 1)); line-height: 20px; border-radius: 6px; white-space: nowrap; user-select: none; }
-.react-mark { background: none; cursor: pointer; }
+.react-mark { background: none; cursor: pointer; touch-action: none; }
 .rail-row .em { display: inline-block; transition: transform .12s; }
 .react-mark, .ack-btn { transition: padding .12s; }
 .react-mark:hover, .ack-btn:hover { position: relative; z-index: 1; padding-top: calc(var(--fan, 0) * 1.4em); padding-bottom: calc(var(--fan, 0) * 1.4em); }
@@ -383,6 +399,13 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .tool.perm-cancelled .tool-perm { color: var(--muted); }
 .tool.running .tool-name::after { content: ' …'; }
 .tool.err .tool-name { color: var(--bad); }
+/* Lines Codiner adds itself about tasks (Transcript.tsx: TaskStart, TaskEnd), in its own colour. */
+.tool.codiner-line .tool-icon, .tool.codiner-line .tool-name { color: var(--codiner); }
+.tool.codiner-line .tool-perm { color: inherit; }
+.task-mark-btn { cursor: pointer; padding: 2px; margin: -2px; border-radius: 4px; } .task-mark-btn:hover { background: rgba(127, 127, 127, .15); }
+.log-tail { margin-top: 6px; } .log-tail > summary { color: var(--muted); font-size: calc(12.5px * var(--fs, 1)); } .log-tail > summary:hover { color: var(--text); }
+.log-tail pre { background: var(--panel); padding: 8px 10px; border-radius: 6px; overflow: auto; margin: 4px 0; }
+.task-foot { display: flex; align-items: center; gap: 8px; } .task-foot i { flex: 1; } .task-foot .icon-btn { margin-left: auto; }
 .tool-body { margin: 2px 0 8px 26px; }
 .tool-body pre, .perm pre { background: var(--panel); padding: 8px 10px; border-radius: 6px; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 4px 0; }
 .tool-result { opacity: .85; }
@@ -405,12 +428,16 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .perm.resolved { border: none; background: none; padding: 0 4px; margin: 2px 0; font-size: calc(12.5px * var(--fs, 1)); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .notice { text-align: center; font-size: calc(12px * var(--fs, 1)); color: var(--muted); margin: 8px 0; white-space: pre-wrap; }
+.notice details > summary { justify-content: center; } .notice details pre { text-align: left; }
 .notice.warn { color: var(--hot); } .notice.error { color: var(--bad); text-align: left; background: rgba(229, 83, 75, .08); padding: 8px 10px; border-radius: 8px; }
 .notice.md { text-align: left; }
 .turn-end { height: 1px; background: linear-gradient(90deg, transparent, var(--line), transparent); margin: 14px 40px; }
-.working-dots { display: flex; gap: 4px; padding: 10px 2px; margin-top: 12px; }
-.working-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 1s infinite; }
-.working-dots span:nth-child(2) { animation-delay: .15s; } .working-dots span:nth-child(3) { animation-delay: .3s; }
+.working-dots { display: flex; gap: 4px; padding: 10px 2px; margin-top: 22px; }
+/* Each dot hops in turn, then all three rest a moment. */
+.working-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: dot-hop 1.4s infinite; }
+.working-dots span:nth-child(2) { animation-delay: .3s; } .working-dots span:nth-child(3) { animation-delay: .6s; }
+@keyframes dot-hop { 0%, 22%, 100% { transform: translateY(0); } 11% { transform: translateY(-5px); } }
+@media (prefers-reduced-motion: reduce) { .working-dots span { animation: none; } }
 
 /* ---- inline replies & questions ---- */
 .note-card { position: absolute; z-index: 2; pointer-events: auto; background: var(--card); border: 1px solid var(--line); border-left: 3px solid #f0b400; border-radius: 8px; padding: 6px 26px 6px 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, .08); transition: top .15s; }
@@ -718,6 +745,16 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .task-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .task-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-sub { font-size: calc(12px * var(--fs, 1)); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Running tasks at the top of the composer (SessionView.tsx). */
+.running-tasks { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.running-task { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 3px 10px 3px 8px; border-radius: 14px; font-size: calc(12.5px * var(--fs, 1)); }
+.running-task .rt-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A running task's progress, read from its log (server/tasks.ts: progressOf): the number, and a fill behind the chip. */
+.task-pct { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--blue); font-size: calc(12px * var(--fs, 1)); }
+.task-dot + .task-pct { margin-left: 5px; }
+.running-task[style*="--pct"] { background: linear-gradient(to right, color-mix(in srgb, var(--blue) 16%, var(--card)) var(--pct), var(--card) var(--pct)); }
+.running-task.waiting { color: var(--codiner); border-color: color-mix(in srgb, currentColor 45%, transparent); }
+.running-task.waiting .rt-title { color: var(--text); }
 .task-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); }
 .task-dot.running { background: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 25%, transparent); }
 .task-dot.running { animation: task-pulse 1.6s ease-in-out infinite; }
@@ -734,6 +771,7 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .task-cmd { margin: 0; padding: 0; background: none; font-size: calc(12.5px * var(--fs, 1)); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 6em; overflow-y: auto; }
 .task-meta { font-size: calc(12px * var(--fs, 1)); }
 .task-meta button.link { padding: 0; border: none; font-size: inherit; }
+.task-notify { font-size: calc(12px * var(--fs, 1)); margin: 2px 0 6px; }
 .task-tools { display: flex; align-items: center; gap: 8px; font-size: calc(12px * var(--fs, 1)); }
 .task-search { flex: 1; display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 7px; padding: 0 8px; background: var(--card); color: var(--muted); }
 .task-search input { flex: 1; min-width: 0; border: none; background: none; padding: 5px 0; outline: none; color: var(--text); font-size: calc(13px * var(--fs, 1)); }
@@ -761,3 +799,14 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .cost-review { border-top: 1px solid var(--line); padding: 6px 0; }
 .cost-review summary { cursor: pointer; font-size: calc(13px * var(--fs, 1)); }
 .cost-review[open] summary { margin-bottom: 6px; }
+
+/* Autopilot (components/Autopilot.tsx) */
+.head-actions button.autopilot-on { border-color: var(--accent); color: var(--accent); }
+.autopilot-pop { width: 320px; gap: 8px; padding: 10px; font-size: calc(12.5px * var(--fs, 1)); }
+.autopilot-pop textarea { width: 100%; box-sizing: border-box; font: inherit; resize: vertical; }
+.autopilot-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.autopilot-row input { width: 70px; }
+.autopilot-row.warn { color: var(--warn); }
+.head-actions .autopilot-pop .autopilot-row button { border: 1px solid var(--line); padding: 4px 10px; }
+.head-actions .autopilot-pop .autopilot-row button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.head-actions .autopilot-pop .autopilot-row button:disabled { opacity: .5; }

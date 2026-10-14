@@ -15,7 +15,8 @@ import type { InboxItem, Part, PermissionMode, ServerMsg, SessionMeta, Settings,
 import { inboxLabel, inboxParts, openItemsOf } from '../shared/inbox.ts'
 import { execFile, execFileSync, spawn } from 'node:child_process'
 import os from 'node:os'
-import { Session, type Hooks, type Launch, type SlashCommand } from './session.ts'
+import { Session, slashCommand, type Hooks, type Launch, type SlashCommand } from './session.ts'
+import { Proc } from './proc.ts'
 import { findHistory, importTranscript, lastCache, listDirs, listHistory } from './history.ts'
 import { LEAD_PROMPT, WORKER_PROMPT, lookPrompt, workerNotesPrompt } from './prompts.ts'
 import { LOOK_OPTIONS, LOOK_SLOTS, cleanLook, describeLook } from '../shared/looks.ts'
@@ -30,6 +31,7 @@ import { configsFor, probe, serversFor } from './mcpservers.ts'
 import { DEFAULT_CACHE_GUARD, cacheLeft, knownTtl } from '../shared/cache.ts'
 import { AGENTS_FILE, agentsPrompt, readAgentsMd, writeAgentsMd } from './agentsmd.ts'
 import { handleMcp, type Tool } from './mcp.ts'
+import { AUTOPILOT_MODES, amount, nudge, startAutopilot, usedOf, verdict } from './autopilot.ts'
 import { blame, initFileHistory, moveHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
 import { authState, cancelLogin, childEnv, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
 import {
@@ -39,7 +41,14 @@ import {
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const PORT = Number(process.env.PORT ?? 4545)
 const DEV = process.argv.includes('--dev')
-const MCP_TOKEN = randomUUID()
+// Kept across restarts: a claude process that outlives a server (server/proc.ts) still reaches Codiner's tools.
+const MCP_TOKEN = (() => {
+  const f = path.join(DATA, 'mcp-token')
+  try { const t = fs.readFileSync(f, 'utf8').trim(); if (t) return t } catch { /* none yet */ }
+  const t = randomUUID()
+  fs.writeFileSync(f, t, { mode: 0o600 })
+  return t
+})()
 const LEAD_ID = 'lead'
 const MODES: PermissionMode[] = ['auto', 'default', 'acceptEdits', 'plan', 'bypassPermissions']
 
@@ -112,7 +121,7 @@ const hooks: Hooks = {
   event: (s, event) => {
     broadcast({ type: 'event', sessionId: s.meta.id, event })
     metaChanged()
-    if (event.t === 'result') setImmediate(() => { autoSend(s); taskTurn(s) })
+    if (event.t === 'result') setImmediate(() => { autoSend(s); taskTurn(s); autopilotTurn(s, event.isError) })
     // A tool call that finished may have changed a tracked file: record it with this message.
     if (event.t === 'tool_result') {
       const ev = s.getEvents()
@@ -212,8 +221,13 @@ if (!settings.autoModeMigrated) {
   saveSettings(settings)
   metaChanged()
 }
+// Busy sessions the last server handed on keep going; any other claude process it left is stopped.
+Proc.sweep(new Set([...sessions.values()].map((s) => s.reattach()).filter((k): k is string => !!k)))
 startNotes({ sessions: () => sessions.values(), settings: () => settings, usage: () => usage, changed: metaChanged })
 startTasks({ changed: (tasks) => broadcast({ type: 'tasks', tasks }), ended: taskEnded })
+// Autopilot goes on in sessions the last server left between turns (a handed-on busy one
+// gets there when its turn ends).
+setTimeout(() => { for (const s of sessions.values()) autopilotTurn(s, false, true) }, 3000)
 
 function get(id: string): Session {
   const s = sessions.get(id)
@@ -221,8 +235,11 @@ function get(id: string): Session {
   return s
 }
 
-function createSession(o: { cwd: string; title?: string; model?: string | null; permissionMode?: PermissionMode; parentId?: string | null }): Session {
+function createSession(o: { cwd: string; title?: string; model?: string | null; permissionMode?: PermissionMode; parentId?: string | null; mkdir?: boolean }): Session {
   const cwd = path.resolve(expandHome(String(o.cwd ?? '').trim()))
+  if (o.mkdir && !fs.existsSync(cwd)) {
+    try { fs.mkdirSync(cwd, { recursive: true }) } catch (e) { throw new HttpError(400, `Can't create ${cwd}: ${(e as Error).message}`) }
+  }
   if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new HttpError(400, `Not a directory: ${cwd}`)
   const mode = MODES.includes(o.permissionMode as PermissionMode) ? o.permissionMode! : 'auto'
   const s = adopt(newMeta({
@@ -261,7 +278,10 @@ function resumeHistory(claudeId: string): Session {
 // the board; a worker gets who else is at work in its directory, from the
 // ~/.claude/bin/agents helper when there is one, so it need not check first.
 const AGENTS_BIN = path.join(os.homedir(), '.claude', 'bin', 'agents')
-function hiddenFor(s: Session): { hidden?: string } {
+// What goes to Claude unseen with a message. A slash command takes none, so tasks
+// that ended stay unheard until a message that can carry them.
+function hiddenFor(s: Session, parts: Part[]): { hidden?: string; tasks?: string[] } {
+  if (slashCommand(parts)) return {}
   if (s.meta.kind === 'lead') return { hidden: board() }
   const out: string[] = []
   if (fs.existsSync(AGENTS_BIN)) {
@@ -271,18 +291,54 @@ function hiddenFor(s: Session): { hidden?: string } {
     who = who.trim()
     out.push(`[Codiner, ${new Date().toISOString().slice(0, 16)}Z] Other agents active in ${s.meta.cwd} (from \`agents active\`): ${who ? `\n${who}` : 'none.'}`)
   }
-  // Tasks that ended since it last heard.
-  out.push(...tasksEnded(s))
-  return out.length ? { hidden: out.join('\n\n') } : {}
+  // Tasks that ended since it last heard; the message keeps their ids, to show them.
+  const ended = tasksEnded(s)
+  out.push(...ended.map(endText))
+  return out.length ? { hidden: out.join('\n\n'), ...(ended.length ? { tasks: ended.map((t) => t.id) } : {}) } : {}
+}
+
+// ---- autopilot (server/autopilot.ts) ----------------------------------------
+
+// A turn ended (or the server started): tell Claude to go on, or end autopilot.
+// It waits while a task or background work will start the next turn itself.
+function autopilotTurn(s: Session, error: boolean, boot = false) {
+  const ap = s.meta.autopilot
+  if (!ap || ap.ended || busy(s) || s.meta.archived) return
+  if (s.backgroundWork || allTasks().some((t) => t.sid === s.meta.id && !t.ended && t.notify !== 'next')) return
+  // At a start, the turn before was judged by the last server.
+  ap.used = usedOf(ap, s.meta, usage)
+  const why = boot ? (ap.used >= ap.budget ? 'the budget is spent' : null) : verdict(ap, s.meta, s.getEvents(), usage, error)
+  if (why) return endAutopilot(s, why)
+  goOn(s)
+}
+
+function goOn(s: Session) {
+  const ap = s.meta.autopilot!
+  const n = nudge(ap)
+  const p: Part[] = [{ kind: 'text', text: n.text }]
+  const h = hiddenFor(s, p)
+  s.send(p, { from: 'autopilot', ...h, hidden: [n.hidden, h.hidden].filter(Boolean).join('\n\n') })
+  ap.turns++
+  metaChanged()
+}
+
+function endAutopilot(s: Session, reason: string) {
+  const ap = s.meta.autopilot
+  if (!ap || ap.ended) return
+  ap.used = usedOf(ap, s.meta, usage)
+  ap.ended = { reason, at: Date.now() }
+  s.notice(`Autopilot ended: ${reason}. It used ${amount(ap.unit, ap.used)} of ${amount(ap.unit, ap.budget)} in ${ap.turns} ${ap.turns === 1 ? 'turn' : 'turns'}.`)
+  s.markUnread()
+  metaChanged()
 }
 
 // ---- tasks (server/tasks.ts) ------------------------------------------------
 
-// The session's tasks that ended and it has not heard of: their texts, now marked heard.
-function tasksEnded(s: Session): string[] {
+// The session's tasks that ended and it has not heard of, now marked heard.
+function tasksEnded(s: Session): Task[] {
   const t = allTasks().filter((x) => x.sid === s.meta.id && x.ended && !x.told)
   if (t.length) markTold(t.map((x) => x.id))
-  return t.map(endText)
+  return t
 }
 
 const busy = (s: Session) => s.meta.status === 'working' || s.meta.status === 'permission'
@@ -292,7 +348,7 @@ const busy = (s: Session) => s.meta.status === 'working' || s.meta.status === 'p
 function taskEnded(t: Task) {
   const s = sessions.get(t.sid)
   if (!s) return
-  s.notice(`Task "${t.title}" ${t.stopped ? `was stopped by ${t.stopped === 'user' ? 'you' : 'Claude'}` : `ended${t.code != null ? ` with exit code ${t.code}` : ''}`}.`, t.code && !t.stopped ? 'warn' : 'info')
+  s.notice(`Task "${t.title}" ${t.stopped ? `was stopped by ${t.stopped === 'user' ? 'you' : 'Claude'}` : `ended${t.code != null ? ` with exit code ${t.code}` : ''}`}.`, t.code && !t.stopped ? 'warn' : 'info', { task: t.id })
   if (t.notify === 'next' || t.stopped === 'agent') return
   if (holdReasons(s, true).length) { s.notice(`Claude hears of it with your next message: its prompt cache has expired, so a message now would write it all again.`); return }
   if (busy(s) && t.notify === 'interrupt') s.interrupt()
@@ -308,8 +364,8 @@ function taskTurn(s: Session) {
 }
 
 function sendTasks(s: Session) {
-  const texts = tasksEnded(s)
-  if (texts.length) s.send([{ kind: 'text', text: texts.join('\n\n') }], { from: 'codiner', ...hiddenFor(s) })
+  const t = tasksEnded(s)
+  if (t.length) s.send([{ kind: 'text', text: t.map(endText).join('\n\n') }], { from: 'codiner', ...hiddenFor(s, []), tasks: t.map((x) => x.id) })
 }
 
 function taskTools(id: string): Tool[] {
@@ -388,7 +444,7 @@ function flushInbox(s: Session): void {
   const parts = inboxParts(s.meta.inbox)
   s.meta.inbox = []
   metaChanged()
-  if (parts.length) s.send(parts, { from: 'lead', ...hiddenFor(s) })
+  if (parts.length) s.send(parts, { from: 'lead', ...hiddenFor(s, parts) })
 }
 
 // A turn ended: drafts that waited only for it may go now.
@@ -405,7 +461,8 @@ function deliver(s: Session, drafts: Draft[], opts: { now?: boolean; urgent?: bo
     const text = drafts.filter((d) => !d.kind || d.kind === 'text').map((d) => d.text.trim()).filter(Boolean).join('\n\n')
     if (!text) throw new Error('An urgent send needs a message')
     if (s.meta.status === 'working' || s.meta.status === 'permission') s.interrupt()
-    s.send([{ kind: 'text', text }], { from: 'lead', ...hiddenFor(s) })
+    const p: Part[] = [{ kind: 'text', text }]
+    s.send(p, { from: 'lead', ...hiddenFor(s, p) })
     drafts = drafts.filter((d) => d.kind && d.kind !== 'text')
     if (!drafts.length) return `Stopped ${id}'s turn, if it was in one, and sent the message.`
   }
@@ -834,6 +891,32 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     const p = expandHome(url.searchParams.get('path') || '~')
     try { return send(res, 200, listDirs(p, url.searchParams.get('hidden') === '1')) } catch { throw new HttpError(400, `Can't read ${p}`) }
   }
+  if (a === 'fs' && id === 'stat' && method === 'GET') {
+    const p = path.resolve(expandHome((url.searchParams.get('path') || '').trim() || '~'))
+    let kind: 'dir' | 'file' | 'missing' = 'missing'
+    try { kind = fs.statSync(p).isDirectory() ? 'dir' : 'file' } catch {}
+    return send(res, 200, { path: p, kind })
+  }
+  if (a === 'fs' && id === 'exists' && method === 'POST') {
+    // Paths named in a reply (absolute, ~/, or under the session's directory, maybe with :line): which are there.
+    const body = await json(req)
+    const cwd = expandHome(String(body.cwd ?? '~'))
+    const out: Record<string, string | null> = {}
+    for (const p of (Array.isArray(body.paths) ? body.paths : []).slice(0, 200).map(String)) {
+      const abs = path.resolve(cwd, expandHome(p.replace(/(:\d+){1,2}$/, '')))
+      out[p] = fs.existsSync(abs) ? abs : null
+    }
+    return send(res, 200, out)
+  }
+  if (a === 'fs' && id === 'reveal' && method === 'POST') {
+    // A folder opens in Finder; a file is shown selected in its folder.
+    const p = path.resolve(expandHome(String((await json(req)).path ?? '')))
+    if (!fs.existsSync(p)) throw new HttpError(404, `There is no ${p}`)
+    const dir = fs.statSync(p).isDirectory()
+    if (process.platform === 'darwin') execFile('open', dir ? [p] : ['-R', p])
+    else execFile('xdg-open', [dir ? p : path.dirname(p)])
+    return send(res, 200, { ok: true })
+  }
   if (a === 'fs' && id === 'pick' && method === 'POST') {
     if (process.platform !== 'darwin') throw new HttpError(400, 'The native folder picker is macOS-only')
     const start = (await json(req)).path
@@ -878,10 +961,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     return send(res, 200, { sent, held })
   }
   if (a === 'lead' && id === 'reset' && method === 'POST') {
-    const s = get(LEAD_ID)
-    s.stop()
-    Object.assign(s.meta, { claudeSessionId: randomUUID(), started: false, context: { used: 0, window: s.meta.context.window }, error: null, unread: false, pendingAsks: 0 })
-    s.notice('Fresh start: the lead forgot this conversation. It keeps LEAD_NOTES.md.')
+    get(LEAD_ID).forget('Fresh start: the lead forgot this conversation. It keeps LEAD_NOTES.md.')
     return send(res, 200, { ok: true })
   }
   if (a !== 'sessions') throw new HttpError(404, 'Not found')
@@ -915,7 +995,10 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       s.meta.titleBefore = undefined
     }
     if (typeof body.archived === 'boolean' && s.meta.kind === 'worker') { s.meta.archived = body.archived; if (body.archived) s.stop() }
-    if (MODES.includes(body.permissionMode)) s.setPermissionMode(body.permissionMode)
+    if (MODES.includes(body.permissionMode)) {
+      s.setPermissionMode(body.permissionMode)
+      if (!AUTOPILOT_MODES.includes(body.permissionMode)) endAutopilot(s, 'you changed the permission mode')
+    }
     metaChanged()
     return send(res, 200, s.meta)
   }
@@ -933,6 +1016,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     return send(res, 200, { servers: serversFor(s.meta.cwd), on: s.meta.mcp?.on ?? null })
   }
   if (b === 'notes' && !c && method === 'GET') return send(res, 200, { path: notesPath(s.meta), text: readNotes(s.meta) })
+  if (b === 'autopilot' && method === 'DELETE') { endAutopilot(s, 'you turned it off'); return send(res, 200, s.meta) }
   if (method !== 'POST') throw new HttpError(404, 'Not found')
   const body = await json(req)
   switch (b) {
@@ -940,7 +1024,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       const p: Part[] = Array.isArray(body.parts) ? body.parts : []
       // The lead's drafts that went with your reply.
       if (Array.isArray(body.inbox) && body.inbox.length) { s.meta.inbox = s.meta.inbox.filter((i) => !body.inbox.includes(i.id)); metaChanged() }
-      s.send(p, hiddenFor(s))
+      s.send(p, hiddenFor(s, p))
       return send(res, 200, { ok: true })
     }
     case 'drafting':
@@ -950,7 +1034,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       // Delete from a message on; with parts, send them in its place (an edit).
       try { s.rewind(Number(body.seq)) } catch (e) { throw new HttpError(400, (e as Error).message) }
       const p: Part[] = Array.isArray(body.parts) ? body.parts : []
-      if (p.length) s.send(p, hiddenFor(s))
+      if (p.length) s.send(p, hiddenFor(s, p))
       return send(res, 200, { ok: true })
     }
     case 'run': {
@@ -1008,7 +1092,16 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       if (err) throw new HttpError(err === 'cold' ? 409 : 400, err === 'cold' ? 'The prompt cache has expired or is about to' : err)
       return send(res, 200, { ok: true })
     }
-    case 'interrupt': s.interrupt(); return send(res, 200, { ok: true })
+    case 'interrupt': endAutopilot(s, 'you stopped it'); s.interrupt(); return send(res, 200, { ok: true })
+    case 'autopilot': {
+      // Start, or start again with a new goal and budget. A session between turns goes on now.
+      if (s.meta.kind !== 'worker') throw new HttpError(400, 'Only a worker session can run on autopilot')
+      if (!String(body.goal ?? '').trim() && !s.getEvents().some((e) => e.t === 'user')) throw new HttpError(400, 'Give a goal: this session has no task yet')
+      try { s.meta.autopilot = startAutopilot(s.meta, body, usage) } catch (e) { throw new HttpError(400, (e as Error).message) }
+      metaChanged()
+      if (!busy(s)) goOn(s)
+      return send(res, 200, s.meta)
+    }
     case 'seen': s.markSeen(); return send(res, 200, { ok: true })
     case 'unread': s.markUnread(); return send(res, 200, { ok: true })
     case 'permission':
@@ -1099,7 +1192,7 @@ initFileHistory({
 
 initAuth({
   change: (auth) => broadcast({ type: 'auth', auth }),
-  signedIn: () => { for (const s of sessions.values()) s.retryAfterSignIn(hiddenFor(s)) },
+  signedIn: () => { for (const s of sessions.values()) s.retryAfterSignIn((p) => hiddenFor(s, p)) },
 })
 
 server.listen(PORT, '127.0.0.1', () => {
@@ -1109,7 +1202,7 @@ server.listen(PORT, '127.0.0.1', () => {
 // ---- restarting itself --------------------------------------------------------
 // When the server's own code on disk is newer than this process, the page offers
 // a restart: a new server starts detached (its log in ~/.codiner/server.log) as
-// soon as this one has let go of the port. Sessions resume on their next message.
+// soon as this one has let go of the port. Busy sessions keep running (server/proc.ts).
 const STARTED = Date.now()
 function codeTime(): number {
   let t = 0
@@ -1135,7 +1228,7 @@ function restart() {
 }
 
 function shutdown() {
-  for (const s of sessions.values()) s.stop()
+  for (const s of sessions.values()) s.handoff()
   saveSessions(metas)
   setTimeout(() => process.exit(0), 300)
 }

@@ -9,6 +9,8 @@
 //   <draft id="…" title="…"> … </draft> text for the user to edit and send back (a commit
 //                                       message, an email); an item, answered like an <ask>
 //
+//   <autopilot-stop reason="…"/>       Claude ends autopilot (server/autopilot.ts); not shown
+//
 // Markdown works inside, and sections nest. Lines inside code fences are left
 // alone. A section still open at the end (a reply still streaming) holds what
 // has arrived so far. The older forms still parse: ```ask fences (asks.ts), and
@@ -24,6 +26,7 @@ const TAGS = 'answer|details|consider|ask|run|draft'
 const OPEN = new RegExp(`^\\s*<(${TAGS})((?:\\s+[\\w-]+(?:\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]+))?)*)\\s*>(.*)$`)
 const CLOSE = new RegExp(`^(.*?)</(${TAGS})>\\s*$`)
 const LEGACY = /^:::\s*(summary|more|consider)\b\s*(.*)$/
+const STOP = /^\s*<autopilot-stop((?:\s+[\w-]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>/]+))?)*)\s*\/?>\s*(?:<\/autopilot-stop>\s*)?$/
 const LEGACY_KIND: Record<string, SectionKind> = { summary: 'answer', more: 'details', consider: 'consider' }
 
 function attrsOf(s: string): Record<string, string> {
@@ -55,6 +58,7 @@ export function segmentsOf(text: string): Segment[] {
     }
     if (fence) { buf.push(line); continue }
     let m: RegExpExecArray | null
+    if (STOP.test(line)) continue
     if ((m = OPEN.exec(line))) {
       open(m[1] as SectionKind, attrsOf(m[2]))
       let rest = m[3]
@@ -85,6 +89,19 @@ export function segmentsOf(text: string): Segment[] {
   }
   fix(root)
   return root
+}
+
+// Claude's reason to end autopilot, when the text has an <autopilot-stop> line
+// outside code fences ('' without a reason); null when it has none.
+export function autopilotStop(text: string): string | null {
+  let fence = ''
+  for (const line of text.split('\n')) {
+    const f = /^\s*(`{3,}|~{3,})/.exec(line)?.[1]
+    if (f && (!fence || (f[0] === fence[0] && f.length >= fence.length && !line.trim().slice(f.length)))) { fence = fence ? '' : f; continue }
+    const m = fence ? null : STOP.exec(line)
+    if (m) return attrsOf(m[1]).reason?.trim() ?? ''
+  }
+  return null
 }
 
 // An <ask> section as an Ask. `index` counts the asks before it in the message.

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { Anchor, Block, Event, ImageRef, Part } from '../../../shared/types.ts'
+import type { Anchor, Block, Event, ImageRef, Part, Task } from '../../../shared/types.ts'
 import { addDraft, api, draftsOf, removeDraft, rewind, uid, useStore } from '../store.ts'
 import { anchorFromRange } from '../anchoring.ts'
 import { renderInline, renderMd, renderText } from '../util.ts'
@@ -11,7 +11,9 @@ import { isReaction } from '../emoji.ts'
 import { splitQuote } from '../../../shared/asks.ts'
 import { highlight, langOfPath } from '../highlight.ts'
 import { CARD_W, GUTTER_GAP, Margin, focusPassage, rangesOfNote } from './Margin.tsx'
-import { AgentsIcon, BlockIcon, CheckIcon, ChevronIcon, DashIcon, XIcon, FileIcon, GlobeIcon, ListIcon, PencilIcon, SearchIcon, TerminalIcon, ToolIcon, TrashIcon } from './Icons.tsx'
+import { StateMark, TasksDialog, lastDraw, stateLabel } from './TasksDialog.tsx'
+import { minutes } from '../cache.ts'
+import { AgentsIcon, BlockIcon, CheckIcon, ChevronIcon, DashIcon, XIcon, FileIcon, GlobeIcon, ListIcon, PencilIcon, SearchIcon, OpenIcon, TerminalIcon, TimerIcon, ToolIcon, TrashIcon } from './Icons.tsx'
 
 type PermEvent = Extract<Event, { t: 'permission' }>
 type Folded = {
@@ -102,16 +104,27 @@ export function Transcript({ sid }: { sid: string }) {
       const el = msgOf(r.startContainer)
       if (!el || el !== msgOf(r.endContainer) || el.dataset.sid !== sid) return
       const at = (n: Node) => (n.nodeType === 1 ? n as Element : n.parentElement)
-      if (at(r.commonAncestorContainer)?.closest('.ask-card, .ri-edit, textarea, input, button, summary')) return
-      const anchor = anchorFromRange(r, el)
+      if (at(r.commonAncestorContainer)?.closest('.ri-edit, textarea, input, button, summary')) return
+      // A selection of a whole paragraph or list item goes on it as a whole, as from the
+      // reaction button: the same passage the button picks (the shortest; between two, the first).
+      const flat = (t: string) => t.replace(/\s+/g, ' ').trim()
+      const text = flat(sel.toString())
+      let whole: HTMLElement | null = null
+      for (const b of el.querySelectorAll<HTMLElement>('li, [data-block]')) {
+        if (!r.intersectsNode(b) || b.closest('.run-card, details:not([open])') || (b.closest('.ask-card') && !b.closest('.ask-q')) || flat(b.innerText) !== text) continue
+        if (!whole || b.getBoundingClientRect().height < whole.getBoundingClientRect().height) whole = b
+      }
+      const all = document.createRange()
+      if (whole) all.selectNodeContents(whole)
+      const anchor = anchorFromRange(whole ? all : r, el)
       if (!anchor) return
-      const quote = sel.toString().trim().replace(/\n{3,}/g, '\n\n')
+      const quote = whole ? whole.innerText.trim() : sel.toString().trim().replace(/\n{3,}/g, '\n\n')
       // One empty comment at a time: starting a new one drops the untouched last one.
       for (const d of draftsOf(sid)) if (d.kind === 'note' && !d.text.trim() && !d.images.length) removeDraft(sid, d.id)
       sel.removeAllRanges()
-      // A comment inside an item to consider counts as the reply to it.
-      const itemKey = at(r.commonAncestorContainer)?.closest<HTMLElement>('.consider[data-item]')?.dataset.item
-      addDraft(sid, { id: uid(), kind: 'note', anchor, quote, text: '', images: [], createdAt: Date.now(), ...(itemKey ? { itemKey } : {}) })
+      // A comment inside an item to consider or a question counts as the reply to it.
+      const itemKey = at(r.commonAncestorContainer)?.closest<HTMLElement>('[data-item]')?.dataset.item
+      addDraft(sid, { id: uid(), kind: 'note', anchor, quote, text: '', images: [], createdAt: Date.now(), ...(whole ? { whole: true } : {}), ...(itemKey ? { itemKey } : {}) })
     }, 0)
     document.addEventListener('mouseup', up)
     return () => document.removeEventListener('mouseup', up)
@@ -205,6 +218,8 @@ function interim(events: Event[], f: Folded, drafted: Set<string>): Set<string> 
 function items(events: Event[], f: Folded, steps: Set<string>): Item[] {
   const out: Item[] = []
   for (const e of events) {
+    // A task's end shows where the agent hears of it: in a message from Codiner, or folded into yours.
+    if (isTaskEnd(e)) continue
     switch (e.t) {
       case 'assistant':
         e.blocks.forEach((b, i) => out.push({ key: `${e.seq}.${i}`, e, block: b, i, activity: b.type !== 'text' || steps.has(`${e.seq}.${i}`) }))
@@ -251,6 +266,113 @@ function ItemView({ sid, item, f }: { sid: string; item: Item; f: Folded }) {
   }
 }
 
+// Codiner's own lines about tasks, in Codiner's colour: the start is the agent's start_task
+// call among the tool calls. The end shows where the agent hears of it, as it asked: in a
+// message of its own ("via codiner"), or in a fold of your next message.
+const START_TASK = 'mcp__codiner__start_task'
+const NOTIFY: Record<string, string> = {
+  next: 'The agent hears of its end with your next message.',
+  turn: 'The agent asked for a message of its own when it ends.',
+  interrupt: 'The agent asked to be interrupted when it ends.',
+}
+
+// Notices from before they carried the task id are known by their text.
+const isTaskEnd = (e: Event) => e.t === 'notice' && (!!e.task || /^Task ".*" (ended|was stopped)/.test(e.text))
+
+// The tasks a message tells of: by id, and by title for messages from before they kept the ids.
+function taskIdsOf(e: Extract<Event, { t: 'user' }>): Set<string> {
+  const out = new Set(e.tasks)
+  for (const m of e.parts.map((p) => p.text).join('\n').matchAll(/^\[Codiner\] Your task `([^`]+)` \("(.*?)"\)/gm)) { out.add(m[1]); out.add(m[2]) }
+  return out
+}
+
+// A message from Codiner with the last lines of a task's log: the lines fold away, and a line
+// that a progress bar redrew with \r shows only as it ended (older messages kept every redraw).
+function CodinerText({ text }: { text: string }) {
+  return <>{text.split(/\n?~~~\n([\s\S]*?)\n~~~/).map((x, i) => i % 2
+    ? <details key={i} className="log-tail"><summary>Last lines of the log</summary><pre>{x.split('\n').map(lastDraw).filter(Boolean).slice(-8).join('\n')}</pre></details>
+    : x.trim() && <div key={i} className="md" dangerouslySetInnerHTML={{ __html: renderText(x) }} />)}</>
+}
+
+// Why Codiner sent a message of its own: what the agent asked for when it started the task.
+function viaCodiner(e: Extract<Event, { t: 'user' }>, tasks: Task[]): string {
+  const ids = taskIdsOf(e)
+  const t = tasks.find((x) => ids.has(x.id))
+  return t?.notify === 'interrupt' ? 'The agent asked to be interrupted with a message when this task ended.'
+    : t?.notify === 'next' ? 'Codiner told the agent with a message when this task ended.'
+    : 'The agent asked to be told with a message when this task ended.'
+}
+
+// A task that ended: its title, how it ended and how long it ran. Open, it shows the command.
+function TaskEnd({ id, text }: { id: string; text: string }) {
+  const { tasks } = useStore()
+  const [open, setOpen] = useState(false)
+  const [log, setLog] = useState(false)
+  const t = tasks.find((x) => x.id === id)
+  return (
+    <div className="tool codiner-line">
+      <button className="tool-line" onClick={() => setOpen(!open)}>
+        <span className="tool-icon"><TimerIcon size={13} /></span>
+        <span className="tool-name">Task</span>
+        <span className="tool-sum">{t ? `${t.title} · ${stateLabel(t)} · ran ${minutes(t.ended! - t.started)}` : `${id} ${text}`}</span>
+        {t && <TaskMark t={t} onOpen={() => setLog(true)} />}
+      </button>
+      {open && (
+        <div className="tool-body">
+          {t ? <>
+            <Code code={t.command} lang="bash" prompt />
+            <TaskFoot onOpen={() => setLog(true)} />
+          </> : <div className="muted"><i>Its log is gone.</i></div>}
+        </div>
+      )}
+      {log && t && <TasksDialog first={t.id} onClose={() => setLog(false)} />}
+    </div>
+  )
+}
+
+// The agent's start_task call: the title and how it will hear of the end. Open, it shows the command.
+function TaskStart({ b, result }: { b: Extract<Block, { type: 'tool_use' }>; result?: Extract<Event, { t: 'tool_result' }> }) {
+  const { tasks } = useStore()
+  const [open, setOpen] = useState(false)
+  const [log, setLog] = useState(false)
+  const id = result?.text.match(/^Started task `([^`]+)`/)?.[1]
+  const t = id ? tasks.find((x) => x.id === id) : undefined
+  const notify = b.input?.notify ?? 'next'
+  return (
+    <div className={`tool codiner-line${result?.isError || (result && !id) ? ' err' : ''}${result ? '' : ' running'}`}>
+      <button className="tool-line" onClick={() => setOpen(!open)}>
+        <span className="tool-icon"><TimerIcon size={13} /></span>
+        <span className="tool-name">Task</span>
+        <span className="tool-sum">Started: {b.input?.title ?? b.input?.command} · tells the agent {notify === 'next' ? 'with your next message' : notify === 'turn' ? 'with a message' : 'by interrupting it'}</span>
+        {t && <TaskMark t={t} onOpen={() => setLog(true)} />}
+      </button>
+      {open && (
+        <div className="tool-body">
+          <Code code={b.input?.command ?? ''} lang="bash" prompt />
+          {result && !id && <pre className="tool-result">{result.text}</pre>}
+          <TaskFoot note={NOTIFY[notify] + (id && !t ? ' Its log is gone.' : '')} onOpen={t ? () => setLog(true) : undefined} />
+        </div>
+      )}
+      {log && t && <TasksDialog first={t.id} onClose={() => setLog(false)} />}
+    </div>
+  )
+}
+
+// The task's state at the end of its line; a click shows the task.
+function TaskMark({ t, onOpen }: { t: Task; onOpen(): void }) {
+  return <span className="tool-perm task-mark-btn" role="button" onClick={(ev) => { ev.stopPropagation(); onOpen() }}><StateMark t={t} /></span>
+}
+
+// Under the command: a note in italics, and on the right a button that shows the task.
+function TaskFoot({ note, onOpen }: { note?: string; onOpen?(): void }) {
+  return (
+    <div className="task-foot">
+      <i className="muted">{note}</i>
+      {onOpen && <button className="icon-btn" title="Show the task" onClick={onOpen}><OpenIcon size={13} /></button>}
+    </div>
+  )
+}
+
 function BlockView({ sid, b, msg, f, synthetic }: { sid: string; b: Block; msg: string; f: Folded; synthetic?: boolean }) {
   if (b.type === 'text') {
     if (synthetic) return <div className="notice info md" dangerouslySetInnerHTML={{ __html: renderMd(b.text) }} />
@@ -264,6 +386,7 @@ function BlockView({ sid, b, msg, f, synthetic }: { sid: string; b: Block; msg: 
 const KINDS: [string, string, string][] = [
   ['edit', 'edit', 'edits'], ['command', 'command', 'commands'], ['read', 'read', 'reads'], ['search', 'search', 'searches'],
   ['web', 'web lookup', 'web lookups'], ['agent', 'agent', 'agents'], ['other', 'tool call', 'tool calls'],
+  ['start', 'task started', 'tasks started'],
 ]
 const kindOf = (name: string) =>
   /^(Edit|Write|NotebookEdit|MultiEdit)$/.test(name) ? 'edit'
@@ -272,6 +395,7 @@ const kindOf = (name: string) =>
   : /^(Glob|Grep)$/.test(name) ? 'search'
   : /^Web/.test(name) ? 'web'
   : /^(Task|Agent)$/.test(name) ? 'agent'
+  : name === START_TASK ? 'start'
   : 'other'
 
 function tally(items: Item[], f: Folded): string {
@@ -318,6 +442,8 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
   const [busy, setBusy] = useState(false)
   // Comments, reactions and answers live beside what they answer; here they fold into one line.
   const [open, setOpen] = useState(false)
+  const [showTasks, setShowTasks] = useState(false)
+  const { tasks } = useStore()
   const run = async (f: () => Promise<void>) => {
     setBusy(true)
     try { await f() } finally { setBusy(false) }
@@ -328,7 +454,15 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
   return (
     <div className="user-wrap" onMouseLeave={() => setConfirm(false)}>
     <div className="user-turn">
-      {e.from && <div className="from">via {e.from === 'master' ? 'lead' : e.from}</div>}
+      {e.from && <div className="from" title={e.from === 'codiner' ? viaCodiner(e, tasks) : undefined}>via {e.from === 'master' ? 'lead' : e.from}</div>}
+      {e.from !== 'codiner' && !!e.tasks?.length && (
+        <div className="task-results">
+          <button className={`replies-sum${showTasks ? ' open' : ''}`} title="These went to the agent with this message" onClick={() => setShowTasks(!showTasks)}>
+            <ChevronIcon size={11} className="chevron" /> {e.tasks.length} {e.tasks.length === 1 ? 'task result' : 'task results'}
+          </button>
+          {showTasks && e.tasks.map((id) => <TaskEnd key={id} id={id} text="ended." />)}
+        </div>
+      )}
       {replies.length > 0 && (
         <button className={`replies-sum${open ? ' open' : ''}`} onClick={() => setOpen(!open)}>
           <ChevronIcon size={11} className="chevron" /> {repliesSummary(replies)}
@@ -350,7 +484,7 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
           } : {})}
         >
           <PartHead p={p} />
-          {p.text.trim() && <div className="md" dangerouslySetInnerHTML={{ __html: renderText(p.text) }} />}
+          {p.text.trim() && (e.from === 'codiner' ? <CodinerText text={p.text} /> : <div className="md" dangerouslySetInnerHTML={{ __html: renderText(p.text) }} />)}
           <Thumbs images={p.images} />
         </div>
       ))}
@@ -455,6 +589,11 @@ const RESOLUTION: Record<string, { Icon: (p: { size?: number }) => React.ReactEl
 }
 
 function ToolCall({ b, result, resolution }: { b: Extract<Block, { type: 'tool_use' }>; result?: Extract<Event, { t: 'tool_result' }>; resolution?: string }) {
+  if (b.name === START_TASK && !resolution) return <TaskStart b={b} result={result} />
+  return <AnyTool b={b} result={result} resolution={resolution} />
+}
+
+function AnyTool({ b, result, resolution }: { b: Extract<Block, { type: 'tool_use' }>; result?: Extract<Event, { t: 'tool_result' }>; resolution?: string }) {
   const [open, setOpen] = useState(false)
   const name = b.name.replace(/^mcp__([^_]+)__/, '$1·')
   const Icon = TOOL_ICON[b.name] ?? ToolIcon

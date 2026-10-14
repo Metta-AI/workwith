@@ -54,7 +54,13 @@ function check() {
   for (const t of old) for (const f of [logPath(t.id), exitPath(t.id)]) fs.rmSync(f, { force: true })
   if (old.length) { tasks = tasks.filter((t) => !old.includes(t)); any = true }
   for (const t of tasks) {
-    if (t.ended || alive(t.pid)) continue
+    if (t.ended) continue
+    if (alive(t.pid)) {
+      const p = progressOf(t.id)
+      if (p?.pct !== t.progress?.pct || p?.label !== t.progress?.label) { t.progress = p; any = true }
+      continue
+    }
+    delete t.progress
     const code = Number.parseInt(fs.readFileSync(exitPath(t.id), { encoding: 'utf8', flag: 'a+' }).trim(), 10)
     Object.assign(t, { ended: Date.now(), code: Number.isNaN(code) ? null : code })
     any = true
@@ -133,13 +139,31 @@ export function searchLog(id: string, q: string, limit = 500): { n: number; line
   let text = ''
   try { text = fs.readFileSync(logPath(id), 'utf8') } catch { return [] }
   const out: { n: number; line: string }[] = []
-  text.split('\n').forEach((line, i) => { if (out.length < limit && line.toLowerCase().includes(needle)) out.push({ n: i + 1, line: line.slice(0, 1000) }) })
+  text.split('\n').map(lastDraw).forEach((line, i) => { if (out.length < limit && line.toLowerCase().includes(needle)) out.push({ n: i + 1, line: line.slice(0, 1000) }) })
   return out
 }
 
-export function tailLines(id: string, n = 20): string {
-  return readLog(id, undefined, 16 * 1024).text.split('\n').filter((l, i, a) => l || i < a.length - 1).slice(-n).join('\n')
+// The last lines as a terminal shows them: a progress bar redraws its line with \r, so
+// only what comes after the last \r stays. Long lines are cut.
+export function tailLines(id: string, n = 8): string {
+  return readLog(id, undefined, 16 * 1024).text.split('\n').map(lastDraw).filter((l, i, a) => l || i < a.length - 1).slice(-n)
+    .map((l) => l.length > 300 ? l.slice(0, 300) + ' …' : l).join('\n')
 }
+
+// A percentage in the last few lines of the log, as progress bars (tqdm, curl, ...) write it,
+// with the word before it as its label ("analysing:  89%|===" is 89, "analysing").
+function progressOf(id: string): Task['progress'] {
+  const lines = readLog(id, undefined, 4096).text.split('\n').map(lastDraw).filter((l) => l.trim()).slice(-3).reverse()
+  for (const line of lines) {
+    const m = [...line.matchAll(/(\d{1,3}(?:\.\d+)?)\s?%/g)].filter((x) => Number(x[1]) <= 100).at(-1)
+    if (!m) continue
+    const label = line.slice(0, m.index).replace(/[\s:|]+$/, '').split(/\s{2,}|\|/).at(-1)?.trim().slice(-30)
+    return { pct: Math.floor(Number(m[1])), ...(label && /[a-z]/i.test(label) ? { label } : {}) }
+  }
+  return undefined
+}
+
+const lastDraw = (line: string) => line.split('\r').filter(Boolean).at(-1) ?? ''
 
 const span = (ms: number) => ms < 60_000 ? `${Math.round(ms / 1000)}s` : ms < 3_600_000 ? `${Math.floor(ms / 60_000)}m ${Math.round(ms / 1000) % 60}s` : `${Math.floor(ms / 3_600_000)}h ${Math.floor(ms / 60_000) % 60}m`
 

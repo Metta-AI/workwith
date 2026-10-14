@@ -15,7 +15,9 @@ import { Splitter, useWidth } from './Splitter.tsx'
 import { cacheOf, limitLeft, minutes, money, moneyLong, ofFresh, pct, shareOf, spendOf, toggleMoney, useNow, usd } from '../cache.ts'
 import { ttlLabel } from '../../../shared/cache.ts'
 import { NotesPill } from './NotesDialog.tsx'
+import { StateMark, TasksDialog } from './TasksDialog.tsx'
 import { McpPill } from './McpDialog.tsx'
+import { AutopilotButton } from './Autopilot.tsx'
 
 export function ContextGauge({ m, onCompact }: { m: SessionMeta; onCompact?: () => void }) {
   const used = m.context.used
@@ -116,6 +118,7 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
               {MODES.map((x) => <option key={x.v} value={x.v}>{x.label}</option>)}
             </select>
           )}
+          {m.kind === 'worker' && <AutopilotButton m={m} />}
           {extra}
           <SessionMenu m={m} />
         </div>
@@ -152,6 +155,37 @@ function SessionMenu({ m }: { m: SessionMeta }) {
 }
 
 // The lead's drafts, in the reply tray: edit or remove each; they go with your next message.
+// This session's tasks that still run (server/tasks.ts), at the bottom of the
+// chat whatever is in view; a click shows a task's log. An ended one moves into
+// the transcript (Transcript.tsx, TaskEnd).
+function RunningTasks({ sid }: { sid: string }) {
+  const { tasks } = useStore()
+  useNow(10_000)
+  const [open, setOpen] = useState<string | null>(null)
+  const running = tasks.filter((t) => t.sid === sid && !t.ended)
+  // Ended, and the agent has not heard yet: the result goes with your next message.
+  const waiting = tasks.filter((t) => t.sid === sid && t.ended && !t.told)
+  if (!running.length && !waiting.length && !open) return null
+  return (
+    <div className="running-tasks">
+      {running.map((t) => (
+        <button key={t.id} className="running-task" title={`${t.command}${t.progress?.label ? `\n${t.progress.label}: ${t.progress.pct}%` : ''}\nShow its log`} onClick={() => setOpen(t.id)}
+          style={t.progress ? { '--pct': `${t.progress.pct}%` } as React.CSSProperties : undefined}>
+          <span className="task-dot running" /><span className="rt-title">{t.title}</span>
+          {t.progress && <span className="task-pct">{t.progress.pct}%</span>}
+          <span className="muted">{minutes(Date.now() - t.started)}</span>
+        </button>
+      ))}
+      {waiting.map((t) => (
+        <button key={t.id} className="running-task waiting" title={`${t.notify === 'next' ? 'This result goes to the agent with your next message.' : 'This result goes to the agent when its turn ends, or with your next message.'}\nShow its log`} onClick={() => setOpen(t.id)}>
+          <StateMark t={t} /><span className="rt-title">Task result: {t.title}</span>
+        </button>
+      ))}
+      {open && <TasksDialog first={open} onClose={() => setOpen(null)} />}
+    </div>
+  )
+}
+
 function Inbox({ m }: { m: SessionMeta }) {
   if (!m.inbox.length) return null
   const remove = (id: string) => api(`/api/sessions/${m.id}/inbox/${id}/dismiss`)
@@ -278,6 +312,7 @@ export function Composer({ m }: { m: SessionMeta }) {
   }
   return (
     <div className="composer">
+      <RunningTasks sid={m.id} />
       <Inbox m={m} />
       {(notes > 0 || reactions > 0 || answers > 0 || dismissed > 0 || done > 0 || open.length > 0) && (
         <div className="queue">

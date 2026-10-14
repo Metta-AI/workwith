@@ -71,6 +71,18 @@ export type SessionMeta = {
   expectedModel?: string
   // Set by a rewind: the next start resumes claudeSessionId cut at this entry, as a fork.
   resumeAt?: string | null
+  autopilot?: Autopilot
+}
+
+// Autopilot (server/autopilot.ts): after each turn Codiner tells Claude to go on, until the
+// budget is spent or Claude stops. unit: dollars at API prices, or a share (0–1) of the 5-hour
+// or weekly limit. from: the session's spend and the limit's share used when it started;
+// used: the budget spent so far, in its unit; idle: turns in a row with no tool call.
+export type BudgetUnit = 'usd' | 'fiveHour' | 'sevenDay'
+export type Autopilot = {
+  goal: string; unit: BudgetUnit; budget: number; used: number
+  from: { usd: number; share?: number }; at: number; turns: number; idle: number
+  ended?: { reason: string; at: number }
 }
 
 // Rolling notes on a session, and the keep-warm calls that keep its prompt cache
@@ -117,12 +129,12 @@ type E<T extends string, B> = { seq: number; ts: number; t: T } & B
 export type Event =
   // uuid: the id Claude Code gave the message in its transcript (we choose it);
   // csid: the Claude session it went to. A rewind cuts the transcript there.
-  | E<'user', { parts: Part[]; from?: string; uuid?: string; csid?: string }>
+  | E<'user', { parts: Part[]; from?: string; uuid?: string; csid?: string; tasks?: string[] }>   // tasks: ids of tasks whose end it tells of
   | E<'assistant', { msgId: string; blocks: Block[]; synthetic?: boolean }>
   | E<'tool_result', { toolUseId: string; text: string; isError: boolean }>
   | E<'permission', { requestId: string; toolName: string; input: any; description?: string; canAlways: boolean; toolUseId?: string }>
   | E<'permission_resolved', { requestId: string; resolution: 'allow' | 'always' | 'deny' | 'cancelled' }>
-  | E<'notice', { text: string; level: 'info' | 'warn' | 'error' }>
+  | E<'notice', { text: string; level: 'info' | 'warn' | 'error'; task?: string }>   // task: the id of a task that ended
   | E<'result', { durationMs: number; isError: boolean; text?: string }>
 
 // Claude Code's login: 'pending' while `claude auth login` waits for you (url: its sign-in page).
@@ -174,6 +186,7 @@ export type Task = {
   id: string; sid: string; title: string; command: string; cwd: string; pid: number
   started: number; ended?: number; code?: number | null; stopped?: 'user' | 'agent'
   notify: TaskNotify; told?: boolean
+  progress?: { pct: number; label?: string }   // read from a progress bar near the end of its log, while it runs
 }
 
 export type SlashCommand = { name: string; description: string; argumentHint: string }
