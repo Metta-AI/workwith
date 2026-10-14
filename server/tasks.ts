@@ -14,9 +14,11 @@
 // then SIGKILL if it is still there after 5 seconds.
 //
 // On Windows the task runs in Git Bash when there is one, the same shell Claude
-// Code's Bash tool uses. Without it the task runs in cmd.exe, with no wrapper:
-// its exit code is known only if Codiner is still up when it ends. Stop is
-// `taskkill /T` on the process tree, then `/F` after 5 seconds.
+// Code's Bash tool uses. Its programs are not in the wrapper's Windows process
+// tree, so Stop is Git Bash's own kill on the wrapper's process group (the
+// wrapper writes its pid to <id>.pid), SIGTERM then SIGKILL, then `taskkill /T /F`.
+// Without Git Bash the task runs in cmd.exe under a small node wrapper, and Stop
+// is `taskkill /T /F` at once: without /F, taskkill stops no console program.
 
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
@@ -32,6 +34,8 @@ fs.mkdirSync(DIR, { recursive: true })
 
 export const logPath = (id: string) => path.join(DIR, `${id}.log`)
 const exitPath = (id: string) => path.join(DIR, `${id}.exit`)
+const pidPath = (id: string) => path.join(DIR, `${id}.pid`)
+const files = (id: string) => [logPath(id), exitPath(id), pidPath(id)]
 
 type Ctx = { changed: (tasks: Task[]) => void; ended: (t: Task) => void }
 let ctx: Ctx
@@ -56,7 +60,7 @@ const WEEK = 7 * 24 * 3_600_000
 function check() {
   let any = false
   const old = tasks.filter((t) => t.ended && t.ended < Date.now() - WEEK && t.told)
-  for (const t of old) for (const f of [logPath(t.id), exitPath(t.id)]) fs.rmSync(f, { force: true })
+  for (const t of old) for (const f of files(t.id)) fs.rmSync(f, { force: true })
   if (old.length) { tasks = tasks.filter((t) => !old.includes(t)); any = true }
   for (const t of tasks) {
     if (t.ended || alive(t.pid)) continue
@@ -70,22 +74,22 @@ function check() {
 
 export function startTask(sid: string, o: { title: string; command: string; cwd: string; notify?: TaskNotify }): Task {
   const id = randomUUID().slice(0, 8)
-  const fd = fs.openSync(logPath(id), 'a')
+  // Not 'a': Git Bash's programs can't write to a handle opened for appending, and the log is new.
+  const fd = fs.openSync(logPath(id), 'w')
   fs.writeSync(fd, `# codiner task ${id} · session ${sid} · ${o.title} · ${new Date().toISOString()}\n# in ${o.cwd}\n$ ${o.command}\n\n`)
   // The inner shell runs the command, so an `exit` in it still leaves the wrapper to write the code.
   const sh = shell()
-  const wrapper = `: codiner-task ${id} session ${sid}; ${sh ? 'sh' : '/bin/sh'} -c "$CODINER_TASK_COMMAND"; echo $? > '${exitPath(id).replaceAll('\\', '/')}'`
-  const [cmd, args] = !WIN ? ['/bin/sh', ['-c', wrapper]] : sh ? [sh, ['-c', wrapper]] : [process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', `"${o.command}"`]]
+  const posix = (f: string) => `'${f.replaceAll('\\', '/')}'`
+  const wrapper = `: codiner-task ${id} session ${sid}; ${sh ? `echo $$ > ${posix(pidPath(id))}; sh` : '/bin/sh'} -c "$CODINER_TASK_COMMAND"; echo $? > ${posix(exitPath(id))}`
+  const [cmd, args] = !WIN ? ['/bin/sh', ['-c', wrapper]] : sh ? [sh, ['-c', wrapper]] : [process.execPath, [CMD_WRAPPER, `codiner-task ${id} session ${sid}`, exitPath(id)]]
   const p = spawn(cmd, args, {
-    cwd: o.cwd, detached: true, windowsHide: true, windowsVerbatimArguments: WIN && !sh, stdio: ['ignore', fd, fd],
+    cwd: o.cwd, detached: true, windowsHide: true, stdio: ['ignore', fd, fd],
     env: { ...childEnv(), CODINER_TASK: id, CODINER_SESSION: sid, CODINER_TASK_COMMAND: o.command },
   })
   fs.closeSync(fd)
   if (!p.pid) throw new Error('The task did not start')
   p.unref()
   p.on('error', () => {})
-  // cmd.exe has no wrapper to write the code: Codiner writes it, if it is still up.
-  if (WIN && !sh) p.on('exit', (code) => { if (code != null) fs.writeFile(exitPath(id), `${code}\n`, () => {}) })
   const t: Task = { id, sid, title: o.title, command: o.command, cwd: o.cwd, pid: p.pid, started: Date.now(), notify: o.notify ?? 'next' }
   tasks.push(t)
   save()
@@ -99,16 +103,24 @@ export function stopTask(id: string, by: 'user' | 'agent'): Task {
   t.stopped = by
   save()
   // The whole group: the wrapper, the command and whatever it started.
-  kill(t.pid, false)
-  setTimeout(() => { if (!t.ended && alive(t.pid)) kill(t.pid, true) }, 5000).unref()
+  kill(t, false)
+  setTimeout(() => { if (!t.ended && alive(t.pid)) kill(t, true) }, 5000).unref()
   return t
 }
 
 const WIN = process.platform === 'win32'
 
-function kill(pid: number, force: boolean) {
-  if (WIN) spawn('taskkill', ['/pid', String(pid), '/T', ...(force ? ['/F'] : [])], { stdio: 'ignore', windowsHide: true }).on('error', () => {})
-  else try { process.kill(-pid, force ? 'SIGKILL' : 'SIGTERM') } catch { /* gone */ }
+// Without Git Bash, the wrapper is cmd-task.ts.
+const CMD_WRAPPER = path.join(import.meta.dirname, 'cmd-task.ts')
+
+function kill(t: Task, force: boolean) {
+  if (!WIN) { try { process.kill(-t.pid, force ? 'SIGKILL' : 'SIGTERM') } catch { /* gone */ } return }
+  const spawnQuiet = (cmd: string, args: string[]) => spawn(cmd, args, { stdio: 'ignore', windowsHide: true }).on('error', () => {})
+  let group = ''
+  try { group = fs.readFileSync(pidPath(t.id), 'utf8').trim() } catch { /* a cmd.exe task */ }
+  const sh = shell()
+  if (sh && /^\d+$/.test(group)) spawnQuiet(sh, ['-c', `kill -${force ? 'KILL' : 'TERM'} -- -${group}`])
+  if (force || !group) spawnQuiet('taskkill', ['/pid', String(t.pid), '/T', '/F'])
 }
 
 // Git Bash on Windows, if there is one (the place Claude Code looks first, then the usual ones).
@@ -132,7 +144,7 @@ export function removeTask(id: string) {
   const t = taskOf(id)
   if (!t || !t.ended) throw new Error('Only an ended task can be removed')
   tasks = tasks.filter((x) => x.id !== id)
-  for (const f of [logPath(id), exitPath(id)]) fs.rmSync(f, { force: true })
+  for (const f of files(id)) fs.rmSync(f, { force: true })
   save()
 }
 

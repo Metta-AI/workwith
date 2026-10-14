@@ -32,7 +32,7 @@ import { handleMcp, type Tool } from './mcp.ts'
 import { blame, initFileHistory, moveHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
 import { authState, cancelLogin, childEnv, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
 import {
-  DATA, LEAD_DIR, LEAD_NOTES, OLD_LEAD_NOTES, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, leadRenamed, resolveModel, loadSessions, loadSettings, saveImage, saveSessions, saveSettings,
+  DATA, LEAD_DIR, LEAD_NOTES, OLD_LEAD_NOTES, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, leadRenamed, resolveModel, loadSessions, promptFile, loadSettings, saveImage, saveSessions, saveSettings,
 } from './store.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -91,6 +91,41 @@ esac
 `
 // Commands opened in Terminal from a <run> block, by token, until they report back.
 const runs = new Map<string, { sid: string; log: string }>()
+
+// Windows: a <run> command in a new PowerShell window in the session's directory.
+// Windows PowerShell has no `script`, and its transcript misses what programs print,
+// so when the command ends the script copies the window's text from where the
+// command began. On success the window closes; on failure it stays at a prompt.
+function runWindows(sid: string, cwd: string, cmd: string): string {
+  const token = randomUUID().slice(0, 12)
+  const file = path.join(os.tmpdir(), `codiner-${token}.ps1`)
+  const log = path.join(os.tmpdir(), `codiner-${token}.log`)
+  const q = (x: string) => `'${x.replace(/'/g, "''")}'`
+  runs.set(token, { sid, log })
+  // With a BOM, or Windows PowerShell reads the file in the ANSI code page.
+  fs.writeFileSync(file, '﻿' + [
+    'Remove-Item -LiteralPath $PSCommandPath -ErrorAction SilentlyContinue',
+    `Set-Location -LiteralPath ${q(cwd)}`,
+    `Write-Host ('$ ' + ${q(cmd)})`,
+    '$codinerFrom = $Host.UI.RawUI.CursorPosition.Y',
+    '$global:LASTEXITCODE = 0; $Error.Clear(); $codinerOk = $false',
+    'try {', cmd, '$codinerOk = $?', '} catch { Write-Host $_ -ForegroundColor Red }',
+    '$codinerCode = if ($LASTEXITCODE) { $LASTEXITCODE } elseif (-not $codinerOk -or $Error.Count) { 1 } else { 0 }',
+    'try {',
+    '  $ui = $Host.UI.RawUI; $to = $ui.CursorPosition.Y',
+    '  $cells = $ui.GetBufferContents((New-Object System.Management.Automation.Host.Rectangle 0, ([Math]::Max($codinerFrom, $to - 200)), ($ui.BufferSize.Width - 1), $to))',
+    '  $lines = for ($y = 0; $y -le $cells.GetUpperBound(0); $y++) { (-join (0..$cells.GetUpperBound(1) | ForEach-Object { $cells[$y, $_].Character })).TrimEnd() }',
+    `  [IO.File]::WriteAllText(${q(log)}, ($lines -join "\`n"))`,
+    '} catch { }',
+    `try { Invoke-RestMethod -Method Post -TimeoutSec 5 -Uri "http://127.0.0.1:${PORT}/api/runs/${token}?code=$codinerCode" | Out-Null } catch { }`,
+    'if ($codinerCode -eq 0) { Write-Host; Write-Host "Done. This window closes."; Start-Sleep 2; [Environment]::Exit(0) }',
+    '',
+  ].join('\r\n'))
+  // `start` gives it a window of its own; -NoExit keeps that window after a failure.
+  spawn(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', `"start "Codiner" powershell.exe -NoExit -ExecutionPolicy Bypass -File "${file}""`],
+    { cwd, windowsHide: true, windowsVerbatimArguments: true, stdio: 'ignore', detached: true }).on('error', (e) => console.error('run', e.message)).unref()
+  return token
+}
 let lastCommands: SlashCommand[] = (() => { try { return JSON.parse(fs.readFileSync(COMMANDS_FILE, 'utf8')) } catch { return [] } })()
 
 const metas = () => [...sessions.values()].map((s) => s.meta)
@@ -338,7 +373,7 @@ function taskTools(id: string): Tool[] {
     },
     {
       name: 'stop_task',
-      description: process.platform !== 'win32' ? 'Stop one of your tasks: SIGTERM to its process group, then SIGKILL after 5 seconds.' : 'Stop one of your tasks: taskkill /T on its process tree, then with /F after 5 seconds.',
+      description: process.platform !== 'win32' ? 'Stop one of your tasks: SIGTERM to its process group, then SIGKILL after 5 seconds.' : 'Stop one of your tasks: in Git Bash, SIGTERM to its process group, then SIGKILL after 5 seconds; in cmd.exe, taskkill /T /F on its process tree.',
       inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } },
       run: (args) => { const t = mine(args?.id); if (t.ended) return `It already ended.`; stopTask(t.id, 'agent'); return `Stopping task \`${t.id}\`.` },
     },
@@ -679,10 +714,13 @@ const contexts = new Map<string, { at: number; text: string }>()
 function startContext(cwd: string, fresh: boolean): Promise<string> {
   const hit = contexts.get(cwd)
   if (hit && !fresh && Date.now() - hit.at < 600_000) return Promise.resolve(hit.text)
-  const { args, prompt } = launchFor(newMeta({ cwd, title: 'context' }))()
+  const meta = newMeta({ cwd, title: 'context' })
+  const { args, prompt } = launchFor(meta)()
+  const file = promptFile(meta.id, prompt)
   return new Promise((resolve, reject) => {
-    execFile(process.env.CODINER_CLAUDE ?? 'claude', ['-p', '--output-format', 'json', '--no-session-persistence', '--append-system-prompt', prompt, ...args, '--', '/context'],
+    execFile(process.env.CODINER_CLAUDE ?? 'claude', ['-p', '--output-format', 'json', '--no-session-persistence', '--append-system-prompt-file', file, ...args, '--', '/context'],
       { cwd, env: childEnv(), timeout: 120_000, maxBuffer: 8 << 20 }, (err, out) => {
+        fs.rm(file, { force: true }, () => {})
         let text = ''
         try { text = String(JSON.parse(out).result ?? '') } catch { /* reported below */ }
         if (!text) return reject(new Error(err?.message ?? 'Claude Code gave no answer'))
@@ -950,9 +988,10 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     case 'run': {
       // A command Claude asked you to run, opened in a new Terminal window in the session's
       // directory. A .command file opens in the default terminal app and needs no Automation permission.
-      if (process.platform !== 'darwin') throw new HttpError(400, 'Run in Terminal is macOS-only')
       const cmd = String(body.command ?? '').trim()
       if (!cmd) throw new HttpError(400, 'No command')
+      if (process.platform === 'win32') return send(res, 200, { token: runWindows(s.meta.id, s.meta.cwd, cmd) })
+      if (process.platform !== 'darwin') throw new HttpError(400, 'Run in Terminal is macOS and Windows only')
       // `script` keeps the terminal interactive and records what the command prints; when the
       // command ends, the script reports its exit code back, and the result goes to the item.
       const token = randomUUID().slice(0, 12)
@@ -1130,15 +1169,8 @@ function restart() {
 
 // No sh on Windows: a small node process waits for this one to go, then starts the new one.
 function restartWindows() {
-  const script = `const { spawn, execSync } = require('node:child_process'), fs = require('node:fs')
-const [log, dev, cwd, ...cmd] = JSON.parse(process.argv[1])
-setTimeout(() => {
-  const fd = fs.openSync(log, 'a')
-  if (!dev) try { execSync('npx vite build', { cwd, stdio: ['ignore', fd, fd] }) } catch { process.exit(1) }
-  spawn(cmd[0], cmd.slice(1), { cwd, detached: true, windowsHide: true, stdio: ['ignore', fd, fd] }).unref()
-}, 1000)`
   const args = [path.join(DATA, 'server.log'), DEV, process.cwd(), process.execPath, ...process.argv.slice(1)]
-  spawn(process.execPath, ['-e', script, JSON.stringify(args)], { cwd: process.cwd(), env: process.env, detached: true, windowsHide: true, stdio: 'ignore' }).unref()
+  spawn(process.execPath, [path.join(ROOT, 'server', 'restart-windows.ts'), JSON.stringify(args)], { cwd: process.cwd(), env: process.env, detached: true, windowsHide: true, stdio: 'ignore' }).unref()
   shutdown()
 }
 

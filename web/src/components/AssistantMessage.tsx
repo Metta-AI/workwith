@@ -418,10 +418,10 @@ function RunCard({ c, card, title, command, ready }: { c: Ctx; card: string; tit
   return (
     <div className="run-card" onMouseUp={(e) => e.stopPropagation()}>
       {title && <div className="run-title" dangerouslySetInnerHTML={{ __html: renderInline(title) }} />}
-      <pre className="hljs" dangerouslySetInnerHTML={{ __html: highlight(command, 'bash') }} />
+      <pre className="hljs" dangerouslySetInnerHTML={{ __html: highlight(command, st.platform === 'win32' ? 'powershell' : 'bash') }} />
       {ready && command && (
         <div className="run-actions">
-          {st.platform === 'darwin' && (
+          {(st.platform === 'darwin' || st.platform === 'win32') && (
             <button className="primary" onClick={() => api<{ token: string }>(`/api/sessions/${c.sid}/run`, 'POST', { command }).then(({ token }) => {
               state.runs[token] = { sid: c.sid, card, command, ...(c.within ? { item: { key: c.within.key, label: c.within.label } } : {}) }
               changed()
