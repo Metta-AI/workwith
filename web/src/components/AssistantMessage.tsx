@@ -168,17 +168,29 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
   useLayoutEffect(place)
 
   // Without room left of the text, a row's emoji pile up (overlap), just enough to stay clear of the sidebar.
+  // Hovering a pile fans it out: its emoji step up across a few levels (--y), so that neighbours no longer cover each other,
+  // and its box grows (--fan levels up and down) to hold them.
   const pile = () => {
     const el = root.current, pane = el?.closest('.transcript')
     if (!el || !pane) return
     const min = pane.getBoundingClientRect().left + 4
     for (const r of el.querySelectorAll<HTMLElement>(':scope > .rail-row')) {
       r.style.removeProperty('--pile')
+      for (const e of r.querySelectorAll<HTMLElement>('.em, .react-mark, .ack-btn')) { e.style.removeProperty('--y'); e.style.removeProperty('--fan') }
       const over = min - r.getBoundingClientRect().left
       const ems = r.querySelectorAll<HTMLElement>('.em + .em')
       if (over <= 0 || !ems.length) continue
       // At least a third of each emoji stays in view.
-      r.style.setProperty('--pile', `${-Math.min(over / ems.length, ems[0].offsetWidth * 2 / 3)}px`)
+      const w = ems[0].offsetWidth, pile = Math.min(over / ems.length, w * 2 / 3)
+      r.style.setProperty('--pile', `${-pile}px`)
+      // As many levels as it takes for an emoji to clear the one on the same level before it.
+      const k = Math.min(3, Math.ceil(w / (w - pile)))
+      if (k > 1) for (const m of r.querySelectorAll<HTMLElement>('.react-mark, .ack-btn')) {
+        const ems = m.querySelectorAll<HTMLElement>('.em'), n = Math.min(k, ems.length)
+        if (n < 2) continue
+        ems.forEach((e, i) => e.style.setProperty('--y', `${(n - 1) / 2 - i % n}`))
+        m.style.setProperty('--fan', `${(n - 1) / 2}`)
+      }
     }
   }
   const pileRef = useRef(pile)
