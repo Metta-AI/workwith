@@ -261,6 +261,19 @@ function resumeHistory(claudeId: string): Session {
 // the board; a worker gets who else is at work in its directory, from the
 // ~/.claude/bin/agents helper when there is one, so it need not check first.
 const AGENTS_BIN = path.join(os.homedir(), '.claude', 'bin', 'agents')
+// When a proxy names the signed-in person in a header (CODINER_USER_HEADER, e.g.
+// "Tailscale-User-Login"), Claude is told who is writing whenever that changes, so
+// several people can share one Codiner. Kept in memory: a restart tells it again.
+const USER_HEADER = process.env.CODINER_USER_HEADER?.toLowerCase()
+const speakers = new Map<string, string>()
+function speakerNote(s: Session, req: http.IncomingMessage): string {
+  const raw = USER_HEADER ? req.headers[USER_HEADER] : undefined
+  const login = (Array.isArray(raw) ? raw[0] : raw)?.trim()
+  if (!login || speakers.get(s.meta.id) === login) return ''
+  speakers.set(s.meta.id, login)
+  return `[Codiner] This message, and the ones after it until told otherwise, come from ${login}.`
+}
+
 function hiddenFor(s: Session): { hidden?: string } {
   if (s.meta.kind === 'lead') return { hidden: board() }
   const out: string[] = []
@@ -660,7 +673,10 @@ class HttpError extends Error {
   constructor(status: number, message: string) { super(message); this.status = status }
 }
 
-const LOCAL_HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`])
+// Behind a reverse proxy that does its own auth, CODINER_HOSTS names the hosts it
+// serves Codiner as (comma-separated, e.g. "workwith.synth.example.com").
+const LOCAL_HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`,
+  ...(process.env.CODINER_HOSTS ?? '').split(',').map((h) => h.trim()).filter(Boolean)])
 const localHost = (req: http.IncomingMessage) => LOCAL_HOSTS.has(req.headers.host ?? '')
 const localOrigin = (req: http.IncomingMessage) => {
   const o = req.headers.origin
@@ -940,7 +956,10 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       const p: Part[] = Array.isArray(body.parts) ? body.parts : []
       // The lead's drafts that went with your reply.
       if (Array.isArray(body.inbox) && body.inbox.length) { s.meta.inbox = s.meta.inbox.filter((i) => !body.inbox.includes(i.id)); metaChanged() }
-      s.send(p, hiddenFor(s))
+      const opts = hiddenFor(s)
+      const who = speakerNote(s, req)
+      if (who) opts.hidden = opts.hidden ? `${opts.hidden}\n\n${who}` : who
+      s.send(p, opts)
       return send(res, 200, { ok: true })
     }
     case 'drafting':
