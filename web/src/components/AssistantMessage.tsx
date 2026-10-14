@@ -331,7 +331,7 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     const own = here ? r.items.find((it) => it.key === target!.key) : undefined
     const ack = (
       <div key="ack" className="rail-ack">
-        <button className={`ack-btn${on.size ? ' on' : ''}${own ? ' over' : ''}`} title={own ? 'Comment or change reactions (hold or drag up for more)' : 'React with last emoji (hold or drag up for more)'} onPointerDown={press}
+        <button className={`ack-btn${on.size ? ' on' : ''}${own ? ' over' : ''}`} aria-label={own ? 'Comment or change reactions' : 'React with last emoji'} onPointerDown={press}
           onMouseEnter={() => focusPassage(sid, own ? { anchor: own.anchor } : null)} onMouseLeave={() => focusPassage(sid, null)}>
           <span>{own ? own.emoji.map((e) => <span key={e} className="em">{e}</span>) : lastEmoji()}</span>
         </button>

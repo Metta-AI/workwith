@@ -82,7 +82,7 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
   const [open, setOpen] = useState<string | null>(null)
   const openRef = useRef(open)
   openRef.current = open
-  // Without a gutter: the card of the highlight under the pointer, kept a moment after it leaves so you can move onto the card.
+  // Without a gutter: the card of the highlight under the pointer. It goes one frame after the pointer leaves; a click keeps it open.
   const [peek, setPeek] = useState<string | null>(null)
   const peekRef = useRef(peek)
   peekRef.current = peek
@@ -176,7 +176,7 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
     const show = (id: string | null) => {
       clearTimeout(timer)
       if (id) setPeek(id)
-      else timer = window.setTimeout(() => setPeek(null), 50)
+      else timer = window.setTimeout(() => setPeek(null), 16)
     }
     const set = (id: string | null) => {
       if (hovered.current === id) return
