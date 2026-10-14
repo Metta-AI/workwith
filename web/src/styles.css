@@ -306,6 +306,8 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .rail-ack { position: relative; }
 .ack-btn, .react-mark { display: block; border: 1px solid transparent; padding: 0 3px; font-size: calc(14px * var(--fs, 1)); line-height: 20px; border-radius: 6px; white-space: nowrap; user-select: none; }
 .react-mark { background: none; cursor: pointer; }
+.rail-row .em { display: inline-block; }
+.rail-row .em + .em { margin-left: var(--pile, 0px); }
 .react-mark.draft { background: var(--accent-soft); }
 .react-mark:hover { border-color: var(--line); }
 .ack-btn { background: var(--bg); touch-action: none; }

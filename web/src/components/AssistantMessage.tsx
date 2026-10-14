@@ -20,7 +20,7 @@ import type { TrackedItem } from '../items.ts'
 import { RichInput, Thumbs } from './Inputs.tsx'
 import { CheckIcon, CommentIcon, TerminalIcon, UndoIcon, XIcon } from './Icons.tsx'
 import { EmojiPicker } from './EmojiPicker.tsx'
-import { focusPassage } from './Margin.tsx'
+import { focusPassage, onPassage } from './Margin.tsx'
 import { lastEmoji, topEmoji, usedEmoji } from '../emoji.ts'
 import { highlight } from '../highlight.ts'
 
@@ -132,7 +132,9 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
   const [row, setRow] = useState(false)
   const [search, setSearch] = useState(false)
   const busy = useRef(false)
-  busy.current = row || search
+  // From the press on, so a drag up to the row doesn't pass the target to the line above.
+  const pressing = useRef(false)
+  busy.current = row || search || pressing.current
   const targetRef = useRef(target)
   targetRef.current = target
 
@@ -164,8 +166,26 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
   const placeRef = useRef(place)
   placeRef.current = place
   useLayoutEffect(place)
+
+  // Without room left of the text, a row's emoji pile up (overlap), just enough to stay clear of the sidebar.
+  const pile = () => {
+    const el = root.current, pane = el?.closest('.transcript')
+    if (!el || !pane) return
+    const min = pane.getBoundingClientRect().left + 4
+    for (const r of el.querySelectorAll<HTMLElement>(':scope > .rail-row')) {
+      r.style.removeProperty('--pile')
+      const over = min - r.getBoundingClientRect().left
+      const ems = r.querySelectorAll<HTMLElement>('.em + .em')
+      if (over <= 0 || !ems.length) continue
+      // At least a third of each emoji stays in view.
+      r.style.setProperty('--pile', `${-Math.min(over / ems.length, ems[0].offsetWidth * 2 / 3)}px`)
+    }
+  }
+  const pileRef = useRef(pile)
+  pileRef.current = pile
+  useLayoutEffect(pile)
   useEffect(() => {
-    const ro = new ResizeObserver(() => placeRef.current())
+    const ro = new ResizeObserver(() => { placeRef.current(); pileRef.current() })
     if (root.current) ro.observe(root.current)
     return () => ro.disconnect()
   }, [root])
@@ -208,8 +228,7 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     if (!el) return
     const click = (e: MouseEvent) => {
       if (!getSelection()?.isCollapsed) return
-      const hit = itemsRef.current.find((it) => !it.whole && rangesFor(it.anchor, el).some((r) => [...r.getClientRects()].some((b) =>
-        e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom)))
+      const hit = itemsRef.current.find((it) => !it.whole && onPassage(rangesFor(it.anchor, el), e.clientX, e.clientY))
       if (hit) commentOn(hit.anchor, hit.quote, false)
     }
     el.addEventListener('click', click)
@@ -234,7 +253,8 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     focusPassage(sid, null)
     const k = keyOf(anchor)
     const open = draftsOf(sid).find((d): d is NoteDraft => d.kind === 'note' && !d.reaction && keyOf(d.anchor) === k)
-    if (open) { state.focus = open.id; changed(); document.querySelector<HTMLElement>(`.note-card[data-id="${open.id}"] .ri-edit`)?.focus(); return }
+    // Without a gutter the card shows only after the render that state.focus causes, so focus it on the next frame.
+    if (open) { state.focus = open.id; changed(); requestAnimationFrame(() => document.querySelector<HTMLElement>(`.note-card[data-id="${open.id}"] .ri-edit`)?.focus()); return }
     const itemKey = itemOf(anchor)
     addDraft(sid, { id: uid(), kind: 'note', anchor, quote, text: '', images: [], createdAt: Date.now(), ...(whole ? { whole } : {}), ...(itemKey ? { itemKey } : {}) })
   }
@@ -256,6 +276,7 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
   }
   const press = (e: React.PointerEvent) => {
     e.preventDefault()
+    pressing.current = busy.current = true
     let held = false
     const y0 = e.clientY
     const open = () => { if (!held) { held = true; setRow(true) } }
@@ -265,6 +286,9 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
       document.removeEventListener('pointerup', up)
       document.removeEventListener('pointermove', move)
       clearTimeout(timer)
+      pressing.current = false
+      // A held press opened the row, which keeps it busy; a click did not.
+      if (!held) busy.current = false
       if (!held) {
         // On a line with reactions, a click opens its comment card; on a bare line it adds your last emoji.
         const t = targetRef.current, own = t && itemsRef.current.find((it) => it.whole && it.key === t.key)
@@ -280,6 +304,16 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
   const all = target && !rows.some((r) => r.top === target.top) ? [...rows, { top: target.top, items: [] }] : rows
   // Only reactions that draw something: a stray variation selector or skin tone would show as an empty ring.
   const on = new Set(target ? mine().map((d) => d.text.trim()).filter((e) => /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(e)) : [])
+  // The row and the remove button to its left stay right of the transcript's edge, clear of the sidebar.
+  const pop = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = pop.current, pane = el?.closest('.transcript')
+    if (!el || !pane) return
+    el.style.left = ''
+    const left = Math.min(...[...el.children].map((c) => c.getBoundingClientRect().left))
+    const min = pane.getBoundingClientRect().left + 8
+    if (left < min) el.style.left = `${el.offsetLeft + min - left}px`
+  }, [row, on.size])
   return <>{all.map((r) => {
     const here = target?.top === r.top
     const own = here ? r.items.find((it) => it.key === target!.key) : undefined
@@ -287,10 +321,10 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
       <div key="ack" className="rail-ack">
         <button className={`ack-btn${on.size ? ' on' : ''}${own ? ' over' : ''}`} title={own ? 'Comment or change reactions (hold or drag up for more)' : 'React with last emoji (hold or drag up for more)'} onPointerDown={press}
           onMouseEnter={() => focusPassage(sid, own ? { anchor: own.anchor } : null)} onMouseLeave={() => focusPassage(sid, null)}>
-          <span>{own ? own.emoji.join('') : lastEmoji()}</span>
+          <span>{own ? own.emoji.map((e) => <span key={e} className="em">{e}</span>) : lastEmoji()}</span>
         </button>
         {row && (
-          <div className="ack-pop">
+          <div className="ack-pop" ref={pop}>
           {/* Takes your reactions off this paragraph: outside the row, so it can't be mistaken for an emoji. */}
           {on.size > 0 && <button className="ack-clear" data-emoji="remove" title="Remove your reactions" onClick={() => toggle('remove')}><XIcon size={14} /></button>}
           <div className="ack-row">
@@ -310,7 +344,7 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
             key={it.key} className={`react-mark${it.drafts.length ? ' draft' : ''}`}
             onMouseEnter={() => focusPassage(sid, { anchor: it.anchor })} onMouseLeave={() => focusPassage(sid, null)}
             onClick={() => commentOn(it.anchor, it.quote, it.whole)}
-          >{it.emoji.join('')}</button>
+          >{it.emoji.map((e) => <span key={e} className="em">{e}</span>)}</button>
         ))}
         {here && !own && ack}
       </div>

@@ -2,8 +2,9 @@
 // level with the first line of its highlight, cards that would overlap stack
 // downward, and the focused card is pinned to its highlight, pushing its
 // neighbours out of the way. When the transcript is too narrow for a gutter,
-// a card shows only while you write in it or after you click its highlight:
-// under the highlight's last line, centred on it, over the text that follows.
+// a card shows only while you write in it, after you click its highlight, or
+// while you hover the highlight: under the highlight's last line, centred on
+// it, over the text that follows.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { rangesFor, setHighlights } from '../anchoring.ts'
@@ -27,6 +28,17 @@ export const rangesOfNote = (sid: string, d: { anchor: NoteDraft['anchor'] }) =>
   return el ? rangesFor(d.anchor, el) : []
 }
 
+// Is the point on the passage? Each line's box reaches down to the next line of
+// the passage, so the gap between two lines counts as on it.
+export function onPassage(ranges: Range[], x: number, y: number) {
+  const rects = ranges.flatMap((r) => [...r.getClientRects()]).sort((a, b) => a.top - b.top)
+  return rects.some((b, i) => {
+    const next = rects.slice(i + 1).find((n) => n.top >= b.bottom)
+    const bottom = next && next.top - b.bottom < b.height ? next.top : b.bottom
+    return x >= b.left && x <= b.right && y >= b.top && y <= bottom
+  })
+}
+
 // Darken one comment's passage while its card (or its sent copy) is hovered or focused.
 // A quick reaction to a passage: an emoji as (part of) the comment.
 const toggleReaction = (text: string, r: string) =>
@@ -42,15 +54,15 @@ type Props = { sid: string; inner: React.RefObject<HTMLDivElement | null>; colum
 // only), and reactions (an emoji alone), as small badges.
 type Entry = { id: string; anchor: Anchor; kind: 'draft' | 'sent' | 'badge'; text: string; images?: ImageRef[]; draft?: NoteDraft }
 
-function sentEntries(events: Event[], gutter: boolean): Entry[] {
+function sentEntries(events: Event[]): Entry[] {
   const out: Entry[] = []
   for (const e of events) {
     if (e.t !== 'user') continue
     e.parts.forEach((p, i) => {
       // A reply to a whole item (the lead's) has no passage to sit beside.
       if (p.kind !== 'note' || !p.anchor.pieces.length) return
-      // Reactions show beside their passage (AssistantMessage); without a gutter, sent cards would sit over the text.
-      if (isReaction(p.text) && !p.images?.length || !gutter) return
+      // Reactions show beside their passage (AssistantMessage).
+      if (isReaction(p.text) && !p.images?.length) return
       out.push({ id: `s${e.seq}.${i}`, anchor: p.anchor, kind: 'sent', text: p.text, images: p.images })
     })
   }
@@ -61,7 +73,7 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
   useStore()
   const drafts = draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note')
   const notes: Entry[] = [
-    ...sentEntries(events, gutter),
+    ...sentEntries(events),
     ...drafts.filter((d) => !d.reaction).map((d): Entry => ({ id: d.id, anchor: d.anchor, kind: 'draft', text: d.text, images: d.images, draft: d })),
   ]
   const layer = useRef<HTMLDivElement>(null)
@@ -70,6 +82,10 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
   const [open, setOpen] = useState<string | null>(null)
   const openRef = useRef(open)
   openRef.current = open
+  // Without a gutter: the card of the highlight under the pointer, kept a moment after it leaves so you can move onto the card.
+  const [peek, setPeek] = useState<string | null>(null)
+  const peekRef = useRef(peek)
+  peekRef.current = peek
 
   const layout = () => {
     const box = inner.current, col = column.current, el = layer.current
@@ -84,7 +100,8 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
       const lastRects = ranges.at(-1)?.getClientRects()
       const last = lastRects?.[lastRects.length - 1]
       const badge = card.classList.contains('react-badge')
-      const hidden = !first || (!gutter && !badge && card.dataset.id !== openRef.current)
+      // A new card (state.focus) shows at once, so that it can take the focus.
+      const hidden = !first || (!gutter && !badge && ![openRef.current, peekRef.current, state.focus].includes(card.dataset.id!))
       card.style.display = hidden ? 'none' : ''
       if (hidden) return { card, want: null, h: 0, id: card.dataset.id }
       if (gutter) {
@@ -131,7 +148,7 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
     if (layer.current) for (const c of layer.current.children) ro.observe(c)
     return () => ro.disconnect()
   }, [notes.length, gutter])
-  useEffect(() => { layoutRef.current() }, [events, open])
+  useEffect(() => { layoutRef.current() }, [events, open, peek])
 
   // Without a gutter, a click on a highlight shows its card and puts the caret in it.
   useEffect(() => {
@@ -139,8 +156,7 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
     if (!box || gutter) return
     const click = (e: MouseEvent) => {
       if (!getSelection()?.isCollapsed || (e.target as Element).closest?.('.note-card')) return
-      const hit = notesRef.current.find((n) => n.kind === 'draft' && rangesOfNote(sid, n).some((r) => [...r.getClientRects()].some((b) =>
-        e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom)))
+      const hit = notesRef.current.find((n) => n.kind === 'draft' && onPassage(rangesOfNote(sid, n), e.clientX, e.clientY))
       if (!hit) return
       setOpen(hit.id)
       requestAnimationFrame(() => layer.current?.querySelector<HTMLElement>(`.note-card[data-id="${hit.id}"] .ri-edit`)?.focus())
@@ -156,7 +172,12 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
   useEffect(() => {
     const box = inner.current
     if (!box) return
-    let raf = 0
+    let raf = 0, timer = 0
+    const show = (id: string | null) => {
+      clearTimeout(timer)
+      if (id) setPeek(id)
+      else timer = window.setTimeout(() => setPeek(null), 50)
+    }
     const set = (id: string | null) => {
       if (hovered.current === id) return
       hovered.current = id
@@ -164,22 +185,34 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
       const n = notesRef.current.find((x) => x.id === (id ?? focused.current))
       focusPassage(sid, n ?? null)
     }
+    // Without a gutter, the gap between a highlight and the card under it counts as on the highlight.
+    const bridge = (x: number, y: number) => {
+      const n = !gutter && notesRef.current.find((d) => d.id === peekRef.current)
+      const card = n && layer.current?.querySelector<HTMLElement>(`.note-card[data-id="${n.id}"]`)
+      if (!n || !card || card.style.display === 'none') return null
+      const b = card.getBoundingClientRect()
+      const bottom = Math.max(...rangesOfNote(sid, n).flatMap((r) => [...r.getClientRects()].map((c) => c.bottom)))
+      return x >= b.left && x <= b.right && y >= bottom && y <= b.top ? n.id : null
+    }
     const move = (e: MouseEvent) => {
       cancelAnimationFrame(raf)
       raf = requestAnimationFrame(() => {
         const t = e.target as Element | null
-        if (t?.closest?.('.note-card')) return // the card handles its own hover
-        if (!t?.closest?.('.assistant-text')) return set(null)
-        const hit = notesRef.current.find((n) => rangesOfNote(sid, n).some((r) => [...r.getClientRects()].some((b) =>
-          e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom)))
+        const card = t?.closest?.<HTMLElement>('.note-card')
+        if (card) return show(card.dataset.id ?? null) // the card handles its own hover
+        const gap = bridge(e.clientX, e.clientY)
+        if (gap) { show(gap); return set(gap) }
+        if (!t?.closest?.('.assistant-text')) { show(null); return set(null) }
+        const hit = notesRef.current.find((n) => onPassage(rangesOfNote(sid, n), e.clientX, e.clientY))
+        show(hit?.id ?? null)
         set(hit?.id ?? null)
       })
     }
-    const leave = () => set(null)
+    const leave = () => { show(null); set(null) }
     box.addEventListener('mousemove', move)
     box.addEventListener('mouseleave', leave)
-    return () => { cancelAnimationFrame(raf); box.removeEventListener('mousemove', move); box.removeEventListener('mouseleave', leave) }
-  }, [sid])
+    return () => { cancelAnimationFrame(raf); clearTimeout(timer); box.removeEventListener('mousemove', move); box.removeEventListener('mouseleave', leave) }
+  }, [sid, gutter])
   const notesRef = useRef(notes)
   notesRef.current = notes
 
@@ -188,7 +221,7 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
       {notes.map((n) => n.kind === 'draft' ? (
         <NoteCard
           key={n.id} sid={sid} note={n.draft!}
-          onFocus={() => { focused.current = n.id; setOpen(n.id); layout(); focusPassage(sid, n) }}
+          onFocus={() => { if (state.focus === n.id) state.focus = null; focused.current = n.id; setOpen(n.id); layout(); focusPassage(sid, n) }}
           onBlur={() => {
             if (focused.current === n.id) focused.current = null
             focusPassage(sid, null)
