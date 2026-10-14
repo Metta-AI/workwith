@@ -11,7 +11,8 @@ ssh "ubuntu@$HOST" 'set -e
   if grep -q "^workwith\." /etc/caddy/Caddyfile; then echo "Caddy site already present"; exit 1; fi
   sudo cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak-$(date +%Y%m%d%H%M)
   cat /etc/caddy/Caddyfile /tmp/caddy-site > /tmp/Caddyfile.new
-  sudo caddy validate --config /tmp/Caddyfile.new --adapter caddyfile
+  # validate provisions the DNS module, so it needs the token the caddy unit loads.
+  sudo sh -c "set -a; . /run/caddy-cf.env; caddy validate --config /tmp/Caddyfile.new --adapter caddyfile 2>/dev/null" && echo "Caddyfile valid"
   sudo install -m644 /tmp/codiner-workwith.service /etc/systemd/system/
   sudo install -m644 /tmp/Caddyfile.new /etc/caddy/Caddyfile
   sudo systemctl daemon-reload
