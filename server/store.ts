@@ -1,4 +1,4 @@
-// On-disk state, all under ~/.codiner:
+// On-disk state, all under ~/.codinger:
 //   sessions.json        every session's metadata
 //   events/<id>.jsonl    each session's event log, append-only
 //   images/<sha>.<ext>   images pasted into replies (content-addressed)
@@ -10,7 +10,19 @@ import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Event, ImageRef, SessionMeta, Settings } from '../shared/types.ts'
 
-export const DATA = process.env.CODINER_HOME ?? path.join(os.homedir(), '.codiner')
+export const DATA = process.env.CODINGER_HOME ?? process.env.CODINER_HOME ?? path.join(os.homedir(), '.codinger')
+// Codinger was called Codiner until October 2026. Move ~/.codiner once, and leave a link
+// there for the sessions and tasks that a restart keeps running, which still use the old path.
+// Claude Code keeps the lead's conversation under its directory's name: move that too.
+const OLD_DATA = path.join(os.homedir(), '.codiner')
+if (DATA === path.join(os.homedir(), '.codinger') && !fs.existsSync(DATA) && fs.existsSync(OLD_DATA) && !fs.lstatSync(OLD_DATA).isSymbolicLink()) {
+  fs.renameSync(OLD_DATA, DATA)
+  fs.symlinkSync(DATA, OLD_DATA)
+  const projects = path.join(process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude'), 'projects')
+  const key = (dir: string) => path.join(projects, dir.replace(/[^A-Za-z0-9]/g, '-'))
+  const from = key(path.join(OLD_DATA, 'lead')), to = key(path.join(DATA, 'lead'))
+  if (fs.existsSync(from) && !fs.existsSync(to)) fs.renameSync(from, to)
+}
 const EVENTS = path.join(DATA, 'events')
 export const IMAGES = path.join(DATA, 'images')
 export const LEAD_DIR = path.join(DATA, 'lead')
@@ -29,7 +41,7 @@ const SETTINGS = path.join(DATA, 'settings.json')
 export function loadSessions(): SessionMeta[] {
   let all: SessionMeta[]
   try { all = JSON.parse(fs.readFileSync(SESSIONS, 'utf8')) } catch { return [] }
-  return all.map(renameMaster)
+  return all.map(renameMaster).map((m) => m.cwd.startsWith(OLD_DATA + path.sep) ? { ...m, cwd: DATA + m.cwd.slice(OLD_DATA.length) } : m)
 }
 
 // The old master session becomes the lead: new id, kind and directory. Claude Code
@@ -96,6 +108,8 @@ const eventsFile = (id: string) => path.join(EVENTS, `${id}.jsonl`)
 export function readEvents(id: string): Event[] {
   let raw = ''
   try { raw = fs.readFileSync(eventsFile(id), 'utf8') } catch { return [] }
+  // Codinger was called Codiner until October 2026: its messages and its tools had the old name.
+  raw = raw.replaceAll('"from":"codiner"', '"from":"codinger"').replaceAll('"mcp__codiner__', '"mcp__codinger__')
   const out: Event[] = []
   for (const line of raw.split('\n')) if (line.trim()) try { out.push(JSON.parse(line)) } catch { /* torn write */ }
   return out

@@ -23,7 +23,7 @@ async function handleOne(m: any, tools: Tool[]): Promise<unknown> {
       return ok({
         protocolVersion: m.params?.protocolVersion ?? '2025-06-18',
         capabilities: { tools: {} },
-        serverInfo: { name: 'codiner', version: '0.1.0' },
+        serverInfo: { name: 'codinger', version: '0.1.0' },
       })
     case 'ping':
       return ok({})

@@ -1,4 +1,4 @@
-// The user's global AGENTS.md: instructions for every Codiner session, workers
+// The user's global AGENTS.md: instructions for every Codinger session, workers
 // and lead alike. It is read each time a claude process starts, so an edit
 // reaches a session the next time it wakes (sessions sleep when idle).
 
@@ -10,7 +10,7 @@ export const AGENTS_FILE = path.join(DATA, 'AGENTS.md')
 
 const DEFAULT = `# AGENTS.md
 
-These instructions apply to every Codiner session.
+These instructions apply to every Codinger session.
 
 ## Write in ASD-STE100 Simplified Technical English
 
@@ -46,7 +46,7 @@ export function writeAgentsMd(text: string) {
   fs.writeFileSync(AGENTS_FILE, text)
 }
 
-// What goes after Codiner's own prompt.
+// What goes after Codinger's own prompt.
 export function agentsPrompt(): string {
   const text = readAgentsMd().trim()
   return text ? `\n\n# The user's instructions (${AGENTS_FILE})\n\n${text}\n` : ''

@@ -56,7 +56,7 @@ export function AutopilotButton({ m }: { m: SessionMeta }) {
             </>
           ) : (
             <>
-              <div className="muted">After each turn, Codiner tells Claude to go on, until the budget is spent or Claude stops to ask you.</div>
+              <div className="muted">After each turn, Codinger tells Claude to go on, until the budget is spent or Claude stops to ask you.</div>
               {ap?.ended && <div className="muted">Last run ended: {ap.ended.reason}.</div>}
               <textarea rows={3} placeholder={m.started ? 'Goal (empty: go on with the task so far)' : 'Goal'} value={goal} onChange={(e) => setGoal(e.target.value)} />
               <div className="autopilot-row">

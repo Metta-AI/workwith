@@ -1,16 +1,16 @@
 // Long-running commands an agent starts with the start_task tool: dev servers,
-// watchers, long builds and test runs. Codiner runs each one in its own process
+// watchers, long builds and test runs. Codinger runs each one in its own process
 // group, apart from the claude process, so it has no time limit and keeps running
-// when the session sleeps or Codiner restarts. Its output goes to
-// ~/.codiner/tasks/<id>.log; a wrapper shell writes the exit code to <id>.exit.
+// when the session sleeps or Codinger restarts. Its output goes to
+// ~/.codinger/tasks/<id>.log; a wrapper shell writes the exit code to <id>.exit.
 //
-// Each task is marked as Codiner's and the agent's, outside Codiner too: its
-// command line in `ps` starts ": codiner-task <id> session <sid>", and it and
-// everything it starts have CODINER_TASK and CODINER_SESSION in their environment.
+// Each task is marked as Codinger's and the agent's, outside Codinger too: its
+// command line in `ps` starts ": codinger-task <id> session <sid>", and it and
+// everything it starts have CODINGER_TASK and CODINGER_SESSION in their environment.
 //
 // An ended task, and its log, goes after a week; the panel can remove one sooner.
 //
-// Stop sends SIGTERM to the task's process group (the exact pid Codiner started),
+// Stop sends SIGTERM to the task's process group (the exact pid Codinger started),
 // then SIGKILL if it is still there after 5 seconds.
 
 import { spawn } from 'node:child_process'
@@ -41,7 +41,7 @@ const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch
 
 export function startTasks(c: Ctx) {
   ctx = c
-  // Tasks that ended while Codiner was down are found on the first check.
+  // Tasks that ended while Codinger was down are found on the first check.
   setInterval(check, 2000).unref()
   check()
 }
@@ -72,12 +72,12 @@ function check() {
 export function startTask(sid: string, o: { title: string; command: string; cwd: string; notify?: TaskNotify }): Task {
   const id = randomUUID().slice(0, 8)
   const fd = fs.openSync(logPath(id), 'a')
-  fs.writeSync(fd, `# codiner task ${id} · session ${sid} · ${o.title} · ${new Date().toISOString()}\n# in ${o.cwd}\n$ ${o.command}\n\n`)
+  fs.writeSync(fd, `# codinger task ${id} · session ${sid} · ${o.title} · ${new Date().toISOString()}\n# in ${o.cwd}\n$ ${o.command}\n\n`)
   // The inner shell runs the command, so an `exit` in it still leaves the wrapper to write the code.
-  const wrapper = `: codiner-task ${id} session ${sid}; /bin/sh -c "$CODINER_TASK_COMMAND"; echo $? > '${exitPath(id)}'`
+  const wrapper = `: codinger-task ${id} session ${sid}; /bin/sh -c "$CODINGER_TASK_COMMAND"; echo $? > '${exitPath(id)}'`
   const p = spawn('/bin/sh', ['-c', wrapper], {
     cwd: o.cwd, detached: true, stdio: ['ignore', fd, fd],
-    env: { ...childEnv(), CODINER_TASK: id, CODINER_SESSION: sid, CODINER_TASK_COMMAND: o.command },
+    env: { ...childEnv(), CODINGER_TASK: id, CODINGER_SESSION: sid, CODINGER_TASK_COMMAND: o.command },
   })
   fs.closeSync(fd)
   if (!p.pid) throw new Error('The task did not start')
@@ -170,7 +170,7 @@ const span = (ms: number) => ms < 60_000 ? `${Math.round(ms / 1000)}s` : ms < 3_
 // What the agent is told when its task ends.
 export function endText(t: Task): string {
   const how = t.stopped === 'user' ? 'was stopped by the user' : t.stopped === 'agent' ? 'was stopped by you' : t.code == null ? 'ended (exit code unknown)' : `ended with exit code ${t.code}`
-  return `[Codiner] Your task \`${t.id}\` ("${t.title}") ${how}, after ${span((t.ended ?? Date.now()) - t.started)}. Log: ${logPath(t.id)}. Its last lines:\n~~~\n${tailLines(t.id)}\n~~~`
+  return `[Codinger] Your task \`${t.id}\` ("${t.title}") ${how}, after ${span((t.ended ?? Date.now()) - t.started)}. Log: ${logPath(t.id)}. Its last lines:\n~~~\n${tailLines(t.id)}\n~~~`
 }
 
 export function statusLine(t: Task): string {

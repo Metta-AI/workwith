@@ -1,15 +1,15 @@
 // A day-by-day record of what Claude Code spends at API prices, for the cost
 // view and the reviews (shared/costs.ts). Claude Code deletes its transcripts
-// after 30 days, so Codiner keeps the totals in costs.json.
+// after 30 days, so Codinger keeps the totals in costs.json.
 //
 // At start, the transcripts are read up to where the usage meter starts
 // counting (server/meter.ts), and the meter adds what comes after. A day the
 // transcripts still cover takes the larger of the two counts: the saved one
-// and the one read again (both include what was spent while Codiner ran,
+// and the one read again (both include what was spent while Codinger ran,
 // and a deleted transcript only makes the count smaller).
 //
 // Extra usage comes from claude.ai, through the endpoint Claude Code's /usage
-// reads, with Claude Code's own login. The login is only read: Codiner never
+// reads, with Claude Code's own login. The login is only read: Codinger never
 // renews it, since a renewal would end the one Claude Code holds.
 
 import fs from 'node:fs'
@@ -30,7 +30,7 @@ type Saved = { v: 1; days: Record<string, CostDay>; extra?: Extra; extraMonths?:
 const blank = (): CostDay => ({ usd: 0, prompts: 0, models: {}, hours: Array(24).fill(0) })
 let saved: Saved = { v: 1, days: {} }
 try { const x = JSON.parse(fs.readFileSync(FILE, 'utf8')); if (x.v === 1) saved = x } catch {}
-const first = saved.days                          // as saved when Codiner last ran
+const first = saved.days                          // as saved when Codinger last ran
 let base: Record<string, CostDay> = first          // then merged with the transcripts
 const live: Record<string, CostDay> = {}          // counted since start
 let scanning = false

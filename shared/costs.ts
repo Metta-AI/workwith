@@ -103,7 +103,7 @@ export function review(kind: 'week' | 'month', key: string, c: CostsReply, price
 // Which plan would have cost you least, with what it would have cost in extra usage.
 function adviceOf(p: Period, cur: Plan | null): string {
   if (!cur) return ''
-  if (!p.fits.length) return 'Codiner does not know how far your limits go yet, so it can not compare the plans.'
+  if (!p.fits.length) return 'Codinger does not know how far your limits go yet, so it can not compare the plans.'
   if (!p.usd) return 'You used no Claude Code in this time.'
   const best = [...p.fits].sort((a, b) => a.cost - b.cost || b.plan.mult - a.plan.mult)[0]
   const mine = p.fits.find((f) => f.plan.tier === cur.tier)!

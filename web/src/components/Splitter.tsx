@@ -3,8 +3,8 @@
 import { useState } from 'react'
 
 export function useWidth(key: string, initial: number): [number, (w: number) => void] {
-  const [w, setW] = useState(() => Number(localStorage.getItem(`codiner.w.${key}`)) || initial)
-  return [w, (n) => { setW(n); localStorage.setItem(`codiner.w.${key}`, String(Math.round(n))) }]
+  const [w, setW] = useState(() => Number(localStorage.getItem(`codinger.w.${key}`)) || initial)
+  return [w, (n) => { setW(n); localStorage.setItem(`codinger.w.${key}`, String(Math.round(n))) }]
 }
 
 // reverse: the panel is after the handle (on its right), so dragging left widens it.

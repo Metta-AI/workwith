@@ -1,5 +1,5 @@
 // Claude Code's own session history (~/.claude/projects/<dir>/<session>.jsonl):
-// list it cheaply, and turn one transcript into Codiner events so a session
+// list it cheaply, and turn one transcript into Codinger events so a session
 // started in a terminal can be picked up here with its conversation intact.
 
 import fs from 'node:fs'
@@ -141,7 +141,7 @@ export function lastCache(cwd: string, csid: string): { at: number; ttl: number 
 const MAX_RESULT = 8000
 const MAX_IMPORT_IMAGES = 40
 
-// A whole transcript as Codiner events. Subagent turns, injected context and
+// A whole transcript as Codinger events. Subagent turns, injected context and
 // bookkeeping entries are dropped, as they are from live sessions.
 export function importTranscript(file: string): { events: Event[]; contextUsed: number; model: string | null } {
   const events: Event[] = []
@@ -217,7 +217,7 @@ function transcriptOf(csid: string): string | null {
 
 // The entry one of your messages hangs off in a Claude Code transcript: resume
 // there and the message, and everything after it, is gone. Found by its uuid,
-// else as the nth message that starts with `text` (older Codiner logs have no
+// else as the nth message that starts with `text` (older Codinger logs have no
 // uuids). null: it was the first message; undefined: it isn't in there.
 export function entryBefore(csid: string, msg: { uuid?: string; text: string; nth: number }): string | null | undefined {
   const file = transcriptOf(csid)

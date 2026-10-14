@@ -1,7 +1,7 @@
 :root {
   --ok: #3fb950; --warn: #d4a72c; --hot: #e08a3c; --bad: #e5534b; --blue: #4c8dff;
-  /* Codiner's own lines about tasks (Transcript.tsx): a purple apart from the accent. */
-  --codiner: light-dark(#7a4cb8, #a98be0);
+  /* Codinger's own lines about tasks (Transcript.tsx): a purple apart from the accent. */
+  --codinger: light-dark(#7a4cb8, #a98be0);
   --hl-draft: light-dark(rgba(255, 196, 0, .38), rgba(255, 196, 0, .30)); --hl-sent: light-dark(rgba(255, 196, 0, .16), rgba(255, 196, 0, .13)); --hl-focus: light-dark(rgba(255, 170, 0, .62), rgba(255, 180, 0, .5));
   --mono: ui-monospace, 'SF Mono', Menlo, monospace;
   color-scheme: light dark;
@@ -399,9 +399,9 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .tool.perm-cancelled .tool-perm { color: var(--muted); }
 .tool.running .tool-name::after { content: ' …'; }
 .tool.err .tool-name { color: var(--bad); }
-/* Lines Codiner adds itself about tasks (Transcript.tsx: TaskStart, TaskEnd), in its own colour. */
-.tool.codiner-line .tool-icon, .tool.codiner-line .tool-name { color: var(--codiner); }
-.tool.codiner-line .tool-perm { color: inherit; }
+/* Lines Codinger adds itself about tasks (Transcript.tsx: TaskStart, TaskEnd), in its own colour. */
+.tool.codinger-line .tool-icon, .tool.codinger-line .tool-name { color: var(--codinger); }
+.tool.codinger-line .tool-perm { color: inherit; }
 .task-mark-btn { cursor: pointer; padding: 2px; margin: -2px; border-radius: 4px; } .task-mark-btn:hover { background: rgba(127, 127, 127, .15); }
 .log-tail { margin-top: 6px; } .log-tail > summary { color: var(--muted); font-size: calc(12.5px * var(--fs, 1)); } .log-tail > summary:hover { color: var(--text); }
 .log-tail pre { background: var(--panel); padding: 8px 10px; border-radius: 6px; overflow: auto; margin: 4px 0; }
@@ -753,7 +753,7 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .task-pct { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--blue); font-size: calc(12px * var(--fs, 1)); }
 .task-dot + .task-pct { margin-left: 5px; }
 .running-task[style*="--pct"] { background: linear-gradient(to right, color-mix(in srgb, var(--blue) 16%, var(--card)) var(--pct), var(--card) var(--pct)); }
-.running-task.waiting { color: var(--codiner); border-color: color-mix(in srgb, currentColor 45%, transparent); }
+.running-task.waiting { color: var(--codinger); border-color: color-mix(in srgb, currentColor 45%, transparent); }
 .running-task.waiting .rt-title { color: var(--text); }
 .task-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); }
 .task-dot.running { background: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 25%, transparent); }

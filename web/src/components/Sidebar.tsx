@@ -125,7 +125,7 @@ export function Sidebar({ width }: { width: number }) {
   return (
     <aside className="sidebar" style={{ width }}>
       <div className="brand">
-        <span>Codiner</span>
+        <span>Codinger</span>
         <span className={`conn ${st.connected ? 'on' : 'off'}`} title={st.connected ? 'Connected' : 'Reconnecting…'} />
       </div>
       {lead && <Row s={lead} label="Lead" active={st.selected === lead.id} onMenu={openMenu} />}
@@ -258,9 +258,9 @@ function dollars(x: number): string {
 function limitsTip(u: Usage) {
   const line = (name: string, used: number | undefined, rate: number | undefined) => used == null ? '' : rate
     ? `The ${name} limit is about ${usd(1 / rate)} at API prices. You used ${Math.round(used * 100)}% (about ${usd(used / rate)}); about ${usd((1 - used) / rate)} is left.`
-    : `You used ${Math.round(used * 100)}% of your ${name} limit. Codiner does not know its dollar value yet.`
+    : `You used ${Math.round(used * 100)}% of your ${name} limit. Codinger does not know its dollar value yet.`
   return [line('5-hour', u.fiveHour, u.rate?.fiveHour), line('weekly', u.sevenDay, u.rate?.sevenDay)].filter(Boolean).join('\n\n')
-    + `\n\nDollar values are estimates: Codiner compares Claude Code's spend at API prices with how far the percentages move (${u.rate?.pairs ?? 0} measurements). Click to see what your plan costs you.`
+    + `\n\nDollar values are estimates: Codinger compares Claude Code's spend at API prices with how far the percentages move (${u.rate?.pairs ?? 0} measurements). Click to see what your plan costs you.`
 }
 
 // What the conversation has cost so far. Only a label: the session's own pill explains it.

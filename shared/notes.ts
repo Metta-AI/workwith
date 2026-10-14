@@ -6,4 +6,4 @@ export const KEEP_WARM = {
   usage: 80,         // not when a call would take your 5-hour usage past this percentage
 }
 
-export const notesFile = (id: string) => `.codiner/notes/${id}.md`
+export const notesFile = (id: string) => `.codinger/notes/${id}.md`

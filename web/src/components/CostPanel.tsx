@@ -23,7 +23,7 @@ function useCosts(force = false) {
   return costs
 }
 
-// The price Codiner works with, a month: the one you confirmed, else the list price of your plan.
+// The price Codinger works with, a month: the one you confirmed, else the list price of your plan.
 function priceOf(c: CostsReply | null) {
   const p = state.settings.plan
   return p ? p.usd : c?.plan?.usd ?? null
@@ -114,8 +114,8 @@ export function CostPanel() {
             <td>{r.usd ? cents(r.cost / r.usd) : '–'}</td><td>{r.prompts ? cents(r.cost / r.prompts) : '–'}</td>
           </tr>)}</tbody>
         </table>
-        {c.scanning && <p className="muted cost-note">Codiner is still reading your transcripts. The numbers will go up.</p>}
-        {c.since && <p className="muted cost-note">The record starts on {fmtDay(c.since)}. Claude Code deletes transcripts after 30 days, so Codiner keeps its own record from now on.</p>}
+        {c.scanning && <p className="muted cost-note">Codinger is still reading your transcripts. The numbers will go up.</p>}
+        {c.since && <p className="muted cost-note">The record starts on {fmtDay(c.since)}. Claude Code deletes transcripts after 30 days, so Codinger keeps its own record from now on.</p>}
       </div>}
 
       <div>
@@ -125,8 +125,8 @@ export function CostPanel() {
             A full week of your plan is about {money(weekCeil)} of API work{fiveCeil ? `, and a full 5-hour window about ${money(fiveCeil)}` : ''}.
             If you used all of it, each API dollar would cost you about {cents(price / (weekCeil * 52 / 12))}.
           </p>
-          <p className="muted cost-note">Codiner estimates the limits from {rate?.pairs ?? 0} measurements of the last 3 days: it compares spend at API prices with how far the percentages move. The estimate gets better as you use Claude Code.</p>
-        </> : <p className="muted cost-note">Codiner does not know your limits in dollars yet. It learns them as you use Claude Code.</p>}
+          <p className="muted cost-note">Codinger estimates the limits from {rate?.pairs ?? 0} measurements of the last 3 days: it compares spend at API prices with how far the percentages move. The estimate gets better as you use Claude Code.</p>
+        </> : <p className="muted cost-note">Codinger does not know your limits in dollars yet. It learns them as you use Claude Code.</p>}
       </div>
 
       {months.length > 0 && <div>
@@ -140,7 +140,7 @@ export function CostPanel() {
 
       <label className="settings-check">
         Show session costs as
-        <select value={st.money} onChange={(e) => { state.money = e.target.value as typeof st.money; localStorage.setItem('codiner.money', JSON.stringify(state.money)); changed() }}>
+        <select value={st.money} onChange={(e) => { state.money = e.target.value as typeof st.money; localStorage.setItem('codinger.money', JSON.stringify(state.money)); changed() }}>
           <option value="usd">dollars at API prices</option>
           <option value="pct">a share of the 5-hour limit</option>
           <option value="week">a share of the weekly limit</option>
@@ -163,7 +163,7 @@ function PriceForm({ c }: { c: CostsReply }) {
     <div>
       <h3 className="cost-h">Your plan</h3>
       <p className="cost-line">
-        {c.plan ? <>Claude Code is logged in to <b>{c.plan.label}</b>. Its list price is {money(c.plan.usd)} a month.</> : <>Codiner can not tell your plan from Claude Code's login. Type what you pay.</>}
+        {c.plan ? <>Claude Code is logged in to <b>{c.plan.label}</b>. Its list price is {money(c.plan.usd)} a month.</> : <>Codinger can not tell your plan from Claude Code's login. Type what you pay.</>}
       </p>
       <label className="settings-check">
         You pay $

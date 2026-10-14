@@ -1,12 +1,13 @@
 // Signing Claude Code in, from the browser. Sessions run on your Claude Code
 // login; when it is missing or has expired, `claude auth login` runs here. It
 // opens the sign-in page itself and finishes on its own; if that fails, the
-// page it prints shows a code, which you paste into Codiner and we pass on.
+// page it prints shows a code, which you paste into Codinger and we pass on.
 
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import type { AuthState } from '../shared/types.ts'
 
-const CLAUDE = process.env.CODINER_CLAUDE ?? 'claude'
+// The Claude Code binary. Codinger was called Codiner until October 2026; the old name still works.
+export const CLAUDE = process.env.CODINGER_CLAUDE ?? process.env.CODINER_CLAUDE ?? 'claude'
 // Errors that mean the login is gone, as Claude Code words them.
 export const AUTH_ERROR = /Failed to authenticate|OAuth (session|token)|not logged in|Please run \/login|Invalid API key|authentication_failed|invalid_grant/i
 // A sign-in that just worked and failed again at once would loop; then wait for the button.

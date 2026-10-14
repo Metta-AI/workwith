@@ -52,7 +52,7 @@ export function CachePill({ m }: { m: SessionMeta }) {
   const f = c.fresh
   const fresh = `A new session from the notes: about ${usd(f.first)} for the first message, then about ${usd(f.next)} a message (it starts at about ${kTokens(f.tokens)} tokens).`
     + (f.after == null ? ' It does not cost less.' : f.after <= 1 ? ' It costs less from the first message.' : ` It costs less after about ${f.after} messages.`)
-  const title = `${here}\n\n${fresh} Neither counts what each reply adds.${costWarm == null ? '\n\nCodiner does not know the 5-hour limit in dollars yet.' : ''}`
+  const title = `${here}\n\n${fresh} Neither counts what each reply adds.${costWarm == null ? '\n\nCodinger does not know the 5-hour limit in dollars yet.' : ''}`
   return (
     <button className={`cache-pill${c.cold ? ' cold' : soon ? ' soon' : ' warm'}${c.blocked ? ' blocked' : ''}`} data-tip={title} onClick={toggleMoney}>
       {busy ? 'Cache warm' : c.cold ? `Cache expired · ${money(c.dollars.cold)}` : `Cache warm · ${minutes(c.left)} · ${money(c.dollars.warm)}`}
@@ -143,7 +143,7 @@ function SessionMenu({ m }: { m: SessionMeta }) {
     busy && <button key="stop" className="danger" onClick={act(() => api(`/api/sessions/${m.id}/interrupt`))}>Stop</button>,
     m.kind === 'worker' && !m.archived && <button key="close" title="Archive session" onClick={act(() => closeSession(m.id))}>Close</button>,
     m.kind === 'worker' && m.archived && <button key="reopen" onClick={act(() => api(`/api/sessions/${m.id}`, 'PATCH', { archived: false }))}>Reopen</button>,
-    m.kind === 'worker' && m.archived && <button key="delete" className="danger" title="Remove from Codiner (it stays in Resume)" onClick={act(() => { if (confirm(`Delete "${m.title}" from Codiner? Claude Code's own transcript is kept, so you can still find it under Resume.`)) return api(`/api/sessions/${m.id}`, 'DELETE').then(() => select('lead')) })}>Delete</button>,
+    m.kind === 'worker' && m.archived && <button key="delete" className="danger" title="Remove from Codinger (it stays in Resume)" onClick={act(() => { if (confirm(`Delete "${m.title}" from Codinger? Claude Code's own transcript is kept, so you can still find it under Resume.`)) return api(`/api/sessions/${m.id}`, 'DELETE').then(() => select('lead')) })}>Delete</button>,
   ].filter(Boolean)
   if (!items.length) return null
   return (
@@ -330,7 +330,7 @@ export function Composer({ m }: { m: SessionMeta }) {
             <b>The prompt cache expired {minutes(-(cache.left ?? 0))} ago.</b> This message writes {kTokens(m.context.used)} tokens to the cache again.{' '}
             That costs about <button className="link" title="Show as dollars or % of 5-hour or weekly limit" onClick={toggleMoney}><b>{moneyLong(cache.dollars.cold)}</b></button>
             {state.money !== 'usd' && shareOf(cache.dollars.cold) != null && limitLeft() != null && <> ({pct(limitLeft()!)} left)</>}, about {cache.times}× a message sent while the cache is warm ({moneyLong(cache.dollars.warm)}).
-            {state.money !== 'usd' && shareOf(cache.dollars.cold) == null && <> Codiner is still measuring how much of your usage limit that is.</>}
+            {state.money !== 'usd' && shareOf(cache.dollars.cold) == null && <> Codinger is still measuring how much of your usage limit that is.</>}
           </span>
           <button className="primary" disabled={sending} onClick={() => void send(true)}>Send anyway</button>
         </div>
@@ -360,8 +360,8 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
   const m = st.sessions.find((s) => s.id === id)
   useEffect(() => { void loadEvents(id) }, [id])
   const items = useItems(id)
-  const [panel, setPanel] = useState(() => localStorage.getItem('codiner.panel') !== '0')
-  const togglePanel = () => { localStorage.setItem('codiner.panel', panel ? '0' : '1'); setPanel(!panel) }
+  const [panel, setPanel] = useState(() => localStorage.getItem('codinger.panel') !== '0')
+  const togglePanel = () => { localStorage.setItem('codinger.panel', panel ? '0' : '1'); setPanel(!panel) }
   const [panelW, setPanelW] = useWidth('attention', 300)
   if (!m) return <div className="empty">No such session.</div>
   const open = items.filter((i) => i.status === 'open').length

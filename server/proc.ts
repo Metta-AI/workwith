@@ -1,8 +1,8 @@
 // A claude process that can outlive the server that started it, so a restart
-// of Codiner leaves a working session working.
+// of Codinger leaves a working session working.
 //
 // The process runs in its own process group. It reads its input from a named
-// pipe, ~/.codiner/procs/<key>.in, which it also holds open for writing, so it
+// pipe, ~/.codinger/procs/<key>.in, which it also holds open for writing, so it
 // never sees the end of its input when a server goes. It writes its output to
 // <key>.out and <key>.err; <key>.pid has its pid.
 //
@@ -24,7 +24,7 @@ fs.mkdirSync(DIR, { recursive: true })
 const file = (key: string, ext: 'in' | 'out' | 'err' | 'pid' | 'json') => path.join(DIR, `${key}.${ext}`)
 
 const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM' } }
-// The pid is still the claude process Codiner started, not a new process given the same pid.
+// The pid is still the claude process Codinger started, not a new process given the same pid.
 const ours = (pid: number) => {
   try { return alive(pid) && execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }).includes('--input-format stream-json') } catch { return false }
 }

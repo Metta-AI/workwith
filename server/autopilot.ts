@@ -1,5 +1,5 @@
 // Autopilot: you give a session a goal and a budget and go away. Each time a turn
-// ends, Codiner tells Claude to go on, until the budget is spent, Claude ends it
+// ends, Codinger tells Claude to go on, until the budget is spent, Claude ends it
 // (an <autopilot-stop> line, shared/blocks.ts), or something needs you: an error,
 // your Stop, a permission mode other than auto. It needs auto mode, since nobody
 // is there to answer a permission prompt.
@@ -26,7 +26,7 @@ export function startAutopilot(m: SessionMeta, o: { goal?: unknown; unit?: unkno
   const budget = Number(o.budget)
   if (!(budget > 0) || (unit !== 'usd' && budget > 1)) throw new Error(unit === 'usd' ? 'The budget must be more than $0' : 'The budget must be a share between 0 and 1')
   const share = unit === 'usd' ? undefined : usage[unit]
-  if (unit !== 'usd' && usage.rate?.[unit] == null && share == null) throw new Error('Codiner has no report of that limit yet. Use a dollar budget, or try again after a turn.')
+  if (unit !== 'usd' && usage.rate?.[unit] == null && share == null) throw new Error('Codinger has no report of that limit yet. Use a dollar budget, or try again after a turn.')
   return { goal: String(o.goal ?? '').trim(), unit, budget, used: 0, from: { usd: m.spend?.usd ?? 0, ...(share != null ? { share } : {}) }, at: Date.now(), turns: 0, idle: 0 }
 }
 
@@ -75,7 +75,7 @@ export function verdict(ap: Autopilot, m: SessionMeta, ev: Event[], usage: Usage
   return null
 }
 
-const RULES = (ap: Autopilot) => `[Codiner autopilot] The user turned on autopilot for this session and is away. They will read what you write later, not now. Each time your turn ends, Codiner tells you to go on, until the budget is spent or you stop.
+const RULES = (ap: Autopilot) => `[Codinger autopilot] The user turned on autopilot for this session and is away. They will read what you write later, not now. Each time your turn ends, Codinger tells you to go on, until the budget is spent or you stop.
 
 Goal: ${ap.goal || 'the task in this conversation so far.'}
 Budget: ${amount(ap.unit, ap.budget)} in all, checked between turns.
@@ -84,7 +84,7 @@ Budget: ${amount(ap.unit, ap.budget)} in all, checked between turns.
 - The goal is not to finish at any cost. Go only as far as what the user wants is clear. When you are truly unsure, or the next step is hard to undo (deleting data, pushing, publishing, spending money, contacting people), stop and ask.
 - To stop, end your message with this line: <autopilot-stop reason="a few words"/>. Stop when the goal is done, when you are blocked, or when you need the user to decide. Put a question for the user in an <ask> above that line.
 - A question that does not block you: write it as an <ask>, take the answer you think best, say which one, and go on. The user answers later.
-- Do not keep yourself going with /loop, ScheduleWakeup or sleep timers; Codiner does that now. If you set any, cancel them. To wait for something slow, run it with start_task and notify "turn"; Codiner waits for it.
+- Do not keep yourself going with /loop, ScheduleWakeup or sleep timers; Codinger does that now. If you set any, cancel them. To wait for something slow, run it with start_task and notify "turn"; Codinger waits for it.
 - Before the budget runs out, keep the work where the user can pick it up: your notes up to date, and what is done and what is not.`
 
 // The message that tells Claude to go on: a short line you see, and the rules, which you don't.
@@ -94,6 +94,6 @@ export function nudge(ap: Autopilot): { text: string; hidden: string } {
     ? `Autopilot on${ap.goal ? `: ${ap.goal}` : ''}. Budget: ${amount(ap.unit, ap.budget)}.`
     : `Autopilot: go on. ${amount(ap.unit, left)} left of ${amount(ap.unit, ap.budget)}.`
   const hidden = ap.turns === 0 ? RULES(ap)
-    : `[Codiner autopilot] Go on toward the goal${ap.goal ? ` (${ap.goal})` : ''}. When it is done, or you need the user, end with <autopilot-stop reason="…"/>.`
+    : `[Codinger autopilot] Go on toward the goal${ap.goal ? ` (${ap.goal})` : ''}. When it is done, or you need the user, end with <autopilot-stop reason="…"/>.`
   return { text, hidden }
 }

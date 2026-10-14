@@ -15,7 +15,7 @@ export function McpPill({ m }: { m: SessionMeta }) {
   if (m.kind !== 'worker' || !m.mcp) return null
   const on = m.mcp.on, missing = m.mcp.missing
   const tip = missing
-    ? `Claude asked for ${missing === 'a list of servers' ? 'your MCP servers' : `"${missing}"`}, which Codiner does not know. Click, then Refresh to look for servers.`
+    ? `Claude asked for ${missing === 'a list of servers' ? 'your MCP servers' : `"${missing}"`}, which Codinger does not know. Click, then Refresh to look for servers.`
     : on.length
     ? `MCP servers on: ${on.join(', ')}. Others are off to keep the context small.\n\nClaude turns one on when it needs it. Click to change.`
     : 'MCP servers are off here to keep the context small. Claude turns one on when it needs it.\n\nClick to change.'
@@ -52,9 +52,9 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
           let Claude turn it on when the task needs it. A server you turn on adds its tools to the end of the conversation,
           so the prompt cache stays warm.
         </p>
-        {m.mcp?.missing && <div className="notice">Claude asked for {m.mcp.missing === 'a list of servers' ? 'your MCP servers' : <b>{m.mcp.missing}</b>}. Press Refresh so that Codiner looks for your servers again, then tell Claude to try again.</div>}
+        {m.mcp?.missing && <div className="notice">Claude asked for {m.mcp.missing === 'a list of servers' ? 'your MCP servers' : <b>{m.mcp.missing}</b>}. Press Refresh so that Codinger looks for your servers again, then tell Claude to try again.</div>}
         {err && <div className="notice error">{err}</div>}
-        {!servers ? <div className="muted">Loading…</div> : !servers.length ? <div className="muted">Codiner knows no MCP servers here yet. Press Refresh to look for them.</div> : (
+        {!servers ? <div className="muted">Loading…</div> : !servers.length ? <div className="muted">Codinger knows no MCP servers here yet. Press Refresh to look for them.</div> : (
           <table className="mcp-table">
             <thead><tr><th>Server</th><th>Tools</th><th>This session</th><th>Every new session</th></tr></thead>
             <tbody>

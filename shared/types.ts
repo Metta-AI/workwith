@@ -58,14 +58,14 @@ export type SessionMeta = {
   cache?: { at: number; ttl: number }
   notes?: NotesState
   // What its API calls cost (notes and keep-warm included), in dollars at API prices,
-  // each priced when it was made (shared/prices.ts); since: when Codiner began to count.
+  // each priced when it was made (shared/prices.ts); since: when Codinger began to count.
   // keep: the part notes and keep-warm calls cost; hours: [hour start, dollars] for the last 7 days.
   spend?: { usd: number; since: number; keep?: number; hours?: [number, number][] }
   // The first API call's prompt: Claude Code's system prompt and tools, and how much of
   // it other sessions had already cached. What a new session would start from.
   base?: { total: number; read: number }
   // Started with your MCP servers off (server/mcpservers.ts); on: the ones turned on since;
-  // missing: a server Claude asked for that Codiner doesn't know, until you press Refresh.
+  // missing: a server Claude asked for that Codinger doesn't know, until you press Refresh.
   mcp?: { strict: true; on: string[]; missing?: string }
   // The model it will probably run, until Claude Code reports the real one into model.
   expectedModel?: string
@@ -74,7 +74,7 @@ export type SessionMeta = {
   autopilot?: Autopilot
 }
 
-// Autopilot (server/autopilot.ts): after each turn Codiner tells Claude to go on, until the
+// Autopilot (server/autopilot.ts): after each turn Codinger tells Claude to go on, until the
 // budget is spent or Claude stops. unit: dollars at API prices, or a share (0–1) of the 5-hour
 // or weekly limit. from: the session's spend and the limit's share used when it started;
 // used: the budget spent so far, in its unit; idle: turns in a row with no tool call.
@@ -143,8 +143,8 @@ export type AuthState = { state: 'ok' | 'needed' | 'pending' | 'failed'; url?: s
 // rate: how much of each window a dollar of spend (at API prices) uses, as server/meter.ts estimates it.
 // overage: extra usage paid for the call that sent this report.
 export type Usage = { fiveHour?: number; sevenDay?: number; resetsAt?: number; status?: string; overage?: boolean; rate?: { fiveHour?: number; sevenDay?: number; pairs: number } }
-// trackedFiles: files whose history Codiner keeps, besides AGENTS.md, CLAUDE.md and LEAD_NOTES.md.
-// selfRestart: offer to restart when Codiner's own code changes (for working on Codiner); off by default.
+// trackedFiles: files whose history Codinger keeps, besides AGENTS.md, CLAUDE.md and LEAD_NOTES.md.
+// selfRestart: offer to restart when Codinger's own code changes (for working on Codinger); off by default.
 // appearance: unset until you pick one, which the first load asks you to do.
 // groupOrder: the sidebar's folders, once you drag one. cacheGuard: tokens; see shared/cache.ts.
 // notes, keepWarmHours, keepWarmMax, keepWarmUsage: see server/notes.ts.
@@ -192,7 +192,7 @@ export type Task = {
 export type SlashCommand = { name: string; description: string; argumentHint: string }
 export type HistoryItem = {
   id: string; cwd: string; title: string; firstPrompt: string; lastPrompt: string
-  mtime: number; size: number; continuedIn: string | null; codinerId: string | null
+  mtime: number; size: number; continuedIn: string | null; codingerId: string | null
 }
-export type RecentDir = { path: string; ts: number; source: 'codiner' | 'claude' | 'both' }
+export type RecentDir = { path: string; ts: number; source: 'codinger' | 'claude' | 'both' }
 export type DirListing = { path: string; parent: string | null; dirs: string[] }

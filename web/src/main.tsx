@@ -19,7 +19,7 @@ function App() {
 
   // A tab title that says when something needs you.
   const needs = st.sessions.filter((s) => ['permission', 'asking', 'waiting'].includes(s.status)).length
-  useEffect(() => { document.title = needs ? `(${needs}) Codiner` : 'Codiner' }, [needs])
+  useEffect(() => { document.title = needs ? `(${needs}) Codinger` : 'Codinger' }, [needs])
   useFavicon(st.sessions, st.settings.appearance)
 
   // The first load asks for a colour; the welcome stays until you close it.
@@ -33,7 +33,7 @@ function App() {
       <main>
         <SignIn />
         <Restart />
-        {!st.connected && !st.sessions.length ? <div className="empty">Connecting to the Codiner server…</div>
+        {!st.connected && !st.sessions.length ? <div className="empty">Connecting to the Codinger server…</div>
           : sel?.kind === 'lead' ? <LeadView id={sel.id} />
           : sel ? <SessionView key={sel.id} id={sel.id} />
           : <div className="empty">Pick a session.</div>}
@@ -48,13 +48,13 @@ function App() {
 // The server's code changed on disk: restart it from here (it comes back by itself).
 function Restart() {
   const st = useStore()
-  // Only for working on Codiner itself (Settings turns it on).
+  // Only for working on Codinger itself (Settings turns it on).
   if (!st.restarting && !(st.stale && st.settings.selfRestart)) return null
   const busy = st.sessions.filter((s) => s.status === 'working' || s.status === 'permission').length
   return (
     <div className="signin restart">
-      {st.restarting ? <span>Restarting Codiner…</span> : <>
-        <span>Codiner's server code has changed. Restart to use it.{busy ? ` ${busy} ${busy === 1 ? 'session is' : 'sessions are'} working and will keep working.` : ''}</span>
+      {st.restarting ? <span>Restarting Codinger…</span> : <>
+        <span>Codinger's server code has changed. Restart to use it.{busy ? ` ${busy} ${busy === 1 ? 'session is' : 'sessions are'} working and will keep working.` : ''}</span>
         <button className="primary" onClick={() => { state.restarting = true; changed(); void api('/api/restart').catch(() => {}) }}>Restart</button>
       </>}
     </div>

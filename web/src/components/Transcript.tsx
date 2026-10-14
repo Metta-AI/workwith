@@ -218,7 +218,7 @@ function interim(events: Event[], f: Folded, drafted: Set<string>): Set<string> 
 function items(events: Event[], f: Folded, steps: Set<string>): Item[] {
   const out: Item[] = []
   for (const e of events) {
-    // A task's end shows where the agent hears of it: in a message from Codiner, or folded into yours.
+    // A task's end shows where the agent hears of it: in a message from Codinger, or folded into yours.
     if (isTaskEnd(e)) continue
     switch (e.t) {
       case 'assistant':
@@ -266,10 +266,10 @@ function ItemView({ sid, item, f }: { sid: string; item: Item; f: Folded }) {
   }
 }
 
-// Codiner's own lines about tasks, in Codiner's colour: the start is the agent's start_task
+// Codinger's own lines about tasks, in Codinger's colour: the start is the agent's start_task
 // call among the tool calls. The end shows where the agent hears of it, as it asked: in a
-// message of its own ("via codiner"), or in a fold of your next message.
-const START_TASK = 'mcp__codiner__start_task'
+// message of its own ("via codinger"), or in a fold of your next message.
+const START_TASK = 'mcp__codinger__start_task'
 const NOTIFY: Record<string, string> = {
   next: 'The agent hears of its end with your next message.',
   turn: 'The agent asked for a message of its own when it ends.',
@@ -282,24 +282,24 @@ const isTaskEnd = (e: Event) => e.t === 'notice' && (!!e.task || /^Task ".*" (en
 // The tasks a message tells of: by id, and by title for messages from before they kept the ids.
 function taskIdsOf(e: Extract<Event, { t: 'user' }>): Set<string> {
   const out = new Set(e.tasks)
-  for (const m of e.parts.map((p) => p.text).join('\n').matchAll(/^\[Codiner\] Your task `([^`]+)` \("(.*?)"\)/gm)) { out.add(m[1]); out.add(m[2]) }
+  for (const m of e.parts.map((p) => p.text).join('\n').matchAll(/^\[Coding?er\] Your task `([^`]+)` \("(.*?)"\)/gm)) { out.add(m[1]); out.add(m[2]) }
   return out
 }
 
-// A message from Codiner with the last lines of a task's log: the lines fold away, and a line
+// A message from Codinger with the last lines of a task's log: the lines fold away, and a line
 // that a progress bar redrew with \r shows only as it ended (older messages kept every redraw).
-function CodinerText({ text }: { text: string }) {
+function CodingerText({ text }: { text: string }) {
   return <>{text.split(/\n?~~~\n([\s\S]*?)\n~~~/).map((x, i) => i % 2
     ? <details key={i} className="log-tail"><summary>Last lines of the log</summary><pre>{x.split('\n').map(lastDraw).filter(Boolean).slice(-8).join('\n')}</pre></details>
     : x.trim() && <div key={i} className="md" dangerouslySetInnerHTML={{ __html: renderText(x) }} />)}</>
 }
 
-// Why Codiner sent a message of its own: what the agent asked for when it started the task.
-function viaCodiner(e: Extract<Event, { t: 'user' }>, tasks: Task[]): string {
+// Why Codinger sent a message of its own: what the agent asked for when it started the task.
+function viaCodinger(e: Extract<Event, { t: 'user' }>, tasks: Task[]): string {
   const ids = taskIdsOf(e)
   const t = tasks.find((x) => ids.has(x.id))
   return t?.notify === 'interrupt' ? 'The agent asked to be interrupted with a message when this task ended.'
-    : t?.notify === 'next' ? 'Codiner told the agent with a message when this task ended.'
+    : t?.notify === 'next' ? 'Codinger told the agent with a message when this task ended.'
     : 'The agent asked to be told with a message when this task ended.'
 }
 
@@ -310,7 +310,7 @@ function TaskEnd({ id, text }: { id: string; text: string }) {
   const [log, setLog] = useState(false)
   const t = tasks.find((x) => x.id === id)
   return (
-    <div className="tool codiner-line">
+    <div className="tool codinger-line">
       <button className="tool-line" onClick={() => setOpen(!open)}>
         <span className="tool-icon"><TimerIcon size={13} /></span>
         <span className="tool-name">Task</span>
@@ -339,7 +339,7 @@ function TaskStart({ b, result }: { b: Extract<Block, { type: 'tool_use' }>; res
   const t = id ? tasks.find((x) => x.id === id) : undefined
   const notify = b.input?.notify ?? 'next'
   return (
-    <div className={`tool codiner-line${result?.isError || (result && !id) ? ' err' : ''}${result ? '' : ' running'}`}>
+    <div className={`tool codinger-line${result?.isError || (result && !id) ? ' err' : ''}${result ? '' : ' running'}`}>
       <button className="tool-line" onClick={() => setOpen(!open)}>
         <span className="tool-icon"><TimerIcon size={13} /></span>
         <span className="tool-name">Task</span>
@@ -454,8 +454,8 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
   return (
     <div className="user-wrap" onMouseLeave={() => setConfirm(false)}>
     <div className="user-turn">
-      {e.from && <div className="from" title={e.from === 'codiner' ? viaCodiner(e, tasks) : undefined}>via {e.from === 'master' ? 'lead' : e.from}</div>}
-      {e.from !== 'codiner' && !!e.tasks?.length && (
+      {e.from && <div className="from" title={e.from === 'codinger' ? viaCodinger(e, tasks) : undefined}>via {e.from === 'master' ? 'lead' : e.from}</div>}
+      {e.from !== 'codinger' && !!e.tasks?.length && (
         <div className="task-results">
           <button className={`replies-sum${showTasks ? ' open' : ''}`} title="These went to the agent with this message" onClick={() => setShowTasks(!showTasks)}>
             <ChevronIcon size={11} className="chevron" /> {e.tasks.length} {e.tasks.length === 1 ? 'task result' : 'task results'}
@@ -484,7 +484,7 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
           } : {})}
         >
           <PartHead p={p} />
-          {p.text.trim() && (e.from === 'codiner' ? <CodinerText text={p.text} /> : <div className="md" dangerouslySetInnerHTML={{ __html: renderText(p.text) }} />)}
+          {p.text.trim() && (e.from === 'codinger' ? <CodingerText text={p.text} /> : <div className="md" dangerouslySetInnerHTML={{ __html: renderText(p.text) }} />)}
           <Thumbs images={p.images} />
         </div>
       ))}

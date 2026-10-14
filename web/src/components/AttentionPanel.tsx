@@ -12,8 +12,8 @@ import { withoutImages } from '../../../shared/images.ts'
 const OPEN = new Set(['open', 'drafted', 'dismissing', 'completing'])
 
 export function AttentionPanel({ sid, width, onHide }: { sid: string; width: number; onHide(): void }) {
-  const [showDone, setShowDone] = useState(() => localStorage.getItem('codiner.panel.done') === '1')
-  const toggleDone = () => { localStorage.setItem('codiner.panel.done', showDone ? '0' : '1'); setShowDone(!showDone) }
+  const [showDone, setShowDone] = useState(() => localStorage.getItem('codinger.panel.done') === '1')
+  const toggleDone = () => { localStorage.setItem('codinger.panel.done', showDone ? '0' : '1'); setShowDone(!showDone) }
   const items = useItems(sid)
   const map = new Map(items.map((i) => [i.key, i]))
   const open = items.filter((i) => OPEN.has(i.status))

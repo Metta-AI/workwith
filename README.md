@@ -1,6 +1,6 @@
-# Codiner
+# Codinger
 
-**[codiner.app](https://codiner.app)**
+**[codinger.app](https://codinger.app)**
 
 A web UI over Claude Code where you reply the way you'd mark up a draft: select any
 passage of Claude's answer and comment on it in the margin, answer its questions
@@ -42,7 +42,7 @@ ever reports a key-based auth source. The sidebar footer shows your plan's 5-hou
   - `<consider title="…">`: an item that wants your attention, as an amber card with an X
     (dismiss) at the top and a Reply button at the bottom;
   - `<ask id="…">`: a question with suggested answers to click, a text box, and an X;
-  - `<run title="…">`: a command for you to run yourself (one that restarts Codiner, needs
+  - `<run title="…">`: a command for you to run yourself (one that restarts Codinger, needs
     sudo, or is interactive), with **Run in Terminal** (macOS: a new Terminal window in the
     session's directory, via a self-deleting `.command` file, which closes itself when the
     command succeeds) and **Copy**;
@@ -52,10 +52,10 @@ ever reports a key-based auth source. The sidebar footer shows your plan's 5-hou
   Sections render as the reply streams in. The older ` ```ask ` and `:::more` forms still
   parse. Parsing is in `shared/blocks.ts`.
 - **Tasks.** For a dev server, a watcher or a long build, an agent calls `start_task`.
-  Codiner runs the command in its own process group, with no time limit, and logs it to
-  `~/.codiner/tasks/<id>.log`; it keeps running when the session sleeps or Codiner
-  restarts. In `ps` its command line starts `: codiner-task <id> session <sid>`, and it
-  and its children have `CODINER_TASK` and `CODINER_SESSION` set. The Tasks panel (the
+  Codinger runs the command in its own process group, with no time limit, and logs it to
+  `~/.codinger/tasks/<id>.log`; it keeps running when the session sleeps or Codinger
+  restarts. In `ps` its command line starts `: codinger-task <id> session <sid>`, and it
+  and its children have `CODINGER_TASK` and `CODINGER_SESSION` set. The Tasks panel (the
   terminal icon at the foot of the sidebar) lists every task with its agent's critter,
   follows and searches its log, and stops it. The agent hears when a task ends: with its
   next message, in a turn of its own, or by stopping its turn, as it chose.
@@ -117,7 +117,7 @@ CSS Custom Highlight API instead of DOM changes.
 ## Signing in
 
 If Claude Code's login is missing (checked at start) or a turn fails because it expired,
-Codiner runs `claude auth login`, which opens the sign-in page in your browser. A banner
+Codinger runs `claude auth login`, which opens the sign-in page in your browser. A banner
 shows while it waits, with the page's link and a box for the code that page shows if the
 sign-in can't finish by itself. Once signed in, the message that failed is sent again in its
 own place. Only a missing login at start or an auth failure starts it by itself (not again
@@ -125,9 +125,9 @@ within a minute of a sign-in that worked); the banner's Sign in button starts it
 
 ## Where your notes came from
 
-Settings keeps the history of the notes files you and Claude keep: `~/.codiner/AGENTS.md`,
+Settings keeps the history of the notes files you and Claude keep: `~/.codinger/AGENTS.md`,
 your global `~/.claude/CLAUDE.md`, the lead's `LEAD_NOTES.md`, and any file you add there. Every
-version is kept with who made it: you in Settings, a Codiner session (linked to the message
+version is kept with who made it: you in Settings, a Codinger session (linked to the message
 where Claude edited the file, with Edit/Write or a shell command naming it), a Claude Code
 session elsewhere (found in its transcript), or someone outside. **Read** shows the file
 rendered, each block and list item with a bar for how recently it changed (the latest change
@@ -145,17 +145,17 @@ Before each message to a worker, if `~/.claude/bin/agents` exists, the server ru
 `agents active <dir>` and adds the result to the message, out of the transcript, so Claude
 knows who else is at work there without checking.
 
-## Working on Codiner itself
+## Working on Codinger itself
 
-Settings has **Offer to restart when Codiner's code changes**, off by default. With it on,
+Settings has **Offer to restart when Codinger's code changes**, off by default. With it on,
 a banner appears when the server's code on disk is newer than the running server, and its
-Restart button starts a new server in the background (log: `~/.codiner/server.log`). An agent
-working on Codiner can turn it on with
+Restart button starts a new server in the background (log: `~/.codinger/server.log`). An agent
+working on Codinger can turn it on with
 `curl -X PUT -H 'content-type: application/json' -d '{"selfRestart":true}' http://127.0.0.1:4545/api/settings`.
 
 ## Sessions
 
-- **New session** picks a directory from a dropdown of recent ones (from Codiner *and* from
+- **New session** picks a directory from a dropdown of recent ones (from Codinger *and* from
   every Claude Code session on this machine), an in-place folder browser, or the native
   macOS folder dialog (**Finder…**).
 - **Resume…** lists every Claude Code conversation on this machine, terminal ones included,
@@ -166,12 +166,12 @@ working on Codiner can turn it on with
   as if typed at the `claude` prompt (`/model sonnet`, `/clear`, `/context`, `/code-review`…).
   The few that only exist in the interactive terminal UI (`/doctor`, `/color`…) are left out.
 - **Close** (header, or × on a sidebar row) ends the process and moves the session to
-  Archived. **Reopen** brings it back; **Delete** removes it from Codiner (Claude Code keeps
+  Archived. **Reopen** brings it back; **Delete** removes it from Codinger (Claude Code keeps
   its own copy, so it's still under Resume).
 - The sidebar and the lead view's board are resizable: drag the edge, double-click to reset.
 - Grouped by directory in the sidebar; a session started as a sub-task of another
   nests under it.
-- `/clear` gives Claude a new conversation id; Codiner follows it, so a later resume picks up
+- `/clear` gives Claude a new conversation id; Codinger follows it, so a later resume picks up
   the cleared conversation, not the old one.
 - Thinking and tool calls between two pieces of Claude's text collapse into one line that
   counts them ("Thinking · 5 edits · 3 commands"); click it for the individual calls, and
@@ -191,8 +191,8 @@ working on Codiner can turn it on with
 
 ### The critter
 
-Each Claude dresses its own critter. Every session has Codiner's `set_look` tool
-(pre-approved, served from Codiner's MCP endpoint alongside your own MCP servers), and a
+Each Claude dresses its own critter. Every session has Codinger's `set_look` tool
+(pre-approved, served from Codinger's MCP endpoint alongside your own MCP servers), and a
 session without a look is told to pick one early in its next turn: a colour, a hat, hair,
 eyewear, a face, something at the neck, something to hold. The options are in
 `shared/looks.ts`, the pixel drawings in `web/src/components/looks.tsx`.
@@ -206,7 +206,7 @@ models, since quality slips well before the window is full.
 ## The lead agent
 
 The **Lead** view shows every session as a card beside a chat with a separate
-Claude Code session whose only tools are its notes and a small MCP server Codiner hosts:
+Claude Code session whose only tools are its notes and a small MCP server Codinger hosts:
 
 | Tool | |
 |---|---|
@@ -216,7 +216,7 @@ Claude Code session whose only tools are its notes and a small MCP server Codine
 | `spawn_session` | start a worker in a directory, optionally with a first prompt |
 | `compact_session` | `/compact` a worker that's getting heavy |
 | `interrupt_session` / `close_session` | stop a turn / archive a finished worker |
-| `find_past_sessions` / `resume_past_session` | search all Claude Code history and bring a session into Codiner |
+| `find_past_sessions` / `resume_past_session` | search all Claude Code history and bring a session into Codinger |
 
 Because workers are full Claude Code sessions, `send_to_session` with just a slash command
 runs it there. The lead can't change permission modes; that stays with you.
@@ -231,17 +231,17 @@ nothing it meant to remember.
 
 ## AGENTS.md: instructions for every session
 
-`~/.codiner/AGENTS.md` is added to the system prompt of every session, workers and the lead
+`~/.codinger/AGENTS.md` is added to the system prompt of every session, workers and the lead
 alike. Edit it in **Settings** (the gear at the bottom of the sidebar). The first run
 creates it with the rules of ASD-STE100 Simplified Technical English for the text Claude
-writes to you. (How to mark the four kinds of content is Codiner's own prompt, in
+writes to you. (How to mark the four kinds of content is Codinger's own prompt, in
 `server/prompts.ts`.) It is read
 when a session's process starts, so an edit reaches a running session the next time it
 wakes from sleep.
 
 ## Where things live
 
-`~/.codiner/` (override with `CODINER_HOME`): `AGENTS.md`, `sessions.json`, one append-only
+`~/.codinger/` (override with `CODINGER_HOME`): `AGENTS.md`, `sessions.json`, one append-only
 `events/<id>.jsonl` per session, pasted `images/`, and `lead/` (the lead's working
 directory). Claude Code keeps its own transcripts as usual, so any session can also
 be picked up with `claude --resume`.
@@ -264,8 +264,8 @@ server/prompts.ts   what workers and the lead are told
 server/agentsmd.ts  the global AGENTS.md: defaults, reading, editing
 shared/             types and ask-block parsing used by both sides
 web/src/            React UI: store.ts (state + socket), anchoring.ts (Marginer), components/
-site/               the codiner.app landing page (static; `npx wrangler deploy` from site/)
-tools/demo-home.mjs made-up sessions in a throwaway CODINER_HOME, for screenshots of the real app
+site/               the codinger.app landing page (static; `npx wrangler deploy` from site/)
+tools/demo-home.mjs made-up sessions in a throwaway CODINGER_HOME, for screenshots of the real app
 tools/og-image.sh   renders site/og.png (the link preview) from the page with headless Chrome
 ```
 

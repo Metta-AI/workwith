@@ -679,6 +679,7 @@ function QuestionCard({ c, ask, compact, block }: { c: Ctx; ask: Ask; compact?: 
           <Done status="answered" />
         </div>
         <div className="ask-answer">
+          <span className="muted ask-who">You:</span>{' '}
           {answer.choices?.length ? <b>{answer.choices.join('; ')}</b> : null} {answer.text}
           <Thumbs images={answer.images} />
         </div>

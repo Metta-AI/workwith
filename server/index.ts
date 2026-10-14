@@ -1,4 +1,4 @@
-// Codiner's server: owns the Claude Code processes, persists their transcripts,
+// Codinger's server: owns the Claude Code processes, persists their transcripts,
 // and serves the UI. Binds to 127.0.0.1 only and refuses cross-origin requests,
 // since anything that can reach it can run Claude in your directories.
 //
@@ -33,7 +33,7 @@ import { AGENTS_FILE, agentsPrompt, readAgentsMd, writeAgentsMd } from './agents
 import { handleMcp, type Tool } from './mcp.ts'
 import { AUTOPILOT_MODES, amount, nudge, startAutopilot, usedOf, verdict } from './autopilot.ts'
 import { blame, initFileHistory, moveHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
-import { authState, cancelLogin, childEnv, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
+import { CLAUDE, authState, cancelLogin, childEnv, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
 import {
   DATA, LEAD_DIR, LEAD_NOTES, OLD_LEAD_NOTES, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, leadRenamed, resolveModel, loadSessions, loadSettings, saveImage, saveSessions, saveSettings,
 } from './store.ts'
@@ -41,7 +41,7 @@ import {
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const PORT = Number(process.env.PORT ?? 4545)
 const DEV = process.argv.includes('--dev')
-// Kept across restarts: a claude process that outlives a server (server/proc.ts) still reaches Codiner's tools.
+// Kept across restarts: a claude process that outlives a server (server/proc.ts) still reaches Codinger's tools.
 const MCP_TOKEN = (() => {
   const f = path.join(DATA, 'mcp-token')
   try { const t = fs.readFileSync(f, 'utf8').trim(); if (t) return t } catch { /* none yet */ }
@@ -144,17 +144,17 @@ const hooks: Hooks = {
 }
 
 function launchFor(meta: SessionMeta): () => Launch {
-  // Every session gets Codiner's set_look tool, pre-approved; workers keep their own MCP servers too.
+  // Every session gets Codinger's set_look tool, pre-approved; workers keep their own MCP servers too.
   if (meta.kind === 'worker') return () => {
     const notes = settings.notes !== false
     // The worker writes its own notes: their folder (and its .gitignore) is there first.
     if (notes) notesDir(meta)
     return {
       args: [
-        '--mcp-config', JSON.stringify({ mcpServers: { codiner: { type: 'http', url: `http://127.0.0.1:${PORT}/mcp/${MCP_TOKEN}/look/${meta.id}` } } }),
-        // Started with your MCP servers off: only Codiner's, until one is turned on (server/mcpservers.ts).
+        '--mcp-config', JSON.stringify({ mcpServers: { codinger: { type: 'http', url: `http://127.0.0.1:${PORT}/mcp/${MCP_TOKEN}/look/${meta.id}` } } }),
+        // Started with your MCP servers off: only Codinger's, until one is turned on (server/mcpservers.ts).
         ...(meta.mcp ? ['--strict-mcp-config'] : []),
-        '--allowedTools', `mcp__codiner__set_look,mcp__codiner__set_title,mcp__codiner__start_task,mcp__codiner__stop_task,mcp__codiner__list_tasks${meta.mcp && settings.mcpClaude !== false ? ',mcp__codiner__use_mcp_server' : ''}`,
+        '--allowedTools', `mcp__codinger__set_look,mcp__codinger__set_title,mcp__codinger__start_task,mcp__codinger__stop_task,mcp__codinger__list_tasks${meta.mcp && settings.mcpClaude !== false ? ',mcp__codinger__use_mcp_server' : ''}`,
       ],
       prompt: WORKER_PROMPT + lookPrompt(meta.look) + titlePrompt(meta) + mcpPrompt(meta) + (notes ? workerNotesPrompt(notesFile(meta.id)) : '') + agentsPrompt(),
     }
@@ -163,8 +163,8 @@ function launchFor(meta: SessionMeta): () => Launch {
     prompt: LEAD_PROMPT + lookPrompt(meta.look) + agentsPrompt(),
     args: [
       '--strict-mcp-config',
-      '--mcp-config', JSON.stringify({ mcpServers: { codiner: { type: 'http', url: `http://127.0.0.1:${PORT}/mcp/${MCP_TOKEN}` } } }),
-      '--allowedTools', 'mcp__codiner',
+      '--mcp-config', JSON.stringify({ mcpServers: { codinger: { type: 'http', url: `http://127.0.0.1:${PORT}/mcp/${MCP_TOKEN}` } } }),
+      '--allowedTools', 'mcp__codinger',
       '--tools', 'Read,Write,Edit,Glob,Grep',
       '--autocompact', '200k',
     ],
@@ -201,7 +201,7 @@ for (const m of loadSessions()) {
   const meta = { ...newMeta(m), ...m }
   // The window used to default to 200k until a turn finished; trust what the model reports.
   if (meta.context.window === 200_000 || meta.context.used > meta.context.window) meta.context.window = Math.max(knownWindow(meta.model ?? meta.expectedModel), meta.context.used)
-  // Sessions from before Codiner kept a cache record: the transcript has one.
+  // Sessions from before Codinger kept a cache record: the transcript has one.
   if (!meta.cache && meta.started) meta.cache = lastCache(meta.cwd, meta.claudeSessionId) ?? undefined
   adopt(meta)
 }
@@ -289,7 +289,7 @@ function hiddenFor(s: Session, parts: Part[]): { hidden?: string; tasks?: string
     try { who = execFileSync(AGENTS_BIN, ['active', s.meta.cwd, '--other', s.meta.claudeSessionId.slice(0, 8)], { timeout: 3000, encoding: 'utf8' }) }
     catch (e) { who = String((e as { stdout?: string }).stdout ?? '') } // exit code 1: someone is active
     who = who.trim()
-    out.push(`[Codiner, ${new Date().toISOString().slice(0, 16)}Z] Other agents active in ${s.meta.cwd} (from \`agents active\`): ${who ? `\n${who}` : 'none.'}`)
+    out.push(`[Codinger, ${new Date().toISOString().slice(0, 16)}Z] Other agents active in ${s.meta.cwd} (from \`agents active\`): ${who ? `\n${who}` : 'none.'}`)
   }
   // Tasks that ended since it last heard; the message keeps their ids, to show them.
   const ended = tasksEnded(s)
@@ -365,7 +365,7 @@ function taskTurn(s: Session) {
 
 function sendTasks(s: Session) {
   const t = tasksEnded(s)
-  if (t.length) s.send([{ kind: 'text', text: t.map(endText).join('\n\n') }], { from: 'codiner', ...hiddenFor(s, []), tasks: t.map((x) => x.id) })
+  if (t.length) s.send([{ kind: 'text', text: t.map(endText).join('\n\n') }], { from: 'codinger', ...hiddenFor(s, []), tasks: t.map((x) => x.id) })
 }
 
 function taskTools(id: string): Tool[] {
@@ -373,7 +373,7 @@ function taskTools(id: string): Tool[] {
   return [
     {
       name: 'start_task',
-      description: 'Run a long or lasting shell command (a dev server, a watcher, a long build or test run) apart from this session, with no time limit. The user can watch its log and stop it in Codiner, and it keeps running if this session stops. Returns its id and log path; read the log with your usual tools.',
+      description: 'Run a long or lasting shell command (a dev server, a watcher, a long build or test run) apart from this session, with no time limit. The user can watch its log and stop it in Codinger, and it keeps running if this session stops. Returns its id and log path; read the log with your usual tools.',
       inputSchema: {
         type: 'object', required: ['title', 'command'],
         properties: {
@@ -494,7 +494,7 @@ function mcpPrompt(meta: SessionMeta): string {
   const names = serversFor(meta.cwd).map((s) => s.name)
   const may = settings.mcpClaude !== false
   return `\n\n## MCP servers\nThis session started with the user's MCP servers off, to keep its context small.`
-    + (names.length ? ` These are available: ${names.join(', ')}.` : ' Codiner does not know their names yet: call use_mcp_server with no name.')
+    + (names.length ? ` These are available: ${names.join(', ')}.` : ' Codinger does not know their names yet: call use_mcp_server with no name.')
     + (meta.mcp.on.length ? ` Turned on: ${meta.mcp.on.join(', ')}.` : '')
     + ` When the task needs one, turn it on with the use_mcp_server tool${may ? '' : ', which asks the user first'}, then use its tools (they may come as deferred tools: load them with ToolSearch). Do not turn on a server the task does not need.\n`
 }
@@ -511,13 +511,13 @@ function mcpTool(id: string): Tool {
       const find = () => serversFor(m.cwd).find((x) => x.name.toLowerCase().replace(/^claude\.ai /, '') === want)
       const server = want ? find() : undefined
       const list = serversFor(m.cwd).map((x) => `${x.name}${m.mcp!.on.includes(x.name) ? ' (on)' : ''}${x.status === 'needs-auth' ? ' (needs sign-in)' : ''}`).join(', ')
-      // Codiner looks for servers only when the user presses Refresh: an unknown one may be new.
-      const refresh = 'Codiner may not know about it yet: its MCP chip, at the top of this session, now asks the user to press Refresh. Ask them to, then try again.'
+      // Codinger looks for servers only when the user presses Refresh: an unknown one may be new.
+      const refresh = 'Codinger may not know about it yet: its MCP chip, at the top of this session, now asks the user to press Refresh. Ask them to, then try again.'
       if (!want && list) return `Servers: ${list}.`
       if (!server) {
         m.mcp.missing = want ? String(args.name) : 'a list of servers'
         metaChanged()
-        return want ? `There is no server called "${args.name}" that Codiner knows (it knows: ${list || 'none'}). ${refresh}` : `Codiner knows no MCP servers yet. ${refresh}`
+        return want ? `There is no server called "${args.name}" that Codinger knows (it knows: ${list || 'none'}). ${refresh}` : `Codinger knows no MCP servers yet. ${refresh}`
       }
       if (server.status === 'needs-auth') return `${server.name} needs the user to sign in first, in their claude.ai connector settings. Ask them to do that.`
       if (!m.mcp.on.includes(server.name)) m.mcp.on.push(server.name)
@@ -531,7 +531,7 @@ function mcpTool(id: string): Tool {
 function titleTool(id: string): Tool {
   return {
     name: 'set_title',
-    description: "Name your session in the Codiner sidebar after its task: 2 to 5 words. Call it when the task becomes clear, and again only if the task changes a lot.",
+    description: "Name your session in the Codinger sidebar after its task: 2 to 5 words. Call it when the task becomes clear, and again only if the task changes a lot.",
     inputSchema: { type: 'object', properties: { title: { type: 'string' } }, required: ['title'] },
     run: (args) => {
       const s = get(id)
@@ -551,7 +551,7 @@ function titleTool(id: string): Tool {
 function lookTool(id: string): Tool {
   return {
     name: 'set_look',
-    description: 'Choose how your critter looks in the Codiner sidebar: its colour and what it wears. Give only the slots you want to set; "none" clears one. Pick once; there is no need to call it again.',
+    description: 'Choose how your critter looks in the Codinger sidebar: its colour and what it wears. Give only the slots you want to set; "none" clears one. Pick once; there is no need to call it again.',
     inputSchema: {
       type: 'object',
       properties: Object.fromEntries(LOOK_SLOTS.map((s) => [s, { type: 'string', enum: [...LOOK_OPTIONS[s], 'none'] }])),
@@ -667,13 +667,13 @@ const tools: Tool[] = [
         .slice(0, Math.min(Number(limit) || 10, 50))
         .map((h) => ({
           claude_session_id: h.id, title: h.title, cwd: h.cwd, last_active: new Date(h.mtime).toISOString(),
-          first_prompt: h.firstPrompt.slice(0, 160), last_prompt: h.lastPrompt.slice(0, 160), in_codiner_as: byClaude.get(h.id) ?? null,
+          first_prompt: h.firstPrompt.slice(0, 160), last_prompt: h.lastPrompt.slice(0, 160), in_codinger_as: byClaude.get(h.id) ?? null,
         }))
     },
   },
   {
     name: 'resume_past_session',
-    description: 'Bring a past Claude Code session into Codiner as a worker, with its conversation, so the user (or you, via send_to_session) can continue it. Returns its Codiner id.',
+    description: 'Bring a past Claude Code session into Codinger as a worker, with its conversation, so the user (or you, via send_to_session) can continue it. Returns its Codinger id.',
     inputSchema: { type: 'object', required: ['claude_session_id'], properties: { claude_session_id: { type: 'string' } } },
     run: ({ claude_session_id }) => {
       const s = resumeHistory(String(claude_session_id))
@@ -732,7 +732,7 @@ async function json(req: http.IncomingMessage): Promise<any> {
 }
 
 // Claude Code's /context for a new worker session in `cwd`, with a worker's own
-// arguments (system prompt, Codiner's tools), so it counts what Codiner adds too.
+// arguments (system prompt, Codinger's tools), so it counts what Codinger adds too.
 // It makes no API call: Claude Code estimates the sizes itself. Kept 10 minutes.
 const contexts = new Map<string, { at: number; text: string }>()
 function startContext(cwd: string, fresh: boolean): Promise<string> {
@@ -740,7 +740,7 @@ function startContext(cwd: string, fresh: boolean): Promise<string> {
   if (hit && !fresh && Date.now() - hit.at < 600_000) return Promise.resolve(hit.text)
   const { args, prompt } = launchFor(newMeta({ cwd, title: 'context' }))()
   return new Promise((resolve, reject) => {
-    execFile(process.env.CODINER_CLAUDE ?? 'claude', ['-p', '--output-format', 'json', '--no-session-persistence', '--append-system-prompt', prompt, ...args, '--', '/context'],
+    execFile(CLAUDE, ['-p', '--output-format', 'json', '--no-session-persistence', '--append-system-prompt', prompt, ...args, '--', '/context'],
       { cwd, env: childEnv(), timeout: 120_000, maxBuffer: 8 << 20 }, (err, out) => {
         let text = ''
         try { text = String(JSON.parse(out).result ?? '') } catch { /* reported below */ }
@@ -848,7 +848,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     const cwd = path.resolve(expandHome(String((await json(req)).cwd ?? '~')))
     let found
     try { found = await probe(cwd) } catch (e) { throw new HttpError(500, (e as Error).message) }
-    // Sessions there stop asking, and get the configs of servers turned on before Codiner knew them.
+    // Sessions there stop asking, and get the configs of servers turned on before Codinger knew them.
     for (const x of sessions.values()) if (x.meta.cwd === cwd && x.meta.mcp) {
       delete x.meta.mcp.missing
       if (x.meta.mcp.on.length) x.setMcp(configsFor(cwd, x.meta.mcp.on))
@@ -871,7 +871,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       .filter((h) => !h.continuedIn && !h.cwd.startsWith(DATA))
       .filter((h) => !q || `${h.title} ${h.cwd} ${h.firstPrompt} ${h.lastPrompt}`.toLowerCase().includes(q))
       .slice(0, 300)
-      .map((h) => ({ ...h, codinerId: byClaude.get(h.id) ?? null }))
+      .map((h) => ({ ...h, codingerId: byClaude.get(h.id) ?? null }))
     return send(res, 200, items)
   }
   if (a === 'history' && id && b === 'resume' && method === 'POST') return send(res, 200, resumeHistory(id).meta)
@@ -882,7 +882,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       const cur = seen.get(p)
       if (!cur || cur.ts < ts) seen.set(p, { path: p, ts, source: cur && cur.source !== source ? 'both' : source })
     }
-    for (const m of metas()) if (m.kind === 'worker') add(m.cwd, m.lastActivity, 'codiner')
+    for (const m of metas()) if (m.kind === 'worker') add(m.cwd, m.lastActivity, 'codinger')
     for (const h of listHistory()) add(h.cwd, h.mtime, 'claude')
     const dirs = [...seen.values()].filter((d) => fs.existsSync(d.path)).sort((x, y) => y.ts - x.ts).slice(0, 60)
     return send(res, 200, dirs)
@@ -1046,15 +1046,15 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       // `script` keeps the terminal interactive and records what the command prints; when the
       // command ends, the script reports its exit code back, and the result goes to the item.
       const token = randomUUID().slice(0, 12)
-      const file = path.join(os.tmpdir(), `codiner-${token}.command`)
-      const log = path.join(os.tmpdir(), `codiner-${token}.log`)
+      const file = path.join(os.tmpdir(), `codinger-${token}.command`)
+      const log = path.join(os.tmpdir(), `codinger-${token}.log`)
       const q = (x: string) => `'${x.replace(/'/g, `'\\''`)}'`
-      const closer = path.join(os.tmpdir(), `codiner-${token}-close.sh`)
+      const closer = path.join(os.tmpdir(), `codinger-${token}-close.sh`)
       fs.writeFileSync(closer, CLOSER, { mode: 0o755 })
       runs.set(token, { sid: s.meta.id, log })
       fs.writeFileSync(file, [
         '#!/bin/sh', 'rm -f "$0"', `cd ${q(s.meta.cwd)} || exit 1`,
-        `cat <<'CODINER_CMD'`, `$ ${cmd}`, 'CODINER_CMD',
+        `cat <<'CODINGER_CMD'`, `$ ${cmd}`, 'CODINGER_CMD',
         `script -q ${q(log)} /bin/sh -c ${q(cmd)}`, 'code=$?',
         `curl -s -m 5 -X POST "http://127.0.0.1:${PORT}/api/runs/${token}?code=$code" >/dev/null 2>&1`,
         // On success the window closes itself a moment after the shell ends (found by its tty);
@@ -1124,7 +1124,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
 
 const server = http.createServer(async (req, res) => {
   try {
-    if (!localHost(req) || !localOrigin(req)) throw new HttpError(403, 'Codiner only answers requests from its own page')
+    if (!localHost(req) || !localOrigin(req)) throw new HttpError(403, 'Codinger only answers requests from its own page')
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`)
     if (url.pathname === `/mcp/${MCP_TOKEN}`) {
       const lead = [...sessions.values()].find((s) => s.meta.kind === 'lead')
@@ -1196,12 +1196,12 @@ initAuth({
 })
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Codiner on http://localhost:${PORT}${DEV ? ' (dev)' : ''}`)
+  console.log(`Codinger on http://localhost:${PORT}${DEV ? ' (dev)' : ''}`)
 })
 
 // ---- restarting itself --------------------------------------------------------
 // When the server's own code on disk is newer than this process, the page offers
-// a restart: a new server starts detached (its log in ~/.codiner/server.log) as
+// a restart: a new server starts detached (its log in ~/.codinger/server.log) as
 // soon as this one has let go of the port. Busy sessions keep running (server/proc.ts).
 const STARTED = Date.now()
 function codeTime(): number {

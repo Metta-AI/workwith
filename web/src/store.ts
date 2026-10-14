@@ -58,9 +58,9 @@ export const state: State = {
   usage: {},
   events: {},
   streaming: {},
-  selected: saved('codiner.selected', 'lead'),
-  drafts: saved('codiner.drafts', {}),
-  composer: saved('codiner.composer', {}),
+  selected: saved('codinger.selected', 'lead'),
+  drafts: saved('codinger.drafts', {}),
+  composer: saved('codinger.composer', {}),
   focus: null,
   showArchived: false,
   error: null,
@@ -68,9 +68,9 @@ export const state: State = {
   home: '',
   auth: { state: 'ok' },
   lightbox: null,
-  showSteps: saved('codiner.showSteps', false),
+  showSteps: saved('codinger.showSteps', false),
   // 'both' was a choice until October 2026.
-  money: (['usd', 'pct', 'week'] as const).find((x) => x === saved('codiner.money', 'pct')) ?? 'pct',
+  money: (['usd', 'pct', 'week'] as const).find((x) => x === saved('codinger.money', 'pct')) ?? 'pct',
   runs: {},
   tasks: [],
   fileTick: {},
@@ -87,10 +87,10 @@ export function changed() {
   reportDrafting()
   clearTimeout(persistTimer)
   persistTimer = window.setTimeout(() => {
-    localStorage.setItem('codiner.drafts', JSON.stringify(state.drafts))
-    localStorage.setItem('codiner.composer', JSON.stringify(state.composer))
-    localStorage.setItem('codiner.selected', JSON.stringify(state.selected))
-    localStorage.setItem('codiner.showSteps', JSON.stringify(state.showSteps))
+    localStorage.setItem('codinger.drafts', JSON.stringify(state.drafts))
+    localStorage.setItem('codinger.composer', JSON.stringify(state.composer))
+    localStorage.setItem('codinger.selected', JSON.stringify(state.selected))
+    localStorage.setItem('codinger.showSteps', JSON.stringify(state.showSteps))
   }, 300)
 }
 // Tell the server which sessions you are writing a reply in, so the lead's

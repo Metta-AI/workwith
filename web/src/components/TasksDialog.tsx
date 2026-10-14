@@ -134,7 +134,7 @@ function TaskView({ t, onClose }: { t: Task; onClose(): void }) {
       <div className="task-info">
         <div className="task-top">
           <span className="task-meta muted">
-            <StateMark t={t} /> {stateLabel(t)} · {s ? <button className="link" onClick={() => { select(s.id); onClose() }}>{s.title}</button> : 'closed session'} · <span title="Task id, in its log file name and in ps as codiner-task">task <span className="mono">{t.id}</span></span>
+            <StateMark t={t} /> {stateLabel(t)} · {s ? <button className="link" onClick={() => { select(s.id); onClose() }}>{s.title}</button> : 'closed session'} · <span title="Task id, in its log file name and in ps as codinger-task">task <span className="mono">{t.id}</span></span>
             {!t.ended && <> · pid {t.pid}</>}
           </span>
           {!t.ended ? (

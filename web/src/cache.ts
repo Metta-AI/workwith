@@ -87,7 +87,7 @@ export function moneyLong(dollars: number, mode = state.money): string {
 
 // What a conversation has cost so far, as a label and a tooltip. Percent: its share
 // of your 5-hour limit over the last 5 hours, and of your weekly limit over the last
-// 7 days; dollars: everything since Codiner began to count.
+// 7 days; dollars: everything since Codinger began to count.
 export function spendOf(m: SessionMeta) {
   if (!m.spend?.usd) return null
   const r = state.usage.rate
@@ -99,15 +99,15 @@ export function spendOf(m: SessionMeta) {
     : `${share == null ? '…%' : pct(share)} in 5h`
   const keep = m.spend.keep ? ` Notes and keep-warm calls: ${usd(m.spend.keep)}.` : ''
   const tip = `This session cost ${usd(m.spend.usd)} at API prices since ${new Date(m.spend.since).toLocaleDateString()}, each call at the price of that time.${keep}`
-    + `\n\nLast 5 hours: ${usd(recent)}${share != null ? `, about ${pct(share)} of your 5-hour limit` : '. Codiner does not know the 5-hour limit in dollars yet'}.`
-    + `\n\nLast 7 days: ${usd(week)}${weekShare != null ? `, about ${pct(weekShare)} of your weekly limit` : '. Codiner does not know the weekly limit in dollars yet'}.`
+    + `\n\nLast 5 hours: ${usd(recent)}${share != null ? `, about ${pct(share)} of your 5-hour limit` : '. Codinger does not know the 5-hour limit in dollars yet'}.`
+    + `\n\nLast 7 days: ${usd(week)}${weekShare != null ? `, about ${pct(weekShare)} of your weekly limit` : '. Codinger does not know the weekly limit in dollars yet'}.`
   return { label, tip }
 }
 
 const NEXT = { usd: 'pct', pct: 'week', week: 'usd' } as const
 export function toggleMoney() {
   state.money = NEXT[state.money]
-  localStorage.setItem('codiner.money', JSON.stringify(state.money))
+  localStorage.setItem('codinger.money', JSON.stringify(state.money))
   changed()
 }
 

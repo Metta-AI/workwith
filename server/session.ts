@@ -12,7 +12,7 @@ import { formatAnswer, formatNote } from '../shared/asks.ts'
 import { formatDismissed, formatDone, itemsOf } from '../shared/blocks.ts'
 import { mediaTypeOf, splitImages, withoutImages } from '../shared/images.ts'
 import type { Block, Event, Part, PermissionMode, SessionMeta, Status, Usage } from '../shared/types.ts'
-import { AUTH_ERROR, childEnv } from './auth.ts'
+import { AUTH_ERROR, CLAUDE, childEnv } from './auth.ts'
 import { entryBefore } from './history.ts'
 import { Proc } from './proc.ts'
 import { addSpend, costOf } from '../shared/prices.ts'
@@ -35,8 +35,8 @@ export type Launch = { args: string[]; prompt: string }
 
 const MAX_RESULT = 8000
 // How long a finished session keeps its claude process before it sleeps.
-// CODINER_SLEEP_MS overrides it (for tests).
-const IDLE_SLEEP_MS = Number(process.env.CODINER_SLEEP_MS) || 5 * 60_000
+// CODINGER_SLEEP_MS overrides it (for tests).
+const IDLE_SLEEP_MS = Number(process.env.CODINGER_SLEEP_MS ?? process.env.CODINER_SLEEP_MS) || 5 * 60_000
 
 // A message that is only a slash command goes in as one, as if typed at the claude prompt;
 // nothing hidden goes with it.
@@ -156,7 +156,7 @@ export class Session {
       ...args,
     ]
     if (!fs.existsSync(m.cwd)) throw new Error(`Directory not found: ${m.cwd}`)
-    const p = Proc.spawn(process.env.CODINER_CLAUDE ?? 'claude', full, { cwd: m.cwd, env: childEnv() })
+    const p = Proc.spawn(CLAUDE, full, { cwd: m.cwd, env: childEnv() })
     this.proc = p
     this.listen(p)
     // Ask for the command list (with descriptions) the way the Agent SDK does.
@@ -243,7 +243,7 @@ export class Session {
     const m = this.meta
     const { args, prompt } = this.launch()
     return {
-      cmd: process.env.CODINER_CLAUDE ?? 'claude',
+      cmd: CLAUDE,
       args: [
         '-p', '--output-format', 'json', '--permission-mode', m.permissionMode,
         ...(m.model ? ['--model', m.model] : []),
@@ -256,7 +256,7 @@ export class Session {
     }
   }
 
-  // The MCP servers this session has on besides Codiner's, in a running process at once;
+  // The MCP servers this session has on besides Codinger's, in a running process at once;
   // a process started later gets them from the mcpServers hook.
   setMcp(servers: Record<string, unknown>) {
     if (!this.proc || this.stopping) return
@@ -590,7 +590,7 @@ export class Session {
           })
           this.refresh()
         } else {
-          this.write({ type: 'control_response', response: { subtype: 'error', request_id: msg.request_id, error: `Codiner does not handle ${r.subtype}` } })
+          this.write({ type: 'control_response', response: { subtype: 'error', request_id: msg.request_id, error: `Codinger does not handle ${r.subtype}` } })
         }
         return
       }

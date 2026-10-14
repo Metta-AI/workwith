@@ -1,7 +1,7 @@
 // How much of your plan's usage limits a token costs, learned by watching.
 // Claude Code reports the limits only as percentages used (rate_limit_event),
 // never in tokens. So the meter adds up what every Claude Code conversation on
-// this machine spends (Codiner's and the terminal's: all write transcripts to
+// this machine spends (Codinger's and the terminal's: all write transcripts to
 // ~/.claude/projects) between two reports, and compares that with how far the
 // percentages moved. Everything it sees goes to meter.jsonl, to check later how
 // steady the estimate is (GET /api/meter).

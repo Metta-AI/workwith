@@ -36,9 +36,9 @@ type Blame = { path: string; exists: boolean; text: string; lines: number[]; ver
 const who = (by: By) =>
   by.kind === 'initial' ? 'First seen'
   : by.kind === 'settings' ? 'You, in Settings'
-  : by.kind === 'session' ? `Codiner session "${by.title}"`
+  : by.kind === 'session' ? `Codinger session "${by.title}"`
   : by.kind === 'claude' ? `Claude Code in ${shortPath(by.cwd)}`
-  : 'Outside Codiner'
+  : 'Outside Codinger'
 
 export function SettingsDialog({ onClose, page: first }: { onClose(): void; page?: Page }) {
   const st = useStore()
@@ -51,8 +51,8 @@ export function SettingsDialog({ onClose, page: first }: { onClose(): void; page
   const [adding, setAdding] = useState('')
   const tick = sel ? st.fileTick[sel] ?? 0 : 0
 
-  const [page, setPage] = useState<Page>(() => first ?? PAGES.find(([p]) => p === localStorage.getItem('codiner.settingsPage'))?.[0] ?? 'general')
-  const go = (p: Page) => { localStorage.setItem('codiner.settingsPage', p); setPage(p) }
+  const [page, setPage] = useState<Page>(() => first ?? PAGES.find(([p]) => p === localStorage.getItem('codinger.settingsPage'))?.[0] ?? 'general')
+  const go = (p: Page) => { localStorage.setItem('codinger.settingsPage', p); setPage(p) }
   const guard = st.settings.cacheGuard ?? DEFAULT_CACHE_GUARD
   const [stale, setStale] = useState(false)   // the server predates file history: it needs a restart
   const loadFiles = () => api<FileRow[]>('/api/files', 'GET')
@@ -108,9 +108,9 @@ export function SettingsDialog({ onClose, page: first }: { onClose(): void; page
               <input type="checkbox" checked={st.showSteps} onChange={(e) => { state.showSteps = e.target.checked; changed() }} />
               Show Claude's in-between messages
             </label>
-            <label className="settings-check" title="For work on Codiner itself: a banner offers a server restart">
+            <label className="settings-check" title="For work on Codinger itself: a banner offers a server restart">
               <input type="checkbox" checked={!!st.settings.selfRestart} onChange={(e) => void api('/api/settings', 'PUT', { selfRestart: e.target.checked })} />
-              Offer to restart when Codiner's code changes
+              Offer to restart when Codinger's code changes
             </label>
             <label className="settings-check" title="When the prompt cache expires, the next message re-caches the whole context at full price">
               Ask before re-caching more than
@@ -118,7 +118,7 @@ export function SettingsDialog({ onClose, page: first }: { onClose(): void; page
                 {[...new Set([...GUARDS, guard])].sort((x, y) => x - y).map((g) => <option key={g} value={g}>{g ? `${g / 1000}k tokens` : 'never ask'}</option>)}
               </select>
             </label>
-            <label className="settings-check" data-tip="New sessions get only Codiner's tools. The MCP chip or Claude turns servers on. Current sessions do not change.">
+            <label className="settings-check" data-tip="New sessions get only Codinger's tools. The MCP chip or Claude turns servers on. Current sessions do not change.">
               <input type="checkbox" checked={st.settings.mcpStartOff !== false} onChange={(e) => void api('/api/settings', 'PUT', { mcpStartOff: e.target.checked })} />
               Start new sessions with my MCP servers off
             </label>
@@ -126,7 +126,7 @@ export function SettingsDialog({ onClose, page: first }: { onClose(): void; page
               <input type="checkbox" checked={st.settings.mcpClaude !== false} onChange={(e) => void api('/api/settings', 'PUT', { mcpClaude: e.target.checked })} />
               Let Claude turn on an MCP server when the task needs it
             </label>
-            <label className="settings-check" title="After 20 idle minutes, a call writes notes to the folder's .codiner/notes/, to start a new session from">
+            <label className="settings-check" title="After 20 idle minutes, a call writes notes to the folder's .codinger/notes/, to start a new session from">
               <input type="checkbox" checked={st.settings.notes !== false} onChange={(e) => void api('/api/settings', 'PUT', { notes: e.target.checked })} />
               Write notes on quiet sessions
             </label>
@@ -169,7 +169,7 @@ export function SettingsDialog({ onClose, page: first }: { onClose(): void; page
               </div>
             </nav>
             <section className="file-pane">
-              {stale && <div className="empty">Codiner's server is older than this page, so it has no file history yet. Restart Codiner, then open Settings again.</div>}
+              {stale && <div className="empty">Codinger's server is older than this page, so it has no file history yet. Restart Codinger, then open Settings again.</div>}
               {blame && <>
                 <div className="file-tabs">
                   {(['read', 'edit', 'history'] as const).map((t) => <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</button>)}
