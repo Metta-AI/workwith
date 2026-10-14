@@ -15,8 +15,10 @@ import { Splitter, useWidth } from './Splitter.tsx'
 import { cacheOf, limitLeft, minutes, money, moneyLong, ofFresh, pct, shareOf, spendOf, toggleMoney, useNow, usd } from '../cache.ts'
 import { ttlLabel } from '../../../shared/cache.ts'
 import { NotesPill } from './NotesDialog.tsx'
+import { StateMark, TasksDialog } from './TasksDialog.tsx'
 import { McpPill } from './McpDialog.tsx'
 import { shortPath } from './DirPicker.tsx'
+import { AutopilotButton } from './Autopilot.tsx'
 
 export function ContextGauge({ m, onCompact }: { m: SessionMeta; onCompact?: () => void }) {
   const used = m.context.used
@@ -51,7 +53,7 @@ export function CachePill({ m }: { m: SessionMeta }) {
   const f = c.fresh
   const fresh = `A new session from the notes: about ${usd(f.first)} for the first message, then about ${usd(f.next)} a message (it starts at about ${kTokens(f.tokens)} tokens).`
     + (f.after == null ? ' It does not cost less.' : f.after <= 1 ? ' It costs less from the first message.' : ` It costs less after about ${f.after} messages.`)
-  const title = `${here}\n\n${fresh} Neither counts what each reply adds.${costWarm == null ? '\n\nCodiner does not know the 5-hour limit in dollars yet.' : ''}`
+  const title = `${here}\n\n${fresh} Neither counts what each reply adds.${costWarm == null ? '\n\nCodinger does not know the 5-hour limit in dollars yet.' : ''}`
   return (
     <button className={`cache-pill${c.cold ? ' cold' : soon ? ' soon' : ' warm'}${c.blocked ? ' blocked' : ''}`} data-tip={title} onClick={toggleMoney}>
       {busy ? 'Cache warm' : c.cold ? `Cache expired · ${money(c.dollars.cold)}` : `Cache warm · ${minutes(c.left)} · ${money(c.dollars.warm)}`}
@@ -117,6 +119,7 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
               {MODES.map((x) => <option key={x.v} value={x.v}>{x.label}</option>)}
             </select>
           )}
+          {m.kind === 'worker' && <AutopilotButton m={m} />}
           {extra}
           <SessionMenu m={m} />
         </div>
@@ -141,7 +144,7 @@ function SessionMenu({ m }: { m: SessionMeta }) {
     busy && <button key="stop" className="danger" onClick={act(() => api(`/api/sessions/${m.id}/interrupt`))}>Stop</button>,
     m.kind === 'worker' && !m.archived && <button key="close" title="Archive session" onClick={act(() => closeSession(m.id))}>Close</button>,
     m.kind === 'worker' && m.archived && <button key="reopen" onClick={act(() => api(`/api/sessions/${m.id}`, 'PATCH', { archived: false }))}>Reopen</button>,
-    m.kind === 'worker' && m.archived && <button key="delete" className="danger" title="Remove from Codiner (it stays in Resume)" onClick={act(() => { if (confirm(`Delete "${m.title}" from Codiner? Claude Code's own transcript is kept, so you can still find it under Resume.`)) return api(`/api/sessions/${m.id}`, 'DELETE').then(() => select('lead')) })}>Delete</button>,
+    m.kind === 'worker' && m.archived && <button key="delete" className="danger" title="Remove from Codinger (it stays in Resume)" onClick={act(() => { if (confirm(`Delete "${m.title}" from Codinger? Claude Code's own transcript is kept, so you can still find it under Resume.`)) return api(`/api/sessions/${m.id}`, 'DELETE').then(() => select('lead')) })}>Delete</button>,
   ].filter(Boolean)
   if (!items.length) return null
   return (
@@ -153,6 +156,37 @@ function SessionMenu({ m }: { m: SessionMeta }) {
 }
 
 // The lead's drafts, in the reply tray: edit or remove each; they go with your next message.
+// This session's tasks that still run (server/tasks.ts), at the bottom of the
+// chat whatever is in view; a click shows a task's log. An ended one moves into
+// the transcript (Transcript.tsx, TaskEnd).
+function RunningTasks({ sid }: { sid: string }) {
+  const { tasks } = useStore()
+  useNow(10_000)
+  const [open, setOpen] = useState<string | null>(null)
+  const running = tasks.filter((t) => t.sid === sid && !t.ended)
+  // Ended, and the agent has not heard yet: the result goes with your next message.
+  const waiting = tasks.filter((t) => t.sid === sid && t.ended && !t.told)
+  if (!running.length && !waiting.length && !open) return null
+  return (
+    <div className="running-tasks">
+      {running.map((t) => (
+        <button key={t.id} className="running-task" title={`${t.command}${t.progress?.label ? `\n${t.progress.label}: ${t.progress.pct}%` : ''}\nShow its log`} onClick={() => setOpen(t.id)}
+          style={t.progress ? { '--pct': `${t.progress.pct}%` } as React.CSSProperties : undefined}>
+          <span className="task-dot running" /><span className="rt-title">{t.title}</span>
+          {t.progress && <span className="task-pct">{t.progress.pct}%</span>}
+          <span className="muted">{minutes(Date.now() - t.started)}</span>
+        </button>
+      ))}
+      {waiting.map((t) => (
+        <button key={t.id} className="running-task waiting" title={`${t.notify === 'next' ? 'This result goes to the agent with your next message.' : 'This result goes to the agent when its turn ends, or with your next message.'}\nShow its log`} onClick={() => setOpen(t.id)}>
+          <StateMark t={t} /><span className="rt-title">Task result: {t.title}</span>
+        </button>
+      ))}
+      {open && <TasksDialog first={open} onClose={() => setOpen(null)} />}
+    </div>
+  )
+}
+
 function Inbox({ m }: { m: SessionMeta }) {
   if (!m.inbox.length) return null
   const remove = (id: string) => api(`/api/sessions/${m.id}/inbox/${id}/dismiss`)
@@ -279,6 +313,7 @@ export function Composer({ m }: { m: SessionMeta }) {
   }
   return (
     <div className="composer">
+      <RunningTasks sid={m.id} />
       <Inbox m={m} />
       {(notes > 0 || reactions > 0 || answers > 0 || dismissed > 0 || done > 0 || open.length > 0) && (
         <div className="queue">
@@ -296,7 +331,7 @@ export function Composer({ m }: { m: SessionMeta }) {
             <b>The prompt cache expired {minutes(-(cache.left ?? 0))} ago.</b> This message writes {kTokens(m.context.used)} tokens to the cache again.{' '}
             That costs about <button className="link" title="Show as dollars or % of 5-hour or weekly limit" onClick={toggleMoney}><b>{moneyLong(cache.dollars.cold)}</b></button>
             {state.money !== 'usd' && shareOf(cache.dollars.cold) != null && limitLeft() != null && <> ({pct(limitLeft()!)} left)</>}, about {cache.times}× a message sent while the cache is warm ({moneyLong(cache.dollars.warm)}).
-            {state.money !== 'usd' && shareOf(cache.dollars.cold) == null && <> Codiner is still measuring how much of your usage limit that is.</>}
+            {state.money !== 'usd' && shareOf(cache.dollars.cold) == null && <> Codinger is still measuring how much of your usage limit that is.</>}
           </span>
           <button className="primary" disabled={sending} onClick={() => void send(true)}>Send anyway</button>
         </div>
@@ -326,8 +361,8 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
   const m = st.sessions.find((s) => s.id === id)
   useEffect(() => { void loadEvents(id) }, [id])
   const items = useItems(id)
-  const [panel, setPanel] = useState(() => localStorage.getItem('codiner.panel') !== '0')
-  const togglePanel = () => { localStorage.setItem('codiner.panel', panel ? '0' : '1'); setPanel(!panel) }
+  const [panel, setPanel] = useState(() => localStorage.getItem('codinger.panel') !== '0')
+  const togglePanel = () => { localStorage.setItem('codinger.panel', panel ? '0' : '1'); setPanel(!panel) }
   const [panelW, setPanelW] = useWidth('attention', 300)
   if (!m) return <div className="empty">No such session.</div>
   const open = items.filter((i) => i.status === 'open').length

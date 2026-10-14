@@ -2,11 +2,11 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Codiner — reply to your coding agent the way you mark up a draft</title>
+<title>Codinger — reply to your coding agent the way you mark up a draft</title>
 <meta name="description" content="A web UI for Claude Code. Select any passage of the agent's answer and comment on it in the margin, answer its questions where it asks them, and run many sessions side by side. Every session is your own Claude Code.">
-<meta property="og:title" content="Codiner">
+<meta property="og:title" content="Codinger">
 <meta property="og:description" content="Reply to your coding agent the way you mark up a draft. Comments in the margin, questions answered in place, many sessions side by side.">
-<meta property="og:image" content="https://codiner.app/og.png">
+<meta property="og:image" content="https://codinger.app/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="demo.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 -1 16 14' shape-rendering='crispEdges'><rect x='3' y='3' width='10' height='1' fill='%232b98c6'/><rect x='2' y='4' width='12' height='5' fill='%232b98c6'/><rect x='3' y='9' width='10' height='1' fill='%232b98c6'/><rect x='0' y='6' width='2' height='2' fill='%232b98c6'/><rect x='14' y='6' width='2' height='2' fill='%232b98c6'/><rect x='5' y='4' width='1' height='2' fill='%23222'/><rect x='10' y='4' width='1' height='2' fill='%23222'/><rect x='4' y='10' width='2' height='2' fill='%232b98c6'/><rect x='10' y='10' width='2' height='2' fill='%232b98c6'/></svg>">
@@ -124,17 +124,17 @@
 
 <div class="wrap">
   <header>
-    <a class="brand" href="/"><span data-critter='{"size":26}'></span> Codiner</a>
-    <nav><a href="#replying">Replying</a><a href="#sessions">Sessions</a><a href="#install">Install</a><a href="https://github.com/huttj/codiner">GitHub</a></nav>
+    <a class="brand" href="/"><span data-critter='{"size":26}'></span> Codinger</a>
+    <nav><a href="#replying">Replying</a><a href="#sessions">Sessions</a><a href="#install">Install</a><a href="https://github.com/huttj/codinger">GitHub</a></nav>
   </header>
 
   <div class="hero-row">
   <div class="hero">
     <h1>Reply to your coding agent the way you <mark>mark up a draft</mark>.</h1>
-    <p class="lede">Codiner is a web UI for Claude Code. Select any passage of the agent's answer and comment on it in the margin. Answer its questions where it asks them. Send everything in one go. Run many sessions side by side, each with a small critter that shows what it is doing.</p>
+    <p class="lede">Codinger is a web UI for Claude Code. Select any passage of the agent's answer and comment on it in the margin. Answer its questions where it asks them. Send everything in one go. Run many sessions side by side, each with a small critter that shows what it is doing.</p>
     <div class="cta">
       <a class="btn" href="#install">Install</a>
-      <a class="btn ghost" href="https://github.com/huttj/codiner">Source on GitHub</a>
+      <a class="btn ghost" href="https://github.com/huttj/codinger">Source on GitHub</a>
       <span class="note">Free and open source. Needs Claude Code.</span>
     </div>
   </div>
@@ -150,7 +150,7 @@
 
   <section id="replying">
     <h2>Reply in the margin</h2>
-    <p>A chat box makes you quote by hand. In Codiner you select a passage and type your note beside it, the way you review a draft. A reaction is one click. A suggested answer is one click. Codiner turns all of it into one plain message.</p>
+    <p>A chat box makes you quote by hand. In Codinger you select a passage and type your note beside it, the way you review a draft. A reaction is one click. A suggested answer is one click. Codinger turns all of it into one plain message.</p>
     <div class="pair">
       <div>
         <span class="tag side-label">What you see (try it)</span>
@@ -164,13 +164,13 @@
     <div class="grid">
       <div class="tile"><span class="tag">Comments</span><h3>Select, then type</h3><p>A comment card opens in the right margin, level with the passage. Cards stack so they never overlap. Sent comments stay as read-only cards.</p></div>
       <div class="tile"><span class="tag">Reactions</span><h3>An emoji on any paragraph</h3><p>Move the pointer to a paragraph and click the faint emoji at its left. Press and hold for your most used ones. A reaction on an item counts as a reply to it.</p></div>
-      <div class="tile"><span class="tag">One send</span><h3>Nothing slips past</h3><p>A panel lists the open questions and items. If you send while some are still open, Codiner tells you first. The agent gets one line for the items you set aside.</p></div>
+      <div class="tile"><span class="tag">One send</span><h3>Nothing slips past</h3><p>A panel lists the open questions and items. If you send while some are still open, Codinger tells you first. The agent gets one line for the items you set aside.</p></div>
     </div>
   </section>
 
   <section>
     <h2>Five kinds of content</h2>
-    <p>Codiner tells the agent to mark each part of its reply. Each kind looks different, so you can see at a glance what needs you.</p>
+    <p>Codinger tells the agent to mark each part of its reply. Each kind looks different, so you can see at a glance what needs you.</p>
     <div class="kinds">
       <div class="kind"><div><h3>Answer</h3><p>The direct answer, first, in the accent colour.</p></div><div data-demo="answer"></div></div>
       <div class="kind"><div><h3>Consider</h3><p>A problem, risk or trade-off that wants your attention. Reply, dismiss it, or mark it done.</p></div><div data-demo="consider"></div></div>
@@ -202,15 +202,15 @@
   <section id="harness">
     <div class="harness">
       <h2>Every session is Claude Code</h2>
-      <p class="harness-lede">Codiner is a window onto Claude Code, <strong>not a replacement for it</strong>. <strong>You must have Claude Code installed and logged in.</strong> Codiner does not talk to any model itself.</p>
+      <p class="harness-lede">Codinger is a window onto Claude Code, <strong>not a replacement for it</strong>. <strong>You must have Claude Code installed and logged in.</strong> Codinger does not talk to any model itself.</p>
       <ul>
-        <li>Each session is a real <code>claude</code> process, which Codiner starts in Claude Code's documented headless mode.</li>
-        <li><strong>Every command, file edit and tool call goes through Claude Code</strong>, with its permission prompts. Codiner shows the prompts, and you answer them.</li>
+        <li>Each session is a real <code>claude</code> process, which Codinger starts in Claude Code's documented headless mode.</li>
+        <li><strong>Every command, file edit and tool call goes through Claude Code</strong>, with its permission prompts. Codinger shows the prompts, and you answer them.</li>
         <li>Your subscription, settings, hooks, <code>CLAUDE.md</code>, skills and MCP servers all apply, as in the terminal.</li>
-        <li>Codiner removes API keys from the environment of the process, so a session cannot bill per token by accident.</li>
+        <li>Codinger removes API keys from the environment of the process, so a session cannot bill per token by accident.</li>
         <li>The server listens on <code>127.0.0.1</code> only and rejects requests from other origins. A web page you visit cannot reach it.</li>
       </ul>
-      <p class="fine">Codiner is an independent open-source project. It is not affiliated with, endorsed by or sponsored by Anthropic. Claude and Claude Code are trademarks of Anthropic, PBC.</p>
+      <p class="fine">Codinger is an independent open-source project. It is not affiliated with, endorsed by or sponsored by Anthropic. Claude and Claude Code are trademarks of Anthropic, PBC.</p>
     </div>
   </section>
 
@@ -222,7 +222,7 @@
         <span class="tag">Let your agent do it</span>
         <h3>Paste this into a terminal</h3>
         <div class="copyable">
-<pre><code id="agent-cmd">claude "Install Codiner for me: clone https://github.com/huttj/codiner into ~/codiner, run npm install, then start it with npm start in the background. Tell me when http://localhost:4545 answers."</code></pre>
+<pre><code id="agent-cmd">claude "Install Codinger for me: clone https://github.com/huttj/codinger into ~/codinger, run npm install, then start it with npm start in the background. Tell me when http://localhost:4545 answers."</code></pre>
           <button class="btn small" data-copy="agent-cmd">Copy</button>
         </div>
         <p class="note">Claude Code asks before it runs each command.</p>
@@ -231,13 +231,13 @@
         <span class="tag">By hand</span>
         <h3>Four commands</h3>
         <div class="copyable">
-<pre><code id="hand-cmd">git clone https://github.com/huttj/codiner ~/codiner
-cd ~/codiner
+<pre><code id="hand-cmd">git clone https://github.com/huttj/codinger ~/codinger
+cd ~/codinger
 npm install
 npm start</code></pre>
           <button class="btn small" data-copy="hand-cmd">Copy</button>
         </div>
-        <p class="note">Then open <code>http://localhost:4545</code>. Use <code>npm run dev</code> to work on Codiner itself.</p>
+        <p class="note">Then open <code>http://localhost:4545</code>. Use <code>npm run dev</code> to work on Codinger itself.</p>
       </div>
     </div>
   </section>
@@ -245,22 +245,22 @@ npm start</code></pre>
   <section>
     <div class="sibling">
       <span class="em">✍️</span>
-      <p><b>From <span class="tip" tabindex="0" data-tip="Joshua and Claude">the makers</span> of <a href="https://marginer.app">Marginer</a>.</b> Codiner's comments use Marginer's text anchoring and its <code>&gt; quote</code> + note format. Marginer does the same for any web page: highlight, add a note or a reaction, and paste the notes anywhere.</p>
+      <p><b>From <span class="tip" tabindex="0" data-tip="Joshua and Claude">the makers</span> of <a href="https://marginer.app">Marginer</a>.</b> Codinger's comments use Marginer's text anchoring and its <code>&gt; quote</code> + note format. Marginer does the same for any web page: highlight, add a note or a reaction, and paste the notes anywhere.</p>
     </div>
   </section>
 
   <section class="faq">
     <h2>Questions</h2>
-    <details><summary>Does it cost anything?</summary><p>Codiner is free and MIT licensed. Your sessions use your own Claude Code plan, the same as in the terminal.</p></details>
-    <details><summary>Is my code sent anywhere new?</summary><p>No. Codiner runs on your machine and talks only to the <code>claude</code> processes it starts. Claude Code talks to Anthropic as it always does.</p></details>
-    <details><summary>Can I still use the terminal?</summary><p>Yes. Claude Code keeps its own transcripts, so <code>claude --resume</code> picks up any Codiner session, and Codiner can open any terminal session.</p></details>
-    <details><summary>Can I tell every session how to write?</summary><p>Yes. <code>~/.codiner/AGENTS.md</code> goes into the system prompt of every session. Edit it in Settings. By default it asks the agent to write in Simplified Technical English.</p></details>
+    <details><summary>Does it cost anything?</summary><p>Codinger is free and MIT licensed. Your sessions use your own Claude Code plan, the same as in the terminal.</p></details>
+    <details><summary>Is my code sent anywhere new?</summary><p>No. Codinger runs on your machine and talks only to the <code>claude</code> processes it starts. Claude Code talks to Anthropic as it always does.</p></details>
+    <details><summary>Can I still use the terminal?</summary><p>Yes. Claude Code keeps its own transcripts, so <code>claude --resume</code> picks up any Codinger session, and Codinger can open any terminal session.</p></details>
+    <details><summary>Can I tell every session how to write?</summary><p>Yes. <code>~/.codinger/AGENTS.md</code> goes into the system prompt of every session. Edit it in Settings. By default it asks the agent to write in Simplified Technical English.</p></details>
     <details><summary>Does it work on Windows or Linux?</summary><p>The server is plain Node, so it should. <b>Run in Terminal</b> and the native folder dialog are macOS only.</p></details>
-    <details><summary>Is Codiner made by Anthropic?</summary><p>No. Codiner is an independent open-source project, and Anthropic does not endorse it. Claude and Claude Code are trademarks of Anthropic, PBC.</p></details>
+    <details><summary>Is Codinger made by Anthropic?</summary><p>No. Codinger is an independent open-source project, and Anthropic does not endorse it. Claude and Claude Code are trademarks of Anthropic, PBC.</p></details>
   </section>
 
   <footer>
-    <span>Open source: <a href="https://github.com/huttj/codiner">github.com/huttj/codiner</a> · MIT</span>
+    <span>Open source: <a href="https://github.com/huttj/codinger">github.com/huttj/codinger</a> · MIT</span>
     <span>Also: <a href="https://marginer.app">Marginer</a>, notes in the margin of any page.</span>
     <span class="fine">Not affiliated with Anthropic. Claude and Claude Code are trademarks of Anthropic, PBC.</span>
   </footer>

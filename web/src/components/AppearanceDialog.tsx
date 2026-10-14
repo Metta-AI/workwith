@@ -44,7 +44,7 @@ export function AppearanceDialog({ welcome, onClose }: { welcome?: boolean; onCl
     <div className="modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) close() }}>
       <div className="modal appearance-modal">
         <div className="appearance-head">
-          <h2>{welcome ? 'Welcome to Codiner' : 'Appearance'}</h2>
+          <h2>{welcome ? 'Welcome to Codinger' : 'Appearance'}</h2>
           <button className="icon-btn" title="Close" onClick={close}><XIcon size={14} /></button>
         </div>
         {welcome && <p className="muted appearance-lead">Pick a colour to make it yours. You can change this later in Settings.</p>}

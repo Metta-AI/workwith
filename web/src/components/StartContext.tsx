@@ -27,7 +27,7 @@ export function StartContext() {
   return (
     <div className="start-context">
       <p className="muted">
-        Every new session sends this before your first message: Claude Code's system prompt and tools, Codiner's
+        Every new session sends this before your first message: Claude Code's system prompt and tools, Codinger's
         instructions and tools, your MCP servers, memory files and skills. Much of it is the same in every session, so
         it is usually read from the cache, which costs less than a fresh send. These are Claude Code's own estimates.
       </p>

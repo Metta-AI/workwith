@@ -1,21 +1,21 @@
 // Your MCP servers (claude.ai connectors, user and project servers), for sessions
 // that start with them off. A new worker starts with --strict-mcp-config, so it
-// has only Codiner's own server; you, or Claude through use_mcp_server, turn
-// others on, and Codiner adds them to the running process (Session.setMcp, the
+// has only Codinger's own server; you, or Claude through use_mcp_server, turn
+// others on, and Codinger adds them to the running process (Session.setMcp, the
 // mcp_set_servers control request). Turning one on keeps the prompt cache: its
 // tools reach Claude as a message added to the end, not as a changed prompt.
 //
 // The list and each server's config come from a probe: a `claude -p` that starts
 // without the strict flag, answers mcp_status and ends, with no API call. It runs
 // only when you press Refresh in the MCP dialog: servers seldom change, and a
-// session that needs one Codiner doesn't know asks you to (SessionMeta.mcp.missing).
+// session that needs one Codinger doesn't know asks you to (SessionMeta.mcp.missing).
 // Kept per folder, since project servers differ, in mcp-servers.json.
 
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { DATA } from './store.ts'
-import { childEnv } from './auth.ts'
+import { CLAUDE, childEnv } from './auth.ts'
 
 export type McpServer = { name: string; status: string; scope: string; tools: number; config: Record<string, unknown> }
 
@@ -51,7 +51,7 @@ export function probe(cwd: string): Promise<McpServer[]> {
 // stops changing and nothing is still pending, for at most 20 seconds.
 function run(cwd: string): Promise<McpServer[]> {
   return new Promise((resolve, reject) => {
-    const p = spawn(process.env.CODINER_CLAUDE ?? 'claude',
+    const p = spawn(CLAUDE,
       ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--no-session-persistence'],
       { cwd, env: childEnv(), stdio: ['pipe', 'pipe', 'ignore'] })
     let buf = '', n = 0, last = '', same = 0, done = false
@@ -76,7 +76,7 @@ function run(cwd: string): Promise<McpServer[]> {
         try { m = JSON.parse(line) } catch { continue }
         const list = m.type === 'control_response' ? m.response?.response?.mcpServers : null
         if (!Array.isArray(list)) continue
-        const servers: McpServer[] = list.filter((x: any) => x?.name && x.name !== 'codiner').map((x: any) => ({
+        const servers: McpServer[] = list.filter((x: any) => x?.name && x.name !== 'codinger').map((x: any) => ({
           name: x.name, status: String(x.status ?? ''), scope: String(x.scope ?? ''), tools: Array.isArray(x.tools) ? x.tools.length : 0, config: x.config ?? {},
         }))
         const key = JSON.stringify(servers.map((s) => [s.name, s.status]))

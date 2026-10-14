@@ -1,7 +1,7 @@
 // Prompt cache warmth. Each API call reads the conversation from Anthropic's
 // prompt cache and keeps it alive for its TTL (5 minutes or 1 hour; usage says
 // which). A message sent after that writes the whole context to the cache again,
-// at full price: Settings can make Codiner ask first when that is big.
+// at full price: Settings can make Codinger ask first when that is big.
 
 import type { SessionMeta } from './types.ts'
 

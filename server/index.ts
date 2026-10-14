@@ -1,4 +1,4 @@
-// Codiner's server: owns the Claude Code processes, persists their transcripts,
+// Codinger's server: owns the Claude Code processes, persists their transcripts,
 // and serves the UI. Binds to 127.0.0.1 only and refuses cross-origin requests,
 // since anything that can reach it can run Claude in your directories.
 //
@@ -15,12 +15,14 @@ import type { InboxItem, Part, PermissionMode, ServerMsg, SessionMeta, Settings,
 import { inboxLabel, inboxParts, openItemsOf } from '../shared/inbox.ts'
 import { execFile, execFileSync, spawn } from 'node:child_process'
 import os from 'node:os'
-import { Session, type Hooks, type Launch, type SlashCommand } from './session.ts'
+import { Session, slashCommand, type Hooks, type Launch, type SlashCommand } from './session.ts'
+import { Proc } from './proc.ts'
 import { findHistory, importTranscript, lastCache, listDirs, listHistory } from './history.ts'
 import { LEAD_PROMPT, WORKER_PROMPT, lookPrompt, workerNotesPrompt } from './prompts.ts'
 import { LOOK_OPTIONS, LOOK_SLOTS, cleanLook, describeLook } from '../shared/looks.ts'
 import { cleanAppearance } from '../shared/appearance.ts'
 import * as meter from './meter.ts'
+import * as costs from './costs.ts'
 import { notesDir, notesNow, notesPath, readNotes, resumeKeepWarm, startNotes } from './notes.ts'
 import { notesFile } from '../shared/notes.ts'
 import { allTasks, endText, logPath, markTold, readLog, removeTask, searchLog, startTask, startTasks, statusLine, stopTask, taskOf } from './tasks.ts'
@@ -29,8 +31,9 @@ import { configsFor, probe, serversFor } from './mcpservers.ts'
 import { DEFAULT_CACHE_GUARD, cacheLeft, knownTtl } from '../shared/cache.ts'
 import { AGENTS_FILE, agentsPrompt, readAgentsMd, writeAgentsMd } from './agentsmd.ts'
 import { handleMcp, type Tool } from './mcp.ts'
+import { AUTOPILOT_MODES, amount, nudge, startAutopilot, usedOf, verdict } from './autopilot.ts'
 import { blame, initFileHistory, moveHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
-import { authState, cancelLogin, childEnv, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
+import { CLAUDE, authState, cancelLogin, childEnv, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
 import {
   DATA, LEAD_DIR, LEAD_NOTES, OLD_LEAD_NOTES, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, leadRenamed, resolveModel, loadSessions, promptFile, loadSettings, saveImage, saveSessions, saveSettings,
 } from './store.ts'
@@ -38,7 +41,14 @@ import {
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const PORT = Number(process.env.PORT ?? 4545)
 const DEV = process.argv.includes('--dev')
-const MCP_TOKEN = randomUUID()
+// Kept across restarts: a claude process that outlives a server (server/proc.ts) still reaches Codinger's tools.
+const MCP_TOKEN = (() => {
+  const f = path.join(DATA, 'mcp-token')
+  try { const t = fs.readFileSync(f, 'utf8').trim(); if (t) return t } catch { /* none yet */ }
+  const t = randomUUID()
+  fs.writeFileSync(f, t, { mode: 0o600 })
+  return t
+})()
 const LEAD_ID = 'lead'
 const MODES: PermissionMode[] = ['auto', 'default', 'acceptEdits', 'plan', 'bypassPermissions']
 
@@ -48,6 +58,7 @@ const sessions = new Map<string, Session>()
 let settings: Settings = loadSettings()
 meter.poll()
 setInterval(meter.poll, 60_000).unref()
+costs.start()
 let usage: Usage = { rate: meter.rate() }
 const sockets = new Set<WebSocket>()
 // Slash commands differ by directory (project skills), so keep each session's
@@ -98,8 +109,8 @@ const runs = new Map<string, { sid: string; log: string }>()
 // command began. On success the window closes; on failure it stays at a prompt.
 function runWindows(sid: string, cwd: string, cmd: string): string {
   const token = randomUUID().slice(0, 12)
-  const file = path.join(os.tmpdir(), `codiner-${token}.ps1`)
-  const log = path.join(os.tmpdir(), `codiner-${token}.log`)
+  const file = path.join(os.tmpdir(), `codinger-${token}.ps1`)
+  const log = path.join(os.tmpdir(), `codinger-${token}.log`)
   const q = (x: string) => `'${x.replace(/'/g, "''")}'`
   runs.set(token, { sid, log })
   // With a BOM, or Windows PowerShell reads the file in the ANSI code page.
@@ -107,22 +118,22 @@ function runWindows(sid: string, cwd: string, cmd: string): string {
     'Remove-Item -LiteralPath $PSCommandPath -ErrorAction SilentlyContinue',
     `Set-Location -LiteralPath ${q(cwd)}`,
     `Write-Host ('$ ' + ${q(cmd)})`,
-    '$codinerFrom = $Host.UI.RawUI.CursorPosition.Y',
-    '$global:LASTEXITCODE = 0; $Error.Clear(); $codinerOk = $false',
-    'try {', cmd, '$codinerOk = $?', '} catch { Write-Host $_ -ForegroundColor Red }',
-    '$codinerCode = if ($LASTEXITCODE) { $LASTEXITCODE } elseif (-not $codinerOk -or $Error.Count) { 1 } else { 0 }',
+    '$codingerFrom = $Host.UI.RawUI.CursorPosition.Y',
+    '$global:LASTEXITCODE = 0; $Error.Clear(); $codingerOk = $false',
+    'try {', cmd, '$codingerOk = $?', '} catch { Write-Host $_ -ForegroundColor Red }',
+    '$codingerCode = if ($LASTEXITCODE) { $LASTEXITCODE } elseif (-not $codingerOk -or $Error.Count) { 1 } else { 0 }',
     'try {',
     '  $ui = $Host.UI.RawUI; $to = $ui.CursorPosition.Y',
-    '  $cells = $ui.GetBufferContents((New-Object System.Management.Automation.Host.Rectangle 0, ([Math]::Max($codinerFrom, $to - 200)), ($ui.BufferSize.Width - 1), $to))',
+    '  $cells = $ui.GetBufferContents((New-Object System.Management.Automation.Host.Rectangle 0, ([Math]::Max($codingerFrom, $to - 200)), ($ui.BufferSize.Width - 1), $to))',
     '  $lines = for ($y = 0; $y -le $cells.GetUpperBound(0); $y++) { (-join (0..$cells.GetUpperBound(1) | ForEach-Object { $cells[$y, $_].Character })).TrimEnd() }',
     `  [IO.File]::WriteAllText(${q(log)}, ($lines -join "\`n"))`,
     '} catch { }',
-    `try { Invoke-RestMethod -Method Post -TimeoutSec 5 -Uri "http://127.0.0.1:${PORT}/api/runs/${token}?code=$codinerCode" | Out-Null } catch { }`,
-    'if ($codinerCode -eq 0) { Write-Host; Write-Host "Done. This window closes."; Start-Sleep 2; [Environment]::Exit(0) }',
+    `try { Invoke-RestMethod -Method Post -TimeoutSec 5 -Uri "http://127.0.0.1:${PORT}/api/runs/${token}?code=$codingerCode" | Out-Null } catch { }`,
+    'if ($codingerCode -eq 0) { Write-Host; Write-Host "Done. This window closes."; Start-Sleep 2; [Environment]::Exit(0) }',
     '',
   ].join('\r\n'))
   // `start` gives it a window of its own; -NoExit keeps that window after a failure.
-  spawn(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', `"start "Codiner" powershell.exe -NoExit -ExecutionPolicy Bypass -File "${file}""`],
+  spawn(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', `"start "Codinger" powershell.exe -NoExit -ExecutionPolicy Bypass -File "${file}""`],
     { cwd, windowsHide: true, windowsVerbatimArguments: true, stdio: 'ignore', detached: true }).on('error', (e) => console.error('run', e.message)).unref()
   return token
 }
@@ -145,7 +156,7 @@ const hooks: Hooks = {
   event: (s, event) => {
     broadcast({ type: 'event', sessionId: s.meta.id, event })
     metaChanged()
-    if (event.t === 'result') setImmediate(() => { autoSend(s); taskTurn(s) })
+    if (event.t === 'result') setImmediate(() => { autoSend(s); taskTurn(s); autopilotTurn(s, event.isError) })
     // A tool call that finished may have changed a tracked file: record it with this message.
     if (event.t === 'tool_result') {
       const ev = s.getEvents()
@@ -159,7 +170,7 @@ const hooks: Hooks = {
   delta: (s, text, reset) => broadcast({ type: 'delta', sessionId: s.meta.id, text, reset }),
   authFailed: () => authNeeded(),
   truncate: (s, seq) => { broadcast({ type: 'truncate', sessionId: s.meta.id, seq }); metaChanged() },
-  usage: (u) => { meter.limit(u); usage = { ...u, rate: meter.rate() }; broadcast({ type: 'usage', usage }) },
+  usage: (u) => { meter.limit(u); costs.limit(u); usage = { ...u, rate: meter.rate() }; broadcast({ type: 'usage', usage }) },
   commands: (s, list) => {
     commands.set(s.meta.id, list)
     if (s.meta.kind === 'worker') { lastCommands = list; fs.writeFile(COMMANDS_FILE, JSON.stringify(list), () => {}) }
@@ -168,17 +179,17 @@ const hooks: Hooks = {
 }
 
 function launchFor(meta: SessionMeta): () => Launch {
-  // Every session gets Codiner's set_look tool, pre-approved; workers keep their own MCP servers too.
+  // Every session gets Codinger's set_look tool, pre-approved; workers keep their own MCP servers too.
   if (meta.kind === 'worker') return () => {
     const notes = settings.notes !== false
     // The worker writes its own notes: their folder (and its .gitignore) is there first.
     if (notes) notesDir(meta)
     return {
       args: [
-        '--mcp-config', JSON.stringify({ mcpServers: { codiner: { type: 'http', url: `http://127.0.0.1:${PORT}/mcp/${MCP_TOKEN}/look/${meta.id}` } } }),
-        // Started with your MCP servers off: only Codiner's, until one is turned on (server/mcpservers.ts).
+        '--mcp-config', JSON.stringify({ mcpServers: { codinger: { type: 'http', url: `http://127.0.0.1:${PORT}/mcp/${MCP_TOKEN}/look/${meta.id}` } } }),
+        // Started with your MCP servers off: only Codinger's, until one is turned on (server/mcpservers.ts).
         ...(meta.mcp ? ['--strict-mcp-config'] : []),
-        '--allowedTools', `mcp__codiner__set_look,mcp__codiner__set_title,mcp__codiner__start_task,mcp__codiner__stop_task,mcp__codiner__list_tasks${meta.mcp && settings.mcpClaude !== false ? ',mcp__codiner__use_mcp_server' : ''}`,
+        '--allowedTools', `mcp__codinger__set_look,mcp__codinger__set_title,mcp__codinger__start_task,mcp__codinger__stop_task,mcp__codinger__list_tasks${meta.mcp && settings.mcpClaude !== false ? ',mcp__codinger__use_mcp_server' : ''}`,
       ],
       prompt: WORKER_PROMPT + lookPrompt(meta.look) + titlePrompt(meta) + mcpPrompt(meta) + (notes ? workerNotesPrompt(notesFile(meta.id)) : '') + agentsPrompt(),
     }
@@ -187,8 +198,8 @@ function launchFor(meta: SessionMeta): () => Launch {
     prompt: LEAD_PROMPT + lookPrompt(meta.look) + agentsPrompt(),
     args: [
       '--strict-mcp-config',
-      '--mcp-config', JSON.stringify({ mcpServers: { codiner: { type: 'http', url: `http://127.0.0.1:${PORT}/mcp/${MCP_TOKEN}` } } }),
-      '--allowedTools', 'mcp__codiner',
+      '--mcp-config', JSON.stringify({ mcpServers: { codinger: { type: 'http', url: `http://127.0.0.1:${PORT}/mcp/${MCP_TOKEN}` } } }),
+      '--allowedTools', 'mcp__codinger',
       '--tools', 'Read,Write,Edit,Glob,Grep',
       '--autocompact', '200k',
     ],
@@ -225,7 +236,7 @@ for (const m of loadSessions()) {
   const meta = { ...newMeta(m), ...m }
   // The window used to default to 200k until a turn finished; trust what the model reports.
   if (meta.context.window === 200_000 || meta.context.used > meta.context.window) meta.context.window = Math.max(knownWindow(meta.model ?? meta.expectedModel), meta.context.used)
-  // Sessions from before Codiner kept a cache record: the transcript has one.
+  // Sessions from before Codinger kept a cache record: the transcript has one.
   if (!meta.cache && meta.started) meta.cache = lastCache(meta.cwd, meta.claudeSessionId) ?? undefined
   adopt(meta)
 }
@@ -245,8 +256,13 @@ if (!settings.autoModeMigrated) {
   saveSettings(settings)
   metaChanged()
 }
+// Busy sessions the last server handed on keep going; any other claude process it left is stopped.
+Proc.sweep(new Set([...sessions.values()].map((s) => s.reattach()).filter((k): k is string => !!k)))
 startNotes({ sessions: () => sessions.values(), settings: () => settings, usage: () => usage, changed: metaChanged })
 startTasks({ changed: (tasks) => broadcast({ type: 'tasks', tasks }), ended: taskEnded })
+// Autopilot goes on in sessions the last server left between turns (a handed-on busy one
+// gets there when its turn ends).
+setTimeout(() => { for (const s of sessions.values()) autopilotTurn(s, false, true) }, 3000)
 
 function get(id: string): Session {
   const s = sessions.get(id)
@@ -254,8 +270,11 @@ function get(id: string): Session {
   return s
 }
 
-function createSession(o: { cwd: string; title?: string; model?: string | null; permissionMode?: PermissionMode; parentId?: string | null }): Session {
+function createSession(o: { cwd: string; title?: string; model?: string | null; permissionMode?: PermissionMode; parentId?: string | null; mkdir?: boolean }): Session {
   const cwd = path.resolve(expandHome(String(o.cwd ?? '').trim()))
+  if (o.mkdir && !fs.existsSync(cwd)) {
+    try { fs.mkdirSync(cwd, { recursive: true }) } catch (e) { throw new HttpError(400, `Can't create ${cwd}: ${(e as Error).message}`) }
+  }
   if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new HttpError(400, `Not a directory: ${cwd}`)
   const mode = MODES.includes(o.permissionMode as PermissionMode) ? o.permissionMode! : 'auto'
   const s = adopt(newMeta({
@@ -294,7 +313,10 @@ function resumeHistory(claudeId: string): Session {
 // the board; a worker gets who else is at work in its directory, from the
 // ~/.claude/bin/agents helper when there is one, so it need not check first.
 const AGENTS_BIN = path.join(os.homedir(), '.claude', 'bin', 'agents')
-function hiddenFor(s: Session): { hidden?: string } {
+// What goes to Claude unseen with a message. A slash command takes none, so tasks
+// that ended stay unheard until a message that can carry them.
+function hiddenFor(s: Session, parts: Part[]): { hidden?: string; tasks?: string[] } {
+  if (slashCommand(parts)) return {}
   if (s.meta.kind === 'lead') return { hidden: board() }
   const out: string[] = []
   if (fs.existsSync(AGENTS_BIN)) {
@@ -302,20 +324,56 @@ function hiddenFor(s: Session): { hidden?: string } {
     try { who = execFileSync(AGENTS_BIN, ['active', s.meta.cwd, '--other', s.meta.claudeSessionId.slice(0, 8)], { timeout: 3000, encoding: 'utf8' }) }
     catch (e) { who = String((e as { stdout?: string }).stdout ?? '') } // exit code 1: someone is active
     who = who.trim()
-    out.push(`[Codiner, ${new Date().toISOString().slice(0, 16)}Z] Other agents active in ${s.meta.cwd} (from \`agents active\`): ${who ? `\n${who}` : 'none.'}`)
+    out.push(`[Codinger, ${new Date().toISOString().slice(0, 16)}Z] Other agents active in ${s.meta.cwd} (from \`agents active\`): ${who ? `\n${who}` : 'none.'}`)
   }
-  // Tasks that ended since it last heard.
-  out.push(...tasksEnded(s))
-  return out.length ? { hidden: out.join('\n\n') } : {}
+  // Tasks that ended since it last heard; the message keeps their ids, to show them.
+  const ended = tasksEnded(s)
+  out.push(...ended.map(endText))
+  return out.length ? { hidden: out.join('\n\n'), ...(ended.length ? { tasks: ended.map((t) => t.id) } : {}) } : {}
+}
+
+// ---- autopilot (server/autopilot.ts) ----------------------------------------
+
+// A turn ended (or the server started): tell Claude to go on, or end autopilot.
+// It waits while a task or background work will start the next turn itself.
+function autopilotTurn(s: Session, error: boolean, boot = false) {
+  const ap = s.meta.autopilot
+  if (!ap || ap.ended || busy(s) || s.meta.archived) return
+  if (s.backgroundWork || allTasks().some((t) => t.sid === s.meta.id && !t.ended && t.notify !== 'next')) return
+  // At a start, the turn before was judged by the last server.
+  ap.used = usedOf(ap, s.meta, usage)
+  const why = boot ? (ap.used >= ap.budget ? 'the budget is spent' : null) : verdict(ap, s.meta, s.getEvents(), usage, error)
+  if (why) return endAutopilot(s, why)
+  goOn(s)
+}
+
+function goOn(s: Session) {
+  const ap = s.meta.autopilot!
+  const n = nudge(ap)
+  const p: Part[] = [{ kind: 'text', text: n.text }]
+  const h = hiddenFor(s, p)
+  s.send(p, { from: 'autopilot', ...h, hidden: [n.hidden, h.hidden].filter(Boolean).join('\n\n') })
+  ap.turns++
+  metaChanged()
+}
+
+function endAutopilot(s: Session, reason: string) {
+  const ap = s.meta.autopilot
+  if (!ap || ap.ended) return
+  ap.used = usedOf(ap, s.meta, usage)
+  ap.ended = { reason, at: Date.now() }
+  s.notice(`Autopilot ended: ${reason}. It used ${amount(ap.unit, ap.used)} of ${amount(ap.unit, ap.budget)} in ${ap.turns} ${ap.turns === 1 ? 'turn' : 'turns'}.`)
+  s.markUnread()
+  metaChanged()
 }
 
 // ---- tasks (server/tasks.ts) ------------------------------------------------
 
-// The session's tasks that ended and it has not heard of: their texts, now marked heard.
-function tasksEnded(s: Session): string[] {
+// The session's tasks that ended and it has not heard of, now marked heard.
+function tasksEnded(s: Session): Task[] {
   const t = allTasks().filter((x) => x.sid === s.meta.id && x.ended && !x.told)
   if (t.length) markTold(t.map((x) => x.id))
-  return t.map(endText)
+  return t
 }
 
 const busy = (s: Session) => s.meta.status === 'working' || s.meta.status === 'permission'
@@ -325,7 +383,7 @@ const busy = (s: Session) => s.meta.status === 'working' || s.meta.status === 'p
 function taskEnded(t: Task) {
   const s = sessions.get(t.sid)
   if (!s) return
-  s.notice(`Task "${t.title}" ${t.stopped ? `was stopped by ${t.stopped === 'user' ? 'you' : 'Claude'}` : `ended${t.code != null ? ` with exit code ${t.code}` : ''}`}.`, t.code && !t.stopped ? 'warn' : 'info')
+  s.notice(`Task "${t.title}" ${t.stopped ? `was stopped by ${t.stopped === 'user' ? 'you' : 'Claude'}` : `ended${t.code != null ? ` with exit code ${t.code}` : ''}`}.`, t.code && !t.stopped ? 'warn' : 'info', { task: t.id })
   if (t.notify === 'next' || t.stopped === 'agent') return
   if (holdReasons(s, true).length) { s.notice(`Claude hears of it with your next message: its prompt cache has expired, so a message now would write it all again.`); return }
   if (busy(s) && t.notify === 'interrupt') s.interrupt()
@@ -341,8 +399,8 @@ function taskTurn(s: Session) {
 }
 
 function sendTasks(s: Session) {
-  const texts = tasksEnded(s)
-  if (texts.length) s.send([{ kind: 'text', text: texts.join('\n\n') }], { from: 'codiner', ...hiddenFor(s) })
+  const t = tasksEnded(s)
+  if (t.length) s.send([{ kind: 'text', text: t.map(endText).join('\n\n') }], { from: 'codinger', ...hiddenFor(s, []), tasks: t.map((x) => x.id) })
 }
 
 function taskTools(id: string): Tool[] {
@@ -350,7 +408,7 @@ function taskTools(id: string): Tool[] {
   return [
     {
       name: 'start_task',
-      description: 'Run a long or lasting shell command (a dev server, a watcher, a long build or test run) apart from this session, with no time limit. The user can watch its log and stop it in Codiner, and it keeps running if this session stops. Returns its id and log path; read the log with your usual tools.',
+      description: 'Run a long or lasting shell command (a dev server, a watcher, a long build or test run) apart from this session, with no time limit. The user can watch its log and stop it in Codinger, and it keeps running if this session stops. Returns its id and log path; read the log with your usual tools.',
       inputSchema: {
         type: 'object', required: ['title', 'command'],
         properties: {
@@ -421,7 +479,7 @@ function flushInbox(s: Session): void {
   const parts = inboxParts(s.meta.inbox)
   s.meta.inbox = []
   metaChanged()
-  if (parts.length) s.send(parts, { from: 'lead', ...hiddenFor(s) })
+  if (parts.length) s.send(parts, { from: 'lead', ...hiddenFor(s, parts) })
 }
 
 // A turn ended: drafts that waited only for it may go now.
@@ -438,7 +496,8 @@ function deliver(s: Session, drafts: Draft[], opts: { now?: boolean; urgent?: bo
     const text = drafts.filter((d) => !d.kind || d.kind === 'text').map((d) => d.text.trim()).filter(Boolean).join('\n\n')
     if (!text) throw new Error('An urgent send needs a message')
     if (s.meta.status === 'working' || s.meta.status === 'permission') s.interrupt()
-    s.send([{ kind: 'text', text }], { from: 'lead', ...hiddenFor(s) })
+    const p: Part[] = [{ kind: 'text', text }]
+    s.send(p, { from: 'lead', ...hiddenFor(s, p) })
     drafts = drafts.filter((d) => d.kind && d.kind !== 'text')
     if (!drafts.length) return `Stopped ${id}'s turn, if it was in one, and sent the message.`
   }
@@ -470,7 +529,7 @@ function mcpPrompt(meta: SessionMeta): string {
   const names = serversFor(meta.cwd).map((s) => s.name)
   const may = settings.mcpClaude !== false
   return `\n\n## MCP servers\nThis session started with the user's MCP servers off, to keep its context small.`
-    + (names.length ? ` These are available: ${names.join(', ')}.` : ' Codiner does not know their names yet: call use_mcp_server with no name.')
+    + (names.length ? ` These are available: ${names.join(', ')}.` : ' Codinger does not know their names yet: call use_mcp_server with no name.')
     + (meta.mcp.on.length ? ` Turned on: ${meta.mcp.on.join(', ')}.` : '')
     + ` When the task needs one, turn it on with the use_mcp_server tool${may ? '' : ', which asks the user first'}, then use its tools (they may come as deferred tools: load them with ToolSearch). Do not turn on a server the task does not need.\n`
 }
@@ -487,13 +546,13 @@ function mcpTool(id: string): Tool {
       const find = () => serversFor(m.cwd).find((x) => x.name.toLowerCase().replace(/^claude\.ai /, '') === want)
       const server = want ? find() : undefined
       const list = serversFor(m.cwd).map((x) => `${x.name}${m.mcp!.on.includes(x.name) ? ' (on)' : ''}${x.status === 'needs-auth' ? ' (needs sign-in)' : ''}`).join(', ')
-      // Codiner looks for servers only when the user presses Refresh: an unknown one may be new.
-      const refresh = 'Codiner may not know about it yet: its MCP chip, at the top of this session, now asks the user to press Refresh. Ask them to, then try again.'
+      // Codinger looks for servers only when the user presses Refresh: an unknown one may be new.
+      const refresh = 'Codinger may not know about it yet: its MCP chip, at the top of this session, now asks the user to press Refresh. Ask them to, then try again.'
       if (!want && list) return `Servers: ${list}.`
       if (!server) {
         m.mcp.missing = want ? String(args.name) : 'a list of servers'
         metaChanged()
-        return want ? `There is no server called "${args.name}" that Codiner knows (it knows: ${list || 'none'}). ${refresh}` : `Codiner knows no MCP servers yet. ${refresh}`
+        return want ? `There is no server called "${args.name}" that Codinger knows (it knows: ${list || 'none'}). ${refresh}` : `Codinger knows no MCP servers yet. ${refresh}`
       }
       if (server.status === 'needs-auth') return `${server.name} needs the user to sign in first, in their claude.ai connector settings. Ask them to do that.`
       if (!m.mcp.on.includes(server.name)) m.mcp.on.push(server.name)
@@ -507,7 +566,7 @@ function mcpTool(id: string): Tool {
 function titleTool(id: string): Tool {
   return {
     name: 'set_title',
-    description: "Name your session in the Codiner sidebar after its task: 2 to 5 words. Call it when the task becomes clear, and again only if the task changes a lot.",
+    description: "Name your session in the Codinger sidebar after its task: 2 to 5 words. Call it when the task becomes clear, and again only if the task changes a lot.",
     inputSchema: { type: 'object', properties: { title: { type: 'string' } }, required: ['title'] },
     run: (args) => {
       const s = get(id)
@@ -527,7 +586,7 @@ function titleTool(id: string): Tool {
 function lookTool(id: string): Tool {
   return {
     name: 'set_look',
-    description: 'Choose how your critter looks in the Codiner sidebar: its colour and what it wears. Give only the slots you want to set; "none" clears one. Pick once; there is no need to call it again.',
+    description: 'Choose how your critter looks in the Codinger sidebar: its colour and what it wears. Give only the slots you want to set; "none" clears one. Pick once; there is no need to call it again.',
     inputSchema: {
       type: 'object',
       properties: Object.fromEntries(LOOK_SLOTS.map((s) => [s, { type: 'string', enum: [...LOOK_OPTIONS[s], 'none'] }])),
@@ -643,13 +702,13 @@ const tools: Tool[] = [
         .slice(0, Math.min(Number(limit) || 10, 50))
         .map((h) => ({
           claude_session_id: h.id, title: h.title, cwd: h.cwd, last_active: new Date(h.mtime).toISOString(),
-          first_prompt: h.firstPrompt.slice(0, 160), last_prompt: h.lastPrompt.slice(0, 160), in_codiner_as: byClaude.get(h.id) ?? null,
+          first_prompt: h.firstPrompt.slice(0, 160), last_prompt: h.lastPrompt.slice(0, 160), in_codinger_as: byClaude.get(h.id) ?? null,
         }))
     },
   },
   {
     name: 'resume_past_session',
-    description: 'Bring a past Claude Code session into Codiner as a worker, with its conversation, so the user (or you, via send_to_session) can continue it. Returns its Codiner id.',
+    description: 'Bring a past Claude Code session into Codinger as a worker, with its conversation, so the user (or you, via send_to_session) can continue it. Returns its Codinger id.',
     inputSchema: { type: 'object', required: ['claude_session_id'], properties: { claude_session_id: { type: 'string' } } },
     run: ({ claude_session_id }) => {
       const s = resumeHistory(String(claude_session_id))
@@ -708,7 +767,7 @@ async function json(req: http.IncomingMessage): Promise<any> {
 }
 
 // Claude Code's /context for a new worker session in `cwd`, with a worker's own
-// arguments (system prompt, Codiner's tools), so it counts what Codiner adds too.
+// arguments (system prompt, Codinger's tools), so it counts what Codinger adds too.
 // It makes no API call: Claude Code estimates the sizes itself. Kept 10 minutes.
 const contexts = new Map<string, { at: number; text: string }>()
 function startContext(cwd: string, fresh: boolean): Promise<string> {
@@ -718,7 +777,7 @@ function startContext(cwd: string, fresh: boolean): Promise<string> {
   const { args, prompt } = launchFor(meta)()
   const file = promptFile(meta.id, prompt)
   return new Promise((resolve, reject) => {
-    execFile(process.env.CODINER_CLAUDE ?? 'claude', ['-p', '--output-format', 'json', '--no-session-persistence', '--append-system-prompt-file', file, ...args, '--', '/context'],
+    execFile(CLAUDE, ['-p', '--output-format', 'json', '--no-session-persistence', '--append-system-prompt-file', file, ...args, '--', '/context'],
       { cwd, env: childEnv(), timeout: 120_000, maxBuffer: 8 << 20 }, (err, out) => {
         fs.rm(file, { force: true }, () => {})
         let text = ''
@@ -813,6 +872,8 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       ...(typeof body.mcpStartOff === 'boolean' ? { mcpStartOff: body.mcpStartOff } : {}),
       ...(typeof body.mcpClaude === 'boolean' ? { mcpClaude: body.mcpClaude } : {}),
       ...(Array.isArray(body.mcpAlways) ? { mcpAlways: body.mcpAlways.map(String) } : {}),
+      ...(body.plan && Number.isFinite(body.plan.usd) && body.plan.usd >= 0 ? { plan: { tier: String(body.plan.tier ?? ''), usd: body.plan.usd, ...(body.plan.yearly ? { yearly: true } : {}) } } : {}),
+      ...(body.reviewSeen ? { reviewSeen: { ...settings.reviewSeen, ...Object.fromEntries(['week', 'month'].filter((k) => typeof body.reviewSeen[k] === 'string').map((k) => [k, body.reviewSeen[k]])) } } : {}),
     }
     saveSettings(settings)
     broadcast({ type: 'settings', settings })
@@ -825,7 +886,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     const cwd = path.resolve(expandHome(String((await json(req)).cwd ?? '~')))
     let found
     try { found = await probe(cwd) } catch (e) { throw new HttpError(500, (e as Error).message) }
-    // Sessions there stop asking, and get the configs of servers turned on before Codiner knew them.
+    // Sessions there stop asking, and get the configs of servers turned on before Codinger knew them.
     for (const x of sessions.values()) if (x.meta.cwd === cwd && x.meta.mcp) {
       delete x.meta.mcp.missing
       if (x.meta.mcp.on.length) x.setMcp(configsFor(cwd, x.meta.mcp.on))
@@ -838,6 +899,8 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new HttpError(400, `Not a directory: ${cwd}`)
     try { return send(res, 200, { cwd, text: await startContext(cwd, url.searchParams.get('fresh') === '1') }) } catch (e) { throw new HttpError(500, (e as Error).message) }
   }
+  // Your plan, and day-by-day spend at API prices, for the cost view (shared/costs.ts).
+  if (a === 'costs' && method === 'GET') return send(res, 200, await costs.reply())
   if (a === 'meter' && method === 'GET') return send(res, 200, { rate: meter.rate(), five: meter.pairs('five'), seven: meter.pairs('seven') })
   if (a === 'history' && !id && method === 'GET') {
     const byClaude = new Map(metas().map((m) => [m.claudeSessionId, m.id]))
@@ -846,7 +909,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       .filter((h) => !h.continuedIn && !h.cwd.startsWith(DATA))
       .filter((h) => !q || `${h.title} ${h.cwd} ${h.firstPrompt} ${h.lastPrompt}`.toLowerCase().includes(q))
       .slice(0, 300)
-      .map((h) => ({ ...h, codinerId: byClaude.get(h.id) ?? null }))
+      .map((h) => ({ ...h, codingerId: byClaude.get(h.id) ?? null }))
     return send(res, 200, items)
   }
   if (a === 'history' && id && b === 'resume' && method === 'POST') return send(res, 200, resumeHistory(id).meta)
@@ -857,7 +920,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       const cur = seen.get(p)
       if (!cur || cur.ts < ts) seen.set(p, { path: p, ts, source: cur && cur.source !== source ? 'both' : source })
     }
-    for (const m of metas()) if (m.kind === 'worker') add(m.cwd, m.lastActivity, 'codiner')
+    for (const m of metas()) if (m.kind === 'worker') add(m.cwd, m.lastActivity, 'codinger')
     for (const h of listHistory()) add(h.cwd, h.mtime, 'claude')
     const dirs = [...seen.values()].filter((d) => fs.existsSync(d.path)).sort((x, y) => y.ts - x.ts).slice(0, 60)
     return send(res, 200, dirs)
@@ -865,6 +928,32 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   if (a === 'fs' && id === 'dirs' && method === 'GET') {
     const p = expandHome(url.searchParams.get('path') || '~')
     try { return send(res, 200, listDirs(p, url.searchParams.get('hidden') === '1')) } catch { throw new HttpError(400, `Can't read ${p}`) }
+  }
+  if (a === 'fs' && id === 'stat' && method === 'GET') {
+    const p = path.resolve(expandHome((url.searchParams.get('path') || '').trim() || '~'))
+    let kind: 'dir' | 'file' | 'missing' = 'missing'
+    try { kind = fs.statSync(p).isDirectory() ? 'dir' : 'file' } catch {}
+    return send(res, 200, { path: p, kind })
+  }
+  if (a === 'fs' && id === 'exists' && method === 'POST') {
+    // Paths named in a reply (absolute, ~/, or under the session's directory, maybe with :line): which are there.
+    const body = await json(req)
+    const cwd = expandHome(String(body.cwd ?? '~'))
+    const out: Record<string, string | null> = {}
+    for (const p of (Array.isArray(body.paths) ? body.paths : []).slice(0, 200).map(String)) {
+      const abs = path.resolve(cwd, expandHome(p.replace(/(:\d+){1,2}$/, '')))
+      out[p] = fs.existsSync(abs) ? abs : null
+    }
+    return send(res, 200, out)
+  }
+  if (a === 'fs' && id === 'reveal' && method === 'POST') {
+    // A folder opens in Finder; a file is shown selected in its folder.
+    const p = path.resolve(expandHome(String((await json(req)).path ?? '')))
+    if (!fs.existsSync(p)) throw new HttpError(404, `There is no ${p}`)
+    const dir = fs.statSync(p).isDirectory()
+    if (process.platform === 'darwin') execFile('open', dir ? [p] : ['-R', p])
+    else execFile('xdg-open', [dir ? p : path.dirname(p)])
+    return send(res, 200, { ok: true })
   }
   if (a === 'fs' && id === 'pick' && method === 'POST') {
     if (process.platform !== 'darwin') throw new HttpError(400, 'The native folder picker is macOS-only')
@@ -910,10 +999,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     return send(res, 200, { sent, held })
   }
   if (a === 'lead' && id === 'reset' && method === 'POST') {
-    const s = get(LEAD_ID)
-    s.stop()
-    Object.assign(s.meta, { claudeSessionId: randomUUID(), started: false, context: { used: 0, window: s.meta.context.window }, error: null, unread: false, pendingAsks: 0 })
-    s.notice('Fresh start: the lead forgot this conversation. It keeps LEAD_NOTES.md.')
+    get(LEAD_ID).forget('Fresh start: the lead forgot this conversation. It keeps LEAD_NOTES.md.')
     return send(res, 200, { ok: true })
   }
   if (a !== 'sessions') throw new HttpError(404, 'Not found')
@@ -947,7 +1033,10 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       s.meta.titleBefore = undefined
     }
     if (typeof body.archived === 'boolean' && s.meta.kind === 'worker') { s.meta.archived = body.archived; if (body.archived) s.stop() }
-    if (MODES.includes(body.permissionMode)) s.setPermissionMode(body.permissionMode)
+    if (MODES.includes(body.permissionMode)) {
+      s.setPermissionMode(body.permissionMode)
+      if (!AUTOPILOT_MODES.includes(body.permissionMode)) endAutopilot(s, 'you changed the permission mode')
+    }
     metaChanged()
     return send(res, 200, s.meta)
   }
@@ -965,6 +1054,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     return send(res, 200, { servers: serversFor(s.meta.cwd), on: s.meta.mcp?.on ?? null })
   }
   if (b === 'notes' && !c && method === 'GET') return send(res, 200, { path: notesPath(s.meta), text: readNotes(s.meta) })
+  if (b === 'autopilot' && method === 'DELETE') { endAutopilot(s, 'you turned it off'); return send(res, 200, s.meta) }
   if (method !== 'POST') throw new HttpError(404, 'Not found')
   const body = await json(req)
   switch (b) {
@@ -972,7 +1062,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       const p: Part[] = Array.isArray(body.parts) ? body.parts : []
       // The lead's drafts that went with your reply.
       if (Array.isArray(body.inbox) && body.inbox.length) { s.meta.inbox = s.meta.inbox.filter((i) => !body.inbox.includes(i.id)); metaChanged() }
-      s.send(p, hiddenFor(s))
+      s.send(p, hiddenFor(s, p))
       return send(res, 200, { ok: true })
     }
     case 'drafting':
@@ -982,7 +1072,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       // Delete from a message on; with parts, send them in its place (an edit).
       try { s.rewind(Number(body.seq)) } catch (e) { throw new HttpError(400, (e as Error).message) }
       const p: Part[] = Array.isArray(body.parts) ? body.parts : []
-      if (p.length) s.send(p, hiddenFor(s))
+      if (p.length) s.send(p, hiddenFor(s, p))
       return send(res, 200, { ok: true })
     }
     case 'run': {
@@ -995,15 +1085,15 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       // `script` keeps the terminal interactive and records what the command prints; when the
       // command ends, the script reports its exit code back, and the result goes to the item.
       const token = randomUUID().slice(0, 12)
-      const file = path.join(os.tmpdir(), `codiner-${token}.command`)
-      const log = path.join(os.tmpdir(), `codiner-${token}.log`)
+      const file = path.join(os.tmpdir(), `codinger-${token}.command`)
+      const log = path.join(os.tmpdir(), `codinger-${token}.log`)
       const q = (x: string) => `'${x.replace(/'/g, `'\\''`)}'`
-      const closer = path.join(os.tmpdir(), `codiner-${token}-close.sh`)
+      const closer = path.join(os.tmpdir(), `codinger-${token}-close.sh`)
       fs.writeFileSync(closer, CLOSER, { mode: 0o755 })
       runs.set(token, { sid: s.meta.id, log })
       fs.writeFileSync(file, [
         '#!/bin/sh', 'rm -f "$0"', `cd ${q(s.meta.cwd)} || exit 1`,
-        `cat <<'CODINER_CMD'`, `$ ${cmd}`, 'CODINER_CMD',
+        `cat <<'CODINGER_CMD'`, `$ ${cmd}`, 'CODINGER_CMD',
         `script -q ${q(log)} /bin/sh -c ${q(cmd)}`, 'code=$?',
         `curl -s -m 5 -X POST "http://127.0.0.1:${PORT}/api/runs/${token}?code=$code" >/dev/null 2>&1`,
         // On success the window closes itself a moment after the shell ends (found by its tty);
@@ -1041,8 +1131,18 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       if (err) throw new HttpError(err === 'cold' ? 409 : 400, err === 'cold' ? 'The prompt cache has expired or is about to' : err)
       return send(res, 200, { ok: true })
     }
-    case 'interrupt': s.interrupt(); return send(res, 200, { ok: true })
+    case 'interrupt': endAutopilot(s, 'you stopped it'); s.interrupt(); return send(res, 200, { ok: true })
+    case 'autopilot': {
+      // Start, or start again with a new goal and budget. A session between turns goes on now.
+      if (s.meta.kind !== 'worker') throw new HttpError(400, 'Only a worker session can run on autopilot')
+      if (!String(body.goal ?? '').trim() && !s.getEvents().some((e) => e.t === 'user')) throw new HttpError(400, 'Give a goal: this session has no task yet')
+      try { s.meta.autopilot = startAutopilot(s.meta, body, usage) } catch (e) { throw new HttpError(400, (e as Error).message) }
+      metaChanged()
+      if (!busy(s)) goOn(s)
+      return send(res, 200, s.meta)
+    }
     case 'seen': s.markSeen(); return send(res, 200, { ok: true })
+    case 'unread': s.markUnread(); return send(res, 200, { ok: true })
     case 'permission':
       s.answerPermission(String(body.requestId), body.decision, body.message)
       return send(res, 200, { ok: true })
@@ -1063,7 +1163,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
 
 const server = http.createServer(async (req, res) => {
   try {
-    if (!localHost(req) || !localOrigin(req)) throw new HttpError(403, 'Codiner only answers requests from its own page')
+    if (!localHost(req) || !localOrigin(req)) throw new HttpError(403, 'Codinger only answers requests from its own page')
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`)
     if (url.pathname === `/mcp/${MCP_TOKEN}`) {
       const lead = [...sessions.values()].find((s) => s.meta.kind === 'lead')
@@ -1131,17 +1231,17 @@ initFileHistory({
 
 initAuth({
   change: (auth) => broadcast({ type: 'auth', auth }),
-  signedIn: () => { for (const s of sessions.values()) s.retryAfterSignIn(hiddenFor(s)) },
+  signedIn: () => { for (const s of sessions.values()) s.retryAfterSignIn((p) => hiddenFor(s, p)) },
 })
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Codiner on http://localhost:${PORT}${DEV ? ' (dev)' : ''}`)
+  console.log(`Codinger on http://localhost:${PORT}${DEV ? ' (dev)' : ''}`)
 })
 
 // ---- restarting itself --------------------------------------------------------
 // When the server's own code on disk is newer than this process, the page offers
-// a restart: a new server starts detached (its log in ~/.codiner/server.log) as
-// soon as this one has let go of the port. Sessions resume on their next message.
+// a restart: a new server starts detached (its log in ~/.codinger/server.log) as
+// soon as this one has let go of the port. Busy sessions keep running (server/proc.ts).
 const STARTED = Date.now()
 function codeTime(): number {
   let t = 0
@@ -1175,7 +1275,7 @@ function restartWindows() {
 }
 
 function shutdown() {
-  for (const s of sessions.values()) s.stop()
+  for (const s of sessions.values()) s.handoff()
   saveSessions(metas)
   setTimeout(() => process.exit(0), 300)
 }

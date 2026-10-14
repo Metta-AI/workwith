@@ -1,7 +1,7 @@
 // Deploy: npx wrangler deploy (from this folder)
 {
-  "name": "codiner",
+  "name": "codinger",
   "compatibility_date": "2026-10-01",
   "assets": { "directory": "." },
-  "routes": [{ "pattern": "codiner.app", "custom_domain": true }]
+  "routes": [{ "pattern": "codinger.app", "custom_domain": true }]
 }

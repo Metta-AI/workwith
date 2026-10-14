@@ -1,16 +1,16 @@
 // Long-running commands an agent starts with the start_task tool: dev servers,
-// watchers, long builds and test runs. Codiner runs each one in its own process
+// watchers, long builds and test runs. Codinger runs each one in its own process
 // group, apart from the claude process, so it has no time limit and keeps running
-// when the session sleeps or Codiner restarts. Its output goes to
-// ~/.codiner/tasks/<id>.log; a wrapper shell writes the exit code to <id>.exit.
+// when the session sleeps or Codinger restarts. Its output goes to
+// ~/.codinger/tasks/<id>.log; a wrapper shell writes the exit code to <id>.exit.
 //
-// Each task is marked as Codiner's and the agent's, outside Codiner too: its
-// command line in `ps` starts ": codiner-task <id> session <sid>", and it and
-// everything it starts have CODINER_TASK and CODINER_SESSION in their environment.
+// Each task is marked as Codinger's and the agent's, outside Codinger too: its
+// command line in `ps` starts ": codinger-task <id> session <sid>", and it and
+// everything it starts have CODINGER_TASK and CODINGER_SESSION in their environment.
 //
 // An ended task, and its log, goes after a week; the panel can remove one sooner.
 //
-// Stop sends SIGTERM to the task's process group (the exact pid Codiner started),
+// Stop sends SIGTERM to the task's process group (the exact pid Codinger started),
 // then SIGKILL if it is still there after 5 seconds.
 //
 // On Windows the task runs in Git Bash when there is one, the same shell Claude
@@ -50,7 +50,7 @@ const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch
 
 export function startTasks(c: Ctx) {
   ctx = c
-  // Tasks that ended while Codiner was down are found on the first check.
+  // Tasks that ended while Codinger was down are found on the first check.
   setInterval(check, 2000).unref()
   check()
 }
@@ -63,7 +63,13 @@ function check() {
   for (const t of old) for (const f of files(t.id)) fs.rmSync(f, { force: true })
   if (old.length) { tasks = tasks.filter((t) => !old.includes(t)); any = true }
   for (const t of tasks) {
-    if (t.ended || alive(t.pid)) continue
+    if (t.ended) continue
+    if (alive(t.pid)) {
+      const p = progressOf(t.id)
+      if (p?.pct !== t.progress?.pct || p?.label !== t.progress?.label) { t.progress = p; any = true }
+      continue
+    }
+    delete t.progress
     const code = Number.parseInt(fs.readFileSync(exitPath(t.id), { encoding: 'utf8', flag: 'a+' }).trim(), 10)
     Object.assign(t, { ended: Date.now(), code: Number.isNaN(code) ? null : code })
     any = true
@@ -76,15 +82,15 @@ export function startTask(sid: string, o: { title: string; command: string; cwd:
   const id = randomUUID().slice(0, 8)
   // Not 'a': Git Bash's programs can't write to a handle opened for appending, and the log is new.
   const fd = fs.openSync(logPath(id), 'w')
-  fs.writeSync(fd, `# codiner task ${id} · session ${sid} · ${o.title} · ${new Date().toISOString()}\n# in ${o.cwd}\n$ ${o.command}\n\n`)
+  fs.writeSync(fd, `# codinger task ${id} · session ${sid} · ${o.title} · ${new Date().toISOString()}\n# in ${o.cwd}\n$ ${o.command}\n\n`)
   // The inner shell runs the command, so an `exit` in it still leaves the wrapper to write the code.
   const sh = shell()
   const posix = (f: string) => `'${f.replaceAll('\\', '/')}'`
-  const wrapper = `: codiner-task ${id} session ${sid}; ${sh ? `echo $$ > ${posix(pidPath(id))}; sh` : '/bin/sh'} -c "$CODINER_TASK_COMMAND"; echo $? > ${posix(exitPath(id))}`
-  const [cmd, args] = !WIN ? ['/bin/sh', ['-c', wrapper]] : sh ? [sh, ['-c', wrapper]] : [process.execPath, [CMD_WRAPPER, `codiner-task ${id} session ${sid}`, exitPath(id)]]
+  const wrapper = `: codinger-task ${id} session ${sid}; ${sh ? `echo $$ > ${posix(pidPath(id))}; sh` : '/bin/sh'} -c "$CODINGER_TASK_COMMAND"; echo $? > ${posix(exitPath(id))}`
+  const [cmd, args] = !WIN ? ['/bin/sh', ['-c', wrapper]] : sh ? [sh, ['-c', wrapper]] : [process.execPath, [CMD_WRAPPER, `codinger-task ${id} session ${sid}`, exitPath(id)]]
   const p = spawn(cmd, args, {
     cwd: o.cwd, detached: true, windowsHide: true, stdio: ['ignore', fd, fd],
-    env: { ...childEnv(), CODINER_TASK: id, CODINER_SESSION: sid, CODINER_TASK_COMMAND: o.command },
+    env: { ...childEnv(), CODINGER_TASK: id, CODINGER_SESSION: sid, CODINGER_TASK_COMMAND: o.command },
   })
   fs.closeSync(fd)
   if (!p.pid) throw new Error('The task did not start')
@@ -172,20 +178,38 @@ export function searchLog(id: string, q: string, limit = 500): { n: number; line
   let text = ''
   try { text = fs.readFileSync(logPath(id), 'utf8') } catch { return [] }
   const out: { n: number; line: string }[] = []
-  text.split(/\r?\n/).forEach((line, i) => { if (out.length < limit && line.toLowerCase().includes(needle)) out.push({ n: i + 1, line: line.slice(0, 1000) }) })
+  text.split('\n').map(lastDraw).forEach((line, i) => { if (out.length < limit && line.toLowerCase().includes(needle)) out.push({ n: i + 1, line: line.slice(0, 1000) }) })
   return out
 }
 
-export function tailLines(id: string, n = 20): string {
-  return readLog(id, undefined, 16 * 1024).text.split('\n').filter((l, i, a) => l || i < a.length - 1).slice(-n).join('\n')
+// The last lines as a terminal shows them: a progress bar redraws its line with \r, so
+// only what comes after the last \r stays. Long lines are cut.
+export function tailLines(id: string, n = 8): string {
+  return readLog(id, undefined, 16 * 1024).text.split('\n').map(lastDraw).filter((l, i, a) => l || i < a.length - 1).slice(-n)
+    .map((l) => l.length > 300 ? l.slice(0, 300) + ' …' : l).join('\n')
 }
+
+// A percentage in the last few lines of the log, as progress bars (tqdm, curl, ...) write it,
+// with the word before it as its label ("analysing:  89%|===" is 89, "analysing").
+function progressOf(id: string): Task['progress'] {
+  const lines = readLog(id, undefined, 4096).text.split('\n').map(lastDraw).filter((l) => l.trim()).slice(-3).reverse()
+  for (const line of lines) {
+    const m = [...line.matchAll(/(\d{1,3}(?:\.\d+)?)\s?%/g)].filter((x) => Number(x[1]) <= 100).at(-1)
+    if (!m) continue
+    const label = line.slice(0, m.index).replace(/[\s:|]+$/, '').split(/\s{2,}|\|/).at(-1)?.trim().slice(-30)
+    return { pct: Math.floor(Number(m[1])), ...(label && /[a-z]/i.test(label) ? { label } : {}) }
+  }
+  return undefined
+}
+
+const lastDraw = (line: string) => line.split('\r').filter(Boolean).at(-1) ?? ''
 
 const span = (ms: number) => ms < 60_000 ? `${Math.round(ms / 1000)}s` : ms < 3_600_000 ? `${Math.floor(ms / 60_000)}m ${Math.round(ms / 1000) % 60}s` : `${Math.floor(ms / 3_600_000)}h ${Math.floor(ms / 60_000) % 60}m`
 
 // What the agent is told when its task ends.
 export function endText(t: Task): string {
   const how = t.stopped === 'user' ? 'was stopped by the user' : t.stopped === 'agent' ? 'was stopped by you' : t.code == null ? 'ended (exit code unknown)' : `ended with exit code ${t.code}`
-  return `[Codiner] Your task \`${t.id}\` ("${t.title}") ${how}, after ${span((t.ended ?? Date.now()) - t.started)}. Log: ${logPath(t.id)}. Its last lines:\n~~~\n${tailLines(t.id)}\n~~~`
+  return `[Codinger] Your task \`${t.id}\` ("${t.title}") ${how}, after ${span((t.ended ?? Date.now()) - t.started)}. Log: ${logPath(t.id)}. Its last lines:\n~~~\n${tailLines(t.id)}\n~~~`
 }
 
 export function statusLine(t: Task): string {

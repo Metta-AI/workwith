@@ -207,6 +207,18 @@ export function select(el: HTMLElement, start: number, end = start) {
   s.addRange(rangeAt(el, start, end))
 }
 
+// A caret at the end of a list marker (or its indent) is drawn inside that
+// fixed-width box, short of the text: put it after the box.
+export function snapCaret(el: HTMLElement) {
+  const s = getSelection()
+  if (!s?.rangeCount || !s.isCollapsed) return
+  const n = s.anchorNode
+  if (n?.nodeType !== Node.TEXT_NODE || s.anchorOffset !== n.textContent?.length) return
+  const box = n.parentElement
+  if (!box?.classList.contains('md-cols') || !el.contains(box)) return
+  s.collapse(box.parentNode!, [...box.parentNode!.childNodes].indexOf(box) + 1)
+}
+
 // Show the markers of the spans and lines the selection touches.
 export function activate(el: HTMLElement) {
   const s = getSelection()

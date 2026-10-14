@@ -3,17 +3,18 @@
 // Claude Code login: no API key involved (we strip it from the environment).
 //
 // The process is started lazily on the first send and kept alive between
-// turns; after a server restart the next send resumes it with --resume.
+// turns. A server restart leaves a busy process running for the next server
+// (server/proc.ts); an idle one ends, and the next send resumes it with --resume.
 
-import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import { formatAnswer, formatNote } from '../shared/asks.ts'
 import { formatDismissed, formatDone, itemsOf } from '../shared/blocks.ts'
 import { mediaTypeOf, splitImages, withoutImages } from '../shared/images.ts'
 import type { Block, Event, Part, PermissionMode, SessionMeta, Status, Usage } from '../shared/types.ts'
-import { AUTH_ERROR, childEnv } from './auth.ts'
+import { AUTH_ERROR, CLAUDE, childEnv } from './auth.ts'
 import { entryBefore } from './history.ts'
+import { Proc } from './proc.ts'
 import { addSpend, costOf } from '../shared/prices.ts'
 import { appendEvent, imageFile, knownWindow, learnModel, learnWindow, promptFile, readEvents, writeEvents } from './store.ts'
 
@@ -34,15 +35,20 @@ export type Launch = { args: string[]; prompt: string }
 
 const MAX_RESULT = 8000
 // How long a finished session keeps its claude process before it sleeps.
-// CODINER_SLEEP_MS overrides it (for tests).
-const IDLE_SLEEP_MS = Number(process.env.CODINER_SLEEP_MS) || 5 * 60_000
+// CODINGER_SLEEP_MS overrides it (for tests).
+const IDLE_SLEEP_MS = Number(process.env.CODINGER_SLEEP_MS ?? process.env.CODINER_SLEEP_MS) || 5 * 60_000
+
+// A message that is only a slash command goes in as one, as if typed at the claude prompt;
+// nothing hidden goes with it.
+export function slashCommand(parts: Part[]): string {
+  const only = parts.length === 1 && parts[0].kind === 'text' && !parts[0].images?.length ? parts[0].text.trim() : ''
+  return /^\/[\w:.-]+/.test(only) ? only : ''
+}
 
 export class Session {
   meta: SessionMeta
   private events: Event[] | null = null
-  private proc: ChildProcess | null = null
-  private buf = ''
-  private stderrTail = ''
+  private proc: Proc | null = null
   private outstanding = 0        // turns sent but not yet finished
   private background = 0         // background tasks (shells, agents) the process is running
   private sleepTimer: NodeJS.Timeout | null = null
@@ -57,6 +63,7 @@ export class Session {
   private callFrom = 0
   private callStart = 0
   private costSeen = new Map<string, number>()  // message id → dollars counted, as its lines come in
+  private seqFrom = 1  // the first number for an empty transcript
   private hooks: Hooks
   private launch: () => Launch
 
@@ -70,6 +77,9 @@ export class Session {
     if (meta.status === 'working' || meta.status === 'permission') meta.status = 'idle'
   }
 
+  // Claude Code runs background work (shells, agents) that starts a turn when it ends.
+  get backgroundWork() { return this.background > 0 }
+
   getEvents(): Event[] {
     if (!this.events) this.events = readEvents(this.meta.id)
     return this.events
@@ -77,7 +87,7 @@ export class Session {
 
   private nextSeq(): number {
     const ev = this.getEvents()
-    return ev.length ? ev[ev.length - 1].seq + 1 : 1
+    return ev.length ? ev[ev.length - 1].seq + 1 : this.seqFrom
   }
 
   private record<T extends Event['t']>(t: T, body: Omit<Extract<Event, { t: T }>, 'seq' | 'ts' | 't'>): Event {
@@ -89,8 +99,8 @@ export class Session {
     return e
   }
 
-  notice(text: string, level: 'info' | 'warn' | 'error' = 'info') {
-    this.record('notice', { text, level })
+  notice(text: string, level: 'info' | 'warn' | 'error' = 'info', extra: { task?: string } = {}) {
+    this.record('notice', { text, level, ...extra })
   }
 
   private refresh() {
@@ -145,36 +155,26 @@ export class Session {
       '--append-system-prompt-file', promptFile(m.id, prompt),
       ...args,
     ]
-    const env = childEnv()
     if (!fs.existsSync(m.cwd)) throw new Error(`Directory not found: ${m.cwd}`)
-    const p = spawn(process.env.CODINER_CLAUDE ?? 'claude', full, { cwd: m.cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
+    const p = Proc.spawn(CLAUDE, full, { cwd: m.cwd, env: childEnv() })
     this.proc = p
-    this.buf = ''
-    this.stderrTail = ''
-    p.stdout!.setEncoding('utf8')
-    p.stdout!.on('data', (d: string) => {
-      if (this.proc !== p) return // let go of by a rewind
-      this.buf += d
-      let i: number
-      while ((i = this.buf.indexOf('\n')) >= 0) {
-        const line = this.buf.slice(0, i)
-        this.buf = this.buf.slice(i + 1)
-        if (!line.trim()) continue
-        let msg: any
-        try { msg = JSON.parse(line) } catch { continue }
-        try { this.handle(msg) } catch (e) { console.error(`[${m.id}] handling`, msg?.type, e) }
-      }
-    })
-    p.stderr!.setEncoding('utf8')
-    p.stderr!.on('data', (d: string) => { this.stderrTail = (this.stderrTail + d).slice(-2000) })
-    p.stdin!.on('error', () => { /* the exit handler reports it */ })
-    p.on('error', (e) => { this.notice(`Could not start claude: ${e.message}`, 'error') })
+    this.listen(p)
     // Ask for the command list (with descriptions) the way the Agent SDK does.
-    p.stdin!.write(JSON.stringify({ type: 'control_request', request_id: `init-${m.id}`, request: { subtype: 'initialize' } }) + '\n')
+    p.write(JSON.stringify({ type: 'control_request', request_id: `init-${m.id}`, request: { subtype: 'initialize' } }) + '\n')
     // A session that started with your MCP servers off gets back the ones turned on since.
     const mcp = this.hooks.mcpServers(this)
-    if (mcp && Object.keys(mcp).length) p.stdin!.write(JSON.stringify({ type: 'control_request', request_id: `mcp-${randomUUID()}`, request: { subtype: 'mcp_set_servers', servers: mcp } }) + '\n')
-    p.on('exit', (code, signal) => {
+    if (mcp && Object.keys(mcp).length) p.write(JSON.stringify({ type: 'control_request', request_id: `mcp-${randomUUID()}`, request: { subtype: 'mcp_set_servers', servers: mcp } }) + '\n')
+    this.refresh()
+  }
+
+  private listen(p: Proc) {
+    const m = this.meta
+    p.start((line) => {
+      if (this.proc !== p || !line.trim()) return // let go of by a rewind
+      let msg: any
+      try { msg = JSON.parse(line) } catch { return }
+      try { this.handle(msg) } catch (e) { console.error(`[${m.id}] handling`, msg?.type, e) }
+    }, (code, signal) => {
       if (this.proc !== p) return
       this.proc = null
       const wasBusy = this.outstanding > 0
@@ -189,7 +189,7 @@ export class Session {
       if (expected) {
         // Asleep or closed: nothing to report.
       } else if (code && signal !== 'SIGTERM') {
-        const tail = this.stderrTail.trim().split('\n').slice(-6).join('\n')
+        const tail = p.stderrTail().trim().split('\n').slice(-6).join('\n')
         this.meta.error = `claude exited with code ${code}${tail ? `: ${tail}` : ''}`
         this.notice(this.meta.error, 'error')
       } else if (wasBusy) {
@@ -198,12 +198,42 @@ export class Session {
       this.hooks.delta(this, '', true)
       this.refresh()
     })
+  }
+
+  // The server is stopping: a busy process keeps running for the next server; an idle one ends.
+  handoff() {
+    const p = this.proc
+    if (!p || this.stopping) return
+    if (!this.outstanding && !this.pending.size && !this.background && !this.meta.compacting) return this.stop()
+    p.handoff(this.meta.id, {
+      outstanding: this.outstanding, background: this.background, interrupted: this.interrupted,
+      compacting: this.meta.compacting, pending: [...this.pending], callFrom: this.callFrom, callStart: this.callStart,
+    })
+    this.proc = null
+  }
+
+  // A new server: pick up the process the last one handed on, if it still runs.
+  // Returns its key, or null.
+  reattach(): string | null {
+    const r = Proc.adopt(this.meta.id)
+    if (!r) return null
+    const st = r.state as { outstanding: number; background: number; interrupted: boolean; compacting: boolean; pending: [string, { input: any; suggestions: any[] }][]; callFrom: number; callStart: number }
+    this.proc = r.proc
+    this.outstanding = st.outstanding
+    this.background = st.background
+    this.interrupted = st.interrupted
+    this.pending = new Map(st.pending)
+    this.callFrom = st.callFrom
+    this.callStart = st.callStart
+    this.meta.compacting = st.compacting
+    this.listen(r.proc)
     this.refresh()
+    return r.proc.key
   }
 
   private write(obj: unknown) {
     this.ensureProc()
-    this.proc!.stdin!.write(JSON.stringify(obj) + '\n')
+    this.proc!.write(JSON.stringify(obj) + '\n')
   }
 
   // A one-off call on this conversation that leaves it as it is (server/notes.ts):
@@ -213,7 +243,7 @@ export class Session {
     const m = this.meta
     const { args, prompt } = this.launch()
     return {
-      cmd: process.env.CODINER_CLAUDE ?? 'claude',
+      cmd: CLAUDE,
       args: [
         '-p', '--output-format', 'json', '--permission-mode', m.permissionMode,
         ...(m.model ? ['--model', m.model] : []),
@@ -226,7 +256,7 @@ export class Session {
     }
   }
 
-  // The MCP servers this session has on besides Codiner's, in a running process at once;
+  // The MCP servers this session has on besides Codinger's, in a running process at once;
   // a process started later gets them from the mcpServers hook.
   setMcp(servers: Record<string, unknown>) {
     if (!this.proc || this.stopping) return
@@ -236,14 +266,14 @@ export class Session {
   stop() {
     if (!this.proc) return
     this.stopping = true
-    this.proc.kill('SIGTERM')
+    this.proc.kill()
   }
 
   // End the process and forget it at once: whatever it still prints is ignored.
   private detach() {
     const p = this.proc
     this.proc = null
-    p?.kill('SIGTERM')
+    p?.kill()
     this.stopping = false
     this.outstanding = 0
     this.background = 0
@@ -256,12 +286,11 @@ export class Session {
   // ---- input ------------------------------------------------------------
 
   // `hidden` is appended to what Claude sees but left out of the transcript
-  // (the lead's board snapshot).
-  send(parts: Part[], opts: { from?: string; hidden?: string } = {}) {
-    const { from, hidden } = opts
-    // A message that is only a slash command goes in as one, as if typed at the claude prompt.
-    const only = parts.length === 1 && parts[0].kind === 'text' && !parts[0].images?.length ? parts[0].text.trim() : ''
-    if (/^\/[\w:.-]+/.test(only)) return this.command(only, from)
+  // (the lead's board snapshot). `tasks`: the tasks whose end it tells of.
+  send(parts: Part[], opts: { from?: string; hidden?: string; tasks?: string[] } = {}) {
+    const { from, hidden, tasks } = opts
+    const only = slashCommand(parts)
+    if (only) return this.command(only, from)
     const content: any[] = []
     // Adjacent text blocks reach Claude run together, so parts share one block, a blank line apart.
     const addText = (text: string) => {
@@ -291,7 +320,7 @@ export class Session {
     this.meta.unread = false
     this.meta.pendingAsks = 0
     this.meta.error = null
-    this.record('user', { parts, uuid, csid: this.meta.claudeSessionId, ...(from ? { from } : {}) })
+    this.record('user', { parts, uuid, csid: this.meta.claudeSessionId, ...(from ? { from } : {}), ...(tasks?.length ? { tasks } : {}) })
     this.refresh()
   }
 
@@ -345,6 +374,20 @@ export class Session {
     this.refresh()
   }
 
+  // Start over: a new conversation, and this transcript goes with the old one.
+  // Its numbers keep counting up, so nothing still kept by number points into the new one.
+  forget(note: string) {
+    this.detach()
+    const m = this.meta
+    this.seqFrom = this.nextSeq()
+    this.events = []
+    writeEvents(m.id, [])
+    Object.assign(m, { claudeSessionId: randomUUID(), started: false, resumeAt: null, context: { used: 0, window: m.context.window }, error: null, unread: false, pendingAsks: 0, lastText: '' })
+    this.hooks.truncate(this, 0)
+    this.notice(note)
+    this.refresh()
+  }
+
   // The login was missing or expired.
   private authError() {
     const last = this.getEvents().findLast((e) => e.t === 'user')
@@ -353,7 +396,7 @@ export class Session {
   }
 
   // Signed in again: the message that failed goes again, in its own place.
-  retryAfterSignIn(opts: { hidden?: string } = {}) {
+  retryAfterSignIn(extra: (parts: Part[]) => { hidden?: string; tasks?: string[] }) {
     const seq = this.authRetry
     this.authRetry = null
     if (seq == null) return
@@ -361,7 +404,8 @@ export class Session {
     const e = ev.find((x) => x.seq === seq)
     if (e?.t !== 'user' || ev.some((x) => x.t === 'user' && x.seq > seq)) return
     try { this.rewind(seq) } catch { this.detach() }
-    this.send(e.parts, { ...opts, ...(e.from ? { from: e.from } : {}) })
+    const opts = extra(e.parts)
+    this.send(e.parts, { ...opts, ...(e.from ? { from: e.from } : {}), ...(e.tasks || opts.tasks ? { tasks: [...e.tasks ?? [], ...opts.tasks ?? []] } : {}) })
   }
 
   interrupt() {
@@ -391,6 +435,12 @@ export class Session {
   markSeen() {
     if (!this.meta.unread) return
     this.meta.unread = false
+    this.refresh()
+  }
+
+  markUnread() {
+    if (this.meta.unread) return
+    this.meta.unread = true
     this.refresh()
   }
 
@@ -540,7 +590,7 @@ export class Session {
           })
           this.refresh()
         } else {
-          this.write({ type: 'control_response', response: { subtype: 'error', request_id: msg.request_id, error: `Codiner does not handle ${r.subtype}` } })
+          this.write({ type: 'control_response', response: { subtype: 'error', request_id: msg.request_id, error: `Codinger does not handle ${r.subtype}` } })
         }
         return
       }
@@ -554,7 +604,7 @@ export class Session {
       case 'rate_limit_event': {
         const i = msg.rate_limit_info ?? {}
         const w = i.unifiedWindows ?? {}
-        this.hooks.usage({ fiveHour: w.five_hour?.utilization, sevenDay: w.seven_day?.utilization, resetsAt: i.resetsAt, status: i.status })
+        this.hooks.usage({ fiveHour: w.five_hour?.utilization, sevenDay: w.seven_day?.utilization, resetsAt: i.resetsAt, status: i.status, ...(i.isUsingOverage ? { overage: true } : {}) })
         return
       }
     }

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { SessionMeta, Usage } from '../../../shared/types.ts'
 import { api, changed, closeSession, select, state, useStore } from '../store.ts'
 import { HistoryDialog } from './HistoryDialog.tsx'
@@ -8,7 +8,9 @@ import { NewSession } from './NewSession.tsx'
 import { ArchiveIcon, GearIcon, TerminalIcon, XIcon } from './Icons.tsx'
 import { TasksDialog } from './TasksDialog.tsx'
 import { SettingsDialog } from './SettingsDialog.tsx'
-import { cacheOf, minutes, spendOf, toggleMoney, useNow, usd } from '../cache.ts'
+import { cacheOf, minutes, spendOf, useNow, usd } from '../cache.ts'
+import { CostBanner } from './CostPanel.tsx'
+import type { Page } from './SettingsDialog.tsx'
 import { shortPath } from './DirPicker.tsx'
 
 // Sessions grouped by directory; sessions spawned for another one nest under it.
@@ -101,8 +103,10 @@ export function Sidebar({ width }: { width: number }) {
   const st = useStore()
   const [newIn, setNewIn] = useState<string | null>(null)
   const [history, setHistory] = useState(false)
-  const [settings, setSettings] = useState(false)
+  const [settings, setSettings] = useState<Page | true | false>(false)
   const [tasks, setTasks] = useState(false)
+  const [menu, setMenu] = useState<RowMenuAt | null>(null)
+  const openMenu = (s: SessionMeta, e: React.MouseEvent) => { e.preventDefault(); setMenu({ s, x: e.clientX, y: e.clientY }) }
   const lead = st.sessions.find((s) => s.kind === 'lead')
   const groups = groupSessions(st.sessions, st.showArchived, st.settings.groupOrder)
   const { start, sortable } = useDragSort((key, ids) => {
@@ -122,10 +126,10 @@ export function Sidebar({ width }: { width: number }) {
   return (
     <aside className="sidebar" style={{ width }}>
       <div className="brand">
-        <span>Codiner</span>
+        <span>Codinger</span>
         <span className={`conn ${st.connected ? 'on' : 'off'}`} title={st.connected ? 'Connected' : 'Reconnecting…'} />
       </div>
-      {lead && <Row s={lead} label="Lead" active={st.selected === lead.id} />}
+      {lead && <Row s={lead} label="Lead" active={st.selected === lead.id} onMenu={openMenu} />}
       <div className="side-actions">
         <button className="primary" onClick={() => setNewIn('')}>+ New session</button>
         <button onClick={() => setHistory(true)} title="Continue any Claude Code conversation on this machine, including terminal ones">Resume…</button>
@@ -142,7 +146,7 @@ export function Sidebar({ width }: { width: number }) {
             const b = sortable(key, x.id)
             return (
               <div key={x.id} {...b} className={`branch${b.className}`}>
-                <Row s={x} depth={depth} active={st.selected === x.id} onPointerDown={(e) => start(e, key, x.id)} />
+                <Row s={x} depth={depth} active={st.selected === x.id} onPointerDown={(e) => start(e, key, x.id)} onMenu={openMenu} />
                 {kids(x.id).map((k) => branch(k, depth + 1))}
               </div>
             )
@@ -159,13 +163,14 @@ export function Sidebar({ width }: { width: number }) {
         })}
         {!groups.length && <div className="muted pad">{st.showArchived ? 'No archived sessions.' : 'No sessions yet.'}</div>}
       </nav>
+      <CostBanner open={() => setSettings('cost')} />
       <div className="side-foot">
         {/* Floats above the line, so it takes no room from the footer. */}
         {custom && <button className="reset-order" title="Sort folders by latest activity, sessions oldest first" onClick={() => void api('/api/sessions/order', 'DELETE')}>Reset order</button>}
         <button className="link" title="Settings" onClick={() => setSettings(true)}><GearIcon size={14} /></button>
         <div className="side-foot-mid">
           {(u.fiveHour != null || u.sevenDay != null) && (
-            <div className="usage" data-tip={limitsTip(u)} onClick={toggleMoney}>
+            <div className="usage" data-tip={limitsTip(u)} onClick={() => setSettings('cost')}>
               {u.fiveHour != null && <span className={level(u.fiveHour)}>5h {limitLabel(u.fiveHour, u.rate?.fiveHour, st.money)}</span>}
               {u.fiveHour != null && u.sevenDay != null && <span className="usage-dot">·</span>}
               {u.sevenDay != null && <span className={level(u.sevenDay)}>7d {limitLabel(u.sevenDay, u.rate?.sevenDay, st.money)}</span>}
@@ -181,15 +186,16 @@ export function Sidebar({ width }: { width: number }) {
       </div>
       {newIn !== null && <NewSession cwd={newIn} onClose={() => setNewIn(null)} />}
       {history && <HistoryDialog onClose={() => setHistory(false)} />}
-      {settings && <SettingsDialog onClose={() => setSettings(false)} />}
+      {settings && <SettingsDialog page={settings === true ? undefined : settings} onClose={() => setSettings(false)} />}
       {tasks && <TasksDialog onClose={() => setTasks(false)} />}
+      {menu && <RowMenu at={menu} onClose={() => setMenu(null)} />}
     </aside>
   )
 }
 
-function Row({ s, depth = 0, active, label, onPointerDown }: { s: SessionMeta; depth?: number; active: boolean; label?: string; onPointerDown?(e: React.PointerEvent): void }) {
+function Row({ s, depth = 0, active, label, onPointerDown, onMenu }: { s: SessionMeta; depth?: number; active: boolean; label?: string; onPointerDown?(e: React.PointerEvent): void; onMenu?(s: SessionMeta, e: React.MouseEvent): void }) {
   return (
-    <button className={`row${active ? ' active' : ''}${s.unread ? ' unread' : ''}`} style={{ paddingLeft: 10 + depth * 16 }} onClick={() => select(s.id)} onPointerDown={onPointerDown}>
+    <button className={`row${active ? ' active' : ''}${s.unread ? ' unread' : ''}`} style={{ paddingLeft: 10 + depth * 16 }} onClick={() => select(s.id)} onPointerDown={onPointerDown} onContextMenu={onMenu && ((e) => onMenu(s, e))}>
       <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={26} title={STATUS_LABEL[s.status]} />
       <span className="row-main">
         <span className="row-title">{label ?? s.title}</span>
@@ -200,6 +206,36 @@ function Row({ s, depth = 0, active, label, onPointerDown }: { s: SessionMeta; d
         <span className="row-close" role="button" title="Archive session" onClick={(e) => { e.stopPropagation(); void closeSession(s.id) }}><XIcon size={12} /></span>
       )}
     </button>
+  )
+}
+
+type RowMenuAt = { s: SessionMeta; x: number; y: number }
+
+// The menu a right click on a session opens, where the pointer is.
+function RowMenu({ at, onClose }: { at: RowMenuAt; onClose(): void }) {
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const down = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) onClose() }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('mousedown', down)
+    document.addEventListener('keydown', key)
+    window.addEventListener('blur', onClose)
+    document.addEventListener('scroll', onClose, true)
+    return () => {
+      document.removeEventListener('mousedown', down)
+      document.removeEventListener('keydown', key)
+      window.removeEventListener('blur', onClose)
+      document.removeEventListener('scroll', onClose, true)
+    }
+  }, [onClose])
+  const { s } = at
+  const act = (f: () => unknown) => () => { onClose(); void f() }
+  return (
+    <div className="menu ctx-menu" ref={box} style={{ left: at.x, top: at.y }} onContextMenu={(e) => e.preventDefault()}>
+      {s.unread
+        ? <button onClick={act(() => api(`/api/sessions/${s.id}/seen`))}>Mark as read</button>
+        : <button onClick={act(() => api(`/api/sessions/${s.id}/unread`))}>Mark as unread</button>}
+    </div>
   )
 }
 
@@ -223,9 +259,9 @@ function dollars(x: number): string {
 function limitsTip(u: Usage) {
   const line = (name: string, used: number | undefined, rate: number | undefined) => used == null ? '' : rate
     ? `The ${name} limit is about ${usd(1 / rate)} at API prices. You used ${Math.round(used * 100)}% (about ${usd(used / rate)}); about ${usd((1 - used) / rate)} is left.`
-    : `You used ${Math.round(used * 100)}% of your ${name} limit. Codiner does not know its dollar value yet.`
+    : `You used ${Math.round(used * 100)}% of your ${name} limit. Codinger does not know its dollar value yet.`
   return [line('5-hour', u.fiveHour, u.rate?.fiveHour), line('weekly', u.sevenDay, u.rate?.sevenDay)].filter(Boolean).join('\n\n')
-    + `\n\nDollar values are estimates: Codiner compares Claude Code's spend at API prices with how far the percentages move (${u.rate?.pairs ?? 0} measurements). Click to show dollars or percent.`
+    + `\n\nDollar values are estimates: Codinger compares Claude Code's spend at API prices with how far the percentages move (${u.rate?.pairs ?? 0} measurements). Click to see what your plan costs you.`
 }
 
 // What the conversation has cost so far. Only a label: the session's own pill explains it.

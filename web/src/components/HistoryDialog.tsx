@@ -1,5 +1,5 @@
 // Every Claude Code conversation on this machine (terminal ones included),
-// newest first. Resuming brings one into Codiner with its transcript.
+// newest first. Resuming brings one into Codinger with its transcript.
 
 import { useEffect, useState } from 'react'
 import { useEscape } from '../escape.ts'
@@ -23,7 +23,7 @@ export function HistoryDialog({ onClose }: { onClose(): void }) {
   }, [q])
 
   const open = async (h: HistoryItem) => {
-    if (h.codinerId) { select(h.codinerId); onClose(); return }
+    if (h.codingerId) { select(h.codingerId); onClose(); return }
     setBusy(h.id); setErr(null)
     try {
       const m = await api<SessionMeta>(`/api/history/${h.id}/resume`)
@@ -45,7 +45,7 @@ export function HistoryDialog({ onClose }: { onClose(): void }) {
             <button key={h.id} className="history-item" disabled={busy !== null} onClick={() => void open(h)}>
               <div className="history-top">
                 <span className="history-title">{h.title}</span>
-                <span className="muted">{busy === h.id ? 'Opening…' : h.codinerId ? 'in Codiner' : timeAgo(h.mtime)}</span>
+                <span className="muted">{busy === h.id ? 'Opening…' : h.codingerId ? 'in Codinger' : timeAgo(h.mtime)}</span>
               </div>
               <div className="muted mono history-dir">{shortPath(h.cwd)}</div>
               {(h.lastPrompt || h.firstPrompt) && <div className="history-prompt">{(h.lastPrompt || h.firstPrompt).split('\n')[0]}</div>}

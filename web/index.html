@@ -3,12 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Codiner</title>
+    <title>Codinger</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 -1 16 14' shape-rendering='crispEdges'><rect x='3' y='3' width='10' height='1' fill='%232b98c6'/><rect x='2' y='4' width='12' height='5' fill='%232b98c6'/><rect x='3' y='9' width='10' height='1' fill='%232b98c6'/><rect x='0' y='6' width='2' height='2' fill='%232b98c6'/><rect x='14' y='6' width='2' height='2' fill='%232b98c6'/><rect x='5' y='4' width='1' height='2' fill='%23222'/><rect x='10' y='4' width='1' height='2' fill='%23222'/><rect x='4' y='10' width='2' height='2' fill='%232b98c6'/><rect x='10' y='10' width='2' height='2' fill='%232b98c6'/></svg>" />
     <script>
+      // Codinger was called Codiner until October 2026: copy what this page kept under the old name, once.
+      try {
+        for (const k of Object.keys(localStorage)) if (k.startsWith('codiner.') && localStorage.getItem('codinger.' + k.slice(8)) == null) localStorage.setItem('codinger.' + k.slice(8), localStorage.getItem(k))
+      } catch {}
       // The last appearance, before the page draws (web/src/appearance.ts keeps it).
       try {
-        const a = JSON.parse(localStorage.getItem('codiner.appearance') || '{}'), r = document.documentElement
+        const a = JSON.parse(localStorage.getItem('codinger.appearance') || '{}'), r = document.documentElement
         if (a.theme && a.theme !== 'system') r.dataset.theme = a.theme
         if (a.accent) r.dataset.accent = a.accent
         if (a.surface) r.dataset.surface = a.surface

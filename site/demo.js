@@ -1,4 +1,4 @@
-// A live copy of a Codiner reply, for the landing page. Each [data-demo] element
+// A live copy of a Codinger reply, for the landing page. Each [data-demo] element
 // becomes one: select text to comment in the margin, react to a paragraph, answer the
 // question, dismiss or finish the item, run the command in a pretend terminal. A small
 // demo resets itself a few seconds after you stop using it; the full one (data-full)
@@ -162,7 +162,7 @@ class Demo {
     const row = (look, title, sub, on) => `<div class="d-sess${on ? ' on' : ''}" data-act="other-session"><span data-critter='${JSON.stringify({ ...look, size: 22 })}'></span><span><span class="d-st">${title}</span><small>${sub}</small></span></div>`
     return `<div class="d-window">
       <aside class="d-side">
-        <div class="d-brand">Codiner <i class="d-dot"></i></div>
+        <div class="d-brand">Codinger <i class="d-dot"></i></div>
         ${row({ color: 'teal' }, 'Lead', 'idle · just now')}
         <div class="d-side-btns"><button class="d-primary" data-act="other-session">+ New session</button><button data-act="other-session">Resume…</button></div>
         <div class="d-dir">SHOP</div>
@@ -361,7 +361,7 @@ class Demo {
     else if (act === 'copy') { navigator.clipboard?.writeText(RUN_CMD); b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy' }, 1200) }
     else if (act === 'send') this.send()
     else if (act === 'reset') this.reset()
-    else if (act === 'other-session') this.toast(b.closest('.d-window'), 'This demo has one live session. Install Codiner for the rest.')
+    else if (act === 'other-session') this.toast(b.closest('.d-window'), 'This demo has one live session. Install Codinger for the rest.')
     this.update()
   }
 

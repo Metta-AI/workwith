@@ -58,9 +58,9 @@ export const state: State = {
   usage: {},
   events: {},
   streaming: {},
-  selected: saved('codiner.selected', 'lead'),
-  drafts: saved('codiner.drafts', {}),
-  composer: saved('codiner.composer', {}),
+  selected: saved('codinger.selected', 'lead'),
+  drafts: saved('codinger.drafts', {}),
+  composer: saved('codinger.composer', {}),
   focus: null,
   showArchived: false,
   error: null,
@@ -68,9 +68,9 @@ export const state: State = {
   home: '',
   auth: { state: 'ok' },
   lightbox: null,
-  showSteps: saved('codiner.showSteps', false),
+  showSteps: saved('codinger.showSteps', false),
   // 'both' was a choice until October 2026.
-  money: (['usd', 'pct', 'week'] as const).find((x) => x === saved('codiner.money', 'pct')) ?? 'pct',
+  money: (['usd', 'pct', 'week'] as const).find((x) => x === saved('codinger.money', 'pct')) ?? 'pct',
   runs: {},
   tasks: [],
   fileTick: {},
@@ -87,10 +87,10 @@ export function changed() {
   reportDrafting()
   clearTimeout(persistTimer)
   persistTimer = window.setTimeout(() => {
-    localStorage.setItem('codiner.drafts', JSON.stringify(state.drafts))
-    localStorage.setItem('codiner.composer', JSON.stringify(state.composer))
-    localStorage.setItem('codiner.selected', JSON.stringify(state.selected))
-    localStorage.setItem('codiner.showSteps', JSON.stringify(state.showSteps))
+    localStorage.setItem('codinger.drafts', JSON.stringify(state.drafts))
+    localStorage.setItem('codinger.composer', JSON.stringify(state.composer))
+    localStorage.setItem('codinger.selected', JSON.stringify(state.selected))
+    localStorage.setItem('codinger.showSteps', JSON.stringify(state.showSteps))
   }, 300)
 }
 // Tell the server which sessions you are writing a reply in, so the lead's
@@ -254,6 +254,9 @@ export function addDraft(sid: string, d: Draft) {
 }
 export function updateDraft(sid: string, id: string, patch: Partial<NoteDraft> | Partial<AnswerDraft>) {
   state.drafts[sid] = draftsOf(sid).map((d) => d.id === id ? { ...d, ...patch } as Draft : d)
+  // A written reply to a set-aside item takes the dismissal back (a reaction does not).
+  const d = draftsOf(sid).find((x) => x.id === id)
+  if (d?.kind === 'note' && d.itemKey && !d.reaction && hasContent(d)) reviveItem(sid, d.itemKey)
   changed()
 }
 export function removeDraft(sid: string, id: string) {
@@ -298,6 +301,23 @@ export function undismissItem(sid: string, key: string) {
   state.drafts[sid] = draftsOf(sid).filter((d) => !((d.kind === 'dismiss' || d.kind === 'done') && d.key === key))
   for (const n of nested) undismissItem(sid, n)
   changed()
+}
+
+// The item to consider that a question sits directly in, if any.
+function parentOf(sid: string, key: string): string | null {
+  const at = key.indexOf(':'), msg = key.slice(0, at), id = key.slice(at + 1)
+  const [seq, i] = msg.split('.').map(Number)
+  const e = state.events[sid]?.find((x) => x.t === 'assistant' && x.seq === seq)
+  const b = e?.t === 'assistant' ? e.blocks[i] : undefined
+  const up = b?.type === 'text' ? itemsOf(b.text).find((it) => it.id === id)?.parent : undefined
+  return up ? `${msg}:${up}` : null
+}
+
+// Using a set-aside item takes back its dismissal, and those of the items around it.
+export function reviveItem(sid: string, key: string) {
+  for (let k: string | null = key; k; k = parentOf(sid, k)) {
+    if (draftsOf(sid).some((d) => d.kind === 'dismiss' && d.key === k)) undismissItem(sid, k)
+  }
 }
 
 export function markDone(sid: string, key: string, label: string) {

@@ -58,19 +58,31 @@ export type SessionMeta = {
   cache?: { at: number; ttl: number }
   notes?: NotesState
   // What its API calls cost (notes and keep-warm included), in dollars at API prices,
-  // each priced when it was made (shared/prices.ts); since: when Codiner began to count.
+  // each priced when it was made (shared/prices.ts); since: when Codinger began to count.
   // keep: the part notes and keep-warm calls cost; hours: [hour start, dollars] for the last 7 days.
   spend?: { usd: number; since: number; keep?: number; hours?: [number, number][] }
   // The first API call's prompt: Claude Code's system prompt and tools, and how much of
   // it other sessions had already cached. What a new session would start from.
   base?: { total: number; read: number }
   // Started with your MCP servers off (server/mcpservers.ts); on: the ones turned on since;
-  // missing: a server Claude asked for that Codiner doesn't know, until you press Refresh.
+  // missing: a server Claude asked for that Codinger doesn't know, until you press Refresh.
   mcp?: { strict: true; on: string[]; missing?: string }
   // The model it will probably run, until Claude Code reports the real one into model.
   expectedModel?: string
   // Set by a rewind: the next start resumes claudeSessionId cut at this entry, as a fork.
   resumeAt?: string | null
+  autopilot?: Autopilot
+}
+
+// Autopilot (server/autopilot.ts): after each turn Codinger tells Claude to go on, until the
+// budget is spent or Claude stops. unit: dollars at API prices, or a share (0–1) of the 5-hour
+// or weekly limit. from: the session's spend and the limit's share used when it started;
+// used: the budget spent so far, in its unit; idle: turns in a row with no tool call.
+export type BudgetUnit = 'usd' | 'fiveHour' | 'sevenDay'
+export type Autopilot = {
+  goal: string; unit: BudgetUnit; budget: number; used: number
+  from: { usd: number; share?: number }; at: number; turns: number; idle: number
+  ended?: { reason: string; at: number }
 }
 
 // Rolling notes on a session, and the keep-warm calls that keep its prompt cache
@@ -117,24 +129,27 @@ type E<T extends string, B> = { seq: number; ts: number; t: T } & B
 export type Event =
   // uuid: the id Claude Code gave the message in its transcript (we choose it);
   // csid: the Claude session it went to. A rewind cuts the transcript there.
-  | E<'user', { parts: Part[]; from?: string; uuid?: string; csid?: string }>
+  | E<'user', { parts: Part[]; from?: string; uuid?: string; csid?: string; tasks?: string[] }>   // tasks: ids of tasks whose end it tells of
   | E<'assistant', { msgId: string; blocks: Block[]; synthetic?: boolean }>
   | E<'tool_result', { toolUseId: string; text: string; isError: boolean }>
   | E<'permission', { requestId: string; toolName: string; input: any; description?: string; canAlways: boolean; toolUseId?: string }>
   | E<'permission_resolved', { requestId: string; resolution: 'allow' | 'always' | 'deny' | 'cancelled' }>
-  | E<'notice', { text: string; level: 'info' | 'warn' | 'error' }>
+  | E<'notice', { text: string; level: 'info' | 'warn' | 'error'; task?: string }>   // task: the id of a task that ended
   | E<'result', { durationMs: number; isError: boolean; text?: string }>
 
 // Claude Code's login: 'pending' while `claude auth login` waits for you (url: its sign-in page).
 export type AuthState = { state: 'ok' | 'needed' | 'pending' | 'failed'; url?: string; error?: string }
 
 // rate: how much of each window a dollar of spend (at API prices) uses, as server/meter.ts estimates it.
-export type Usage = { fiveHour?: number; sevenDay?: number; resetsAt?: number; status?: string; rate?: { fiveHour?: number; sevenDay?: number; pairs: number } }
-// trackedFiles: files whose history Codiner keeps, besides AGENTS.md, CLAUDE.md and LEAD_NOTES.md.
-// selfRestart: offer to restart when Codiner's own code changes (for working on Codiner); off by default.
+// overage: extra usage paid for the call that sent this report.
+export type Usage = { fiveHour?: number; sevenDay?: number; resetsAt?: number; status?: string; overage?: boolean; rate?: { fiveHour?: number; sevenDay?: number; pairs: number } }
+// trackedFiles: files whose history Codinger keeps, besides AGENTS.md, CLAUDE.md and LEAD_NOTES.md.
+// selfRestart: offer to restart when Codinger's own code changes (for working on Codinger); off by default.
 // appearance: unset until you pick one, which the first load asks you to do.
 // groupOrder: the sidebar's folders, once you drag one. cacheGuard: tokens; see shared/cache.ts.
 // notes, keepWarmHours, keepWarmMax, keepWarmUsage: see server/notes.ts.
+// plan: what you pay a month (yearly: you pay for a year, usd is that over 12), for the plan
+// you confirmed it for. reviewSeen: the last weekly and monthly review you closed. See shared/costs.ts.
 export type Settings = {
   leadAutoSend: boolean; autoModeMigrated?: boolean; trackedFiles?: string[]; selfRestart?: boolean
   appearance?: Appearance; groupOrder?: string[]; cacheGuard?: number
@@ -142,6 +157,7 @@ export type Settings = {
   // MCP servers: new sessions start with them off (default), except those always on;
   // Claude may turn one on itself (default) or must ask you.
   mcpStartOff?: boolean; mcpAlways?: string[]; mcpClaude?: boolean
+  plan?: { tier: string; usd: number; yearly?: boolean }; reviewSeen?: { week?: string; month?: string }
 }
 
 export type ServerMsg =
@@ -170,13 +186,14 @@ export type Task = {
   id: string; sid: string; title: string; command: string; cwd: string; pid: number
   started: number; ended?: number; code?: number | null; stopped?: 'user' | 'agent'
   notify: TaskNotify; told?: boolean
+  progress?: { pct: number; label?: string }   // read from a progress bar near the end of its log, while it runs
 }
 
 export type SlashCommand = { name: string; description: string; argumentHint: string }
 export type HistoryItem = {
   id: string; cwd: string; title: string; firstPrompt: string; lastPrompt: string
-  mtime: number; size: number; continuedIn: string | null; codinerId: string | null
+  mtime: number; size: number; continuedIn: string | null; codingerId: string | null
 }
-export type RecentDir = { path: string; ts: number; source: 'codiner' | 'claude' | 'both' }
+export type RecentDir = { path: string; ts: number; source: 'codinger' | 'claude' | 'both' }
 // roots: the drives, on Windows.
 export type DirListing = { path: string; parent: string | null; dirs: string[]; roots?: string[] }

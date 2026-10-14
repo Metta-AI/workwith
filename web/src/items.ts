@@ -35,9 +35,12 @@ export function foldItems(events: Event[]): ItemFold {
 }
 
 export function draftStatus(sid: string, key: string): ItemStatus | null {
+  // Set aside or done wins over a reply, which can come first (a reaction in the item).
   for (const d of draftsOf(sid)) {
     if (d.kind === 'dismiss' && d.key === key) return 'dismissing'
     if (d.kind === 'done' && d.key === key) return 'completing'
+  }
+  for (const d of draftsOf(sid)) {
     if (d.kind === 'answer' && d.askKey === key && hasContent(d)) return 'drafted'
     if (d.kind === 'note' && d.itemKey === key && hasContent(d)) return 'drafted'
   }
@@ -47,7 +50,8 @@ export function draftStatus(sid: string, key: string): ItemStatus | null {
 }
 
 export function trackItems(sid: string, events: Event[], fold: ItemFold): TrackedItem[] {
-  const lastUser = events.findLastIndex((e) => e.t === 'user')
+  // Autopilot's "go on" leaves the questions before it open, for you to answer later.
+  const lastUser = events.findLastIndex((e) => e.t === 'user' && e.from !== 'autopilot')
   const out: TrackedItem[] = []
   events.forEach((e, idx) => {
     if (e.t !== 'assistant' || e.synthetic) return
@@ -59,7 +63,8 @@ export function trackItems(sid: string, events: Event[], fold: ItemFold): Tracke
         const reply = fold.replies.get(key)
         const status: ItemStatus = fold.done.has(key) ? 'completed'
           : reply ? 'answered'
-          : fold.dismissed.has(key) ? 'dismissed'
+          // A reply drafted after the dismissal went shows as one.
+          : fold.dismissed.has(key) ? draftStatus(sid, key) ?? 'dismissed'
           : idx < lastUser ? 'skipped'
           : draftStatus(sid, key) ?? 'open'
         out.push({ ...it, key, msg, status, reply })
@@ -90,6 +95,7 @@ export function revealItem(key: string) {
   const el = document.querySelector<HTMLElement>(`[data-item="${CSS.escape(key)}"]`)
   if (!el) return
   for (let d = el.closest('details'); d; d = d.parentElement?.closest('details') ?? null) d.open = true
+  if (el.matches('.folded')) el.querySelector<HTMLButtonElement>('.fold-btn')?.click()
   el.scrollIntoView({ block: 'center', behavior: 'smooth' })
   el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash')
 }

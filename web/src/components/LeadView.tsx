@@ -43,7 +43,7 @@ export function LeadView({ id }: { id: string }) {
                     <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={34} />
                     <div>
                       <div className="card-title">{s.title}</div>
-                      <div className={`status-pill st-${s.status}`}>{s.compacting ? 'compacting' : STATUS_LABEL[s.status]}{s.pendingAsks ? ` · ${s.pendingAsks}?` : ''}</div>
+                      <div className={`status-pill st-${s.status}`}>{s.compacting ? 'compacting' : STATUS_LABEL[s.status]}{s.pendingAsks ? ` · ${s.pendingAsks}?` : ''}{s.autopilot && !s.autopilot.ended ? ' · autopilot' : ''}</div>
                     </div>
                     {s.inbox.length > 0 && <span className="count" title="Drafts from the lead">{s.inbox.length}</span>}
                   </div>
@@ -67,7 +67,7 @@ export function LeadView({ id }: { id: string }) {
               <input type="checkbox" checked={st.settings.leadAutoSend} onChange={(e) => void api('/api/settings', 'PUT', { leadAutoSend: e.target.checked })} />
               Auto-send
             </label>
-            <button title="Clear the lead's context (keeps LEAD_NOTES.md)" onClick={() => { if (confirm('Give the lead a fresh start? It forgets this conversation but keeps its LEAD_NOTES.md.')) { void api('/api/lead/reset') } }}>Fresh start</button>
+            <button title="Clear the lead's context (keeps LEAD_NOTES.md)" onClick={() => { if (confirm('Give the lead a fresh start? It forgets this conversation and clears it from this view, but keeps its LEAD_NOTES.md.')) { void api('/api/lead/reset') } }}>Fresh start</button>
           </>}
         />
       </section>

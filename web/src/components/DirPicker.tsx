@@ -1,4 +1,4 @@
-// Choose a working directory: type it, pick a recent one (from Codiner and
+// Choose a working directory: type it, pick a recent one (from Codinger and
 // from every Claude Code session on this machine), browse for it in place, or
 // use the native macOS folder dialog.
 
@@ -65,7 +65,7 @@ export function DirPicker({ value, onChange, autoFocus }: { value: string; onCha
           {shown.map((d, i) => (
             <button type="button" key={d.path} className={i === index ? 'on' : ''} onMouseEnter={() => setIndex(i)} onClick={() => choose(d.path)}>
               <span className="mono">{shortPath(d.path)}</span>
-              <span className="muted">{d.source === 'claude' ? 'Claude Code' : d.source === 'both' ? 'Codiner · Claude Code' : 'Codiner'} · {timeAgo(d.ts)}</span>
+              <span className="muted">{d.source === 'claude' ? 'Claude Code' : d.source === 'both' ? 'Codinger · Claude Code' : 'Codinger'} · {timeAgo(d.ts)}</span>
             </button>
           ))}
         </div>

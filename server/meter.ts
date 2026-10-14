@@ -1,7 +1,7 @@
 // How much of your plan's usage limits a token costs, learned by watching.
 // Claude Code reports the limits only as percentages used (rate_limit_event),
 // never in tokens. So the meter adds up what every Claude Code conversation on
-// this machine spends (Codiner's and the terminal's: all write transcripts to
+// this machine spends (Codinger's and the terminal's: all write transcripts to
 // ~/.claude/projects) between two reports, and compares that with how far the
 // percentages moved. Everything it sees goes to meter.jsonl, to check later how
 // steady the estimate is (GET /api/meter).
@@ -18,7 +18,7 @@ import { DATA } from './store.ts'
 import type { Usage } from '../shared/types.ts'
 import { costOf } from '../shared/prices.ts'
 
-const PROJECTS = path.join(process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude'), 'projects')
+export const PROJECTS = path.join(process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude'), 'projects')
 const LOG = path.join(DATA, 'meter.jsonl')
 const KEEP = 3 * 24 * 3600_000        // how far back the estimate looks
 const RUN = randomUUID().slice(0, 8)  // spend before this run started was not seen: never pair across runs
@@ -31,6 +31,22 @@ let samples: Sample[] = []
 let started = false
 
 const V = 2
+// Who else hears of each call's spend, and of each prompt you send (server/costs.ts).
+type Count = { t: number; usd: number; model: string; prompt?: boolean }
+const listeners: ((e: Count) => void)[] = []
+export const onCount = (f: (e: Count) => void) => { listeners.push(f) }
+const tell = (e: Count) => { for (const f of listeners) f(e) }
+// Where each transcript stood when this run started: the meter counts from there.
+const first = new Map<string, number>()
+export const startOffsets = () => new Map(first)
+
+// A prompt you sent, not a tool result, a command's output or Claude Code's own note.
+export function isPrompt(m: any) {
+  if (m.type !== 'user' || m.isMeta || m.isSidechain) return false
+  const c = m.message?.content
+  if (typeof c === 'string') return !/^\s*<(command-name|local-command|task-notification)/.test(c)
+  return Array.isArray(c) && c.some((b: any) => b.type === 'text') && !c.some((b: any) => b.type === 'tool_result')
+}
 const log = (x: object) => fs.appendFile(LOG, JSON.stringify({ v: V, ...x }) + '\n', () => {})
 const usd = (x: number) => Math.round(x * 1e4) / 1e4
 
@@ -65,6 +81,7 @@ export function poll() {
     started = true
     load()
     for (const f of all) { try { offsets.set(f, fs.statSync(f).size) } catch {} }
+    for (const [f, n] of offsets) first.set(f, n)
     return
   }
   let added = 0
@@ -80,7 +97,12 @@ export function poll() {
     const end = buf.lastIndexOf(10)
     if (end < 0) continue
     offsets.set(f, from + end + 1)
+    const sub = f.includes(`${path.sep}subagents${path.sep}`)
     for (const line of buf.subarray(0, end).toString('utf8').split('\n')) {
+      if (!sub && line.includes('"type":"user"')) {
+        try { const m = JSON.parse(line); if (isPrompt(m)) tell({ t: Date.parse(m.timestamp) || Date.now(), usd: 0, model: '', prompt: true }) } catch {}
+        continue
+      }
       if (!line.includes('"usage"') || !line.includes('"assistant"')) continue
       let m: any
       try { m = JSON.parse(line) } catch { continue }
@@ -91,6 +113,7 @@ export function poll() {
       if (n <= prev) continue
       seen.set(msg.id, { usd: n, t: Date.now() })
       added += n - prev
+      tell({ t: Date.parse(m.timestamp) || Date.now(), usd: n - prev, model: msg.model })
       models[msg.model] = (models[msg.model] ?? 0) + n - prev
     }
   }
@@ -104,6 +127,7 @@ export function spend(u: any, model: string) {
   const n = costOf(u, model)
   if (!n) return
   cum += n
+  tell({ t: Date.now(), usd: n, model })
   log({ t: Date.now(), k: 'spend', usd: usd(n), models: { [model]: usd(n) }, cum: usd(cum), run: RUN })
 }
 
