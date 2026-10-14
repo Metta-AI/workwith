@@ -21,6 +21,7 @@ import { LEAD_PROMPT, WORKER_PROMPT, lookPrompt, workerNotesPrompt } from './pro
 import { LOOK_OPTIONS, LOOK_SLOTS, cleanLook, describeLook } from '../shared/looks.ts'
 import { cleanAppearance } from '../shared/appearance.ts'
 import * as meter from './meter.ts'
+import * as costs from './costs.ts'
 import { notesDir, notesNow, notesPath, readNotes, resumeKeepWarm, startNotes } from './notes.ts'
 import { notesFile } from '../shared/notes.ts'
 import { allTasks, endText, logPath, markTold, readLog, removeTask, searchLog, startTask, startTasks, statusLine, stopTask, taskOf } from './tasks.ts'
@@ -48,6 +49,7 @@ const sessions = new Map<string, Session>()
 let settings: Settings = loadSettings()
 meter.poll()
 setInterval(meter.poll, 60_000).unref()
+costs.start()
 let usage: Usage = { rate: meter.rate() }
 const sockets = new Set<WebSocket>()
 // Slash commands differ by directory (project skills), so keep each session's
@@ -124,7 +126,7 @@ const hooks: Hooks = {
   delta: (s, text, reset) => broadcast({ type: 'delta', sessionId: s.meta.id, text, reset }),
   authFailed: () => authNeeded(),
   truncate: (s, seq) => { broadcast({ type: 'truncate', sessionId: s.meta.id, seq }); metaChanged() },
-  usage: (u) => { meter.limit(u); usage = { ...u, rate: meter.rate() }; broadcast({ type: 'usage', usage }) },
+  usage: (u) => { meter.limit(u); costs.limit(u); usage = { ...u, rate: meter.rate() }; broadcast({ type: 'usage', usage }) },
   commands: (s, list) => {
     commands.set(s.meta.id, list)
     if (s.meta.kind === 'worker') { lastCommands = list; fs.writeFile(COMMANDS_FILE, JSON.stringify(list), () => {}) }
@@ -775,6 +777,8 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       ...(typeof body.mcpStartOff === 'boolean' ? { mcpStartOff: body.mcpStartOff } : {}),
       ...(typeof body.mcpClaude === 'boolean' ? { mcpClaude: body.mcpClaude } : {}),
       ...(Array.isArray(body.mcpAlways) ? { mcpAlways: body.mcpAlways.map(String) } : {}),
+      ...(body.plan && Number.isFinite(body.plan.usd) && body.plan.usd >= 0 ? { plan: { tier: String(body.plan.tier ?? ''), usd: body.plan.usd, ...(body.plan.yearly ? { yearly: true } : {}) } } : {}),
+      ...(body.reviewSeen ? { reviewSeen: { ...settings.reviewSeen, ...Object.fromEntries(['week', 'month'].filter((k) => typeof body.reviewSeen[k] === 'string').map((k) => [k, body.reviewSeen[k]])) } } : {}),
     }
     saveSettings(settings)
     broadcast({ type: 'settings', settings })
@@ -800,6 +804,8 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new HttpError(400, `Not a directory: ${cwd}`)
     try { return send(res, 200, { cwd, text: await startContext(cwd, url.searchParams.get('fresh') === '1') }) } catch (e) { throw new HttpError(500, (e as Error).message) }
   }
+  // Your plan, and day-by-day spend at API prices, for the cost view (shared/costs.ts).
+  if (a === 'costs' && method === 'GET') return send(res, 200, await costs.reply())
   if (a === 'meter' && method === 'GET') return send(res, 200, { rate: meter.rate(), five: meter.pairs('five'), seven: meter.pairs('seven') })
   if (a === 'history' && !id && method === 'GET') {
     const byClaude = new Map(metas().map((m) => [m.claudeSessionId, m.id]))

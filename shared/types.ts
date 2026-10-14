@@ -129,12 +129,15 @@ export type Event =
 export type AuthState = { state: 'ok' | 'needed' | 'pending' | 'failed'; url?: string; error?: string }
 
 // rate: how much of each window a dollar of spend (at API prices) uses, as server/meter.ts estimates it.
-export type Usage = { fiveHour?: number; sevenDay?: number; resetsAt?: number; status?: string; rate?: { fiveHour?: number; sevenDay?: number; pairs: number } }
+// overage: extra usage paid for the call that sent this report.
+export type Usage = { fiveHour?: number; sevenDay?: number; resetsAt?: number; status?: string; overage?: boolean; rate?: { fiveHour?: number; sevenDay?: number; pairs: number } }
 // trackedFiles: files whose history Codiner keeps, besides AGENTS.md, CLAUDE.md and LEAD_NOTES.md.
 // selfRestart: offer to restart when Codiner's own code changes (for working on Codiner); off by default.
 // appearance: unset until you pick one, which the first load asks you to do.
 // groupOrder: the sidebar's folders, once you drag one. cacheGuard: tokens; see shared/cache.ts.
 // notes, keepWarmHours, keepWarmMax, keepWarmUsage: see server/notes.ts.
+// plan: what you pay a month (yearly: you pay for a year, usd is that over 12), for the plan
+// you confirmed it for. reviewSeen: the last weekly and monthly review you closed. See shared/costs.ts.
 export type Settings = {
   leadAutoSend: boolean; autoModeMigrated?: boolean; trackedFiles?: string[]; selfRestart?: boolean
   appearance?: Appearance; groupOrder?: string[]; cacheGuard?: number
@@ -142,6 +145,7 @@ export type Settings = {
   // MCP servers: new sessions start with them off (default), except those always on;
   // Claude may turn one on itself (default) or must ask you.
   mcpStartOff?: boolean; mcpAlways?: string[]; mcpClaude?: boolean
+  plan?: { tier: string; usd: number; yearly?: boolean }; reviewSeen?: { week?: string; month?: string }
 }
 
 export type ServerMsg =

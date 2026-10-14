@@ -8,7 +8,9 @@ import { NewSession } from './NewSession.tsx'
 import { ArchiveIcon, GearIcon, TerminalIcon, XIcon } from './Icons.tsx'
 import { TasksDialog } from './TasksDialog.tsx'
 import { SettingsDialog } from './SettingsDialog.tsx'
-import { cacheOf, minutes, spendOf, toggleMoney, useNow, usd } from '../cache.ts'
+import { cacheOf, minutes, spendOf, useNow, usd } from '../cache.ts'
+import { CostBanner } from './CostPanel.tsx'
+import type { Page } from './SettingsDialog.tsx'
 
 // Sessions grouped by directory; sessions spawned for another one nest under it.
 // You can drag both into place; until you do, folders go by latest activity and
@@ -100,7 +102,7 @@ export function Sidebar({ width }: { width: number }) {
   const st = useStore()
   const [newIn, setNewIn] = useState<string | null>(null)
   const [history, setHistory] = useState(false)
-  const [settings, setSettings] = useState(false)
+  const [settings, setSettings] = useState<Page | true | false>(false)
   const [tasks, setTasks] = useState(false)
   const [menu, setMenu] = useState<RowMenuAt | null>(null)
   const openMenu = (s: SessionMeta, e: React.MouseEvent) => { e.preventDefault(); setMenu({ s, x: e.clientX, y: e.clientY }) }
@@ -160,13 +162,14 @@ export function Sidebar({ width }: { width: number }) {
         })}
         {!groups.length && <div className="muted pad">{st.showArchived ? 'No archived sessions.' : 'No sessions yet.'}</div>}
       </nav>
+      <CostBanner open={() => setSettings('cost')} />
       <div className="side-foot">
         {/* Floats above the line, so it takes no room from the footer. */}
         {custom && <button className="reset-order" title="Sort folders by latest activity, sessions oldest first" onClick={() => void api('/api/sessions/order', 'DELETE')}>Reset order</button>}
         <button className="link" title="Settings" onClick={() => setSettings(true)}><GearIcon size={14} /></button>
         <div className="side-foot-mid">
           {(u.fiveHour != null || u.sevenDay != null) && (
-            <div className="usage" data-tip={limitsTip(u)} onClick={toggleMoney}>
+            <div className="usage" data-tip={limitsTip(u)} onClick={() => setSettings('cost')}>
               {u.fiveHour != null && <span className={level(u.fiveHour)}>5h {limitLabel(u.fiveHour, u.rate?.fiveHour, st.money)}</span>}
               {u.fiveHour != null && u.sevenDay != null && <span className="usage-dot">·</span>}
               {u.sevenDay != null && <span className={level(u.sevenDay)}>7d {limitLabel(u.sevenDay, u.rate?.sevenDay, st.money)}</span>}
@@ -182,7 +185,7 @@ export function Sidebar({ width }: { width: number }) {
       </div>
       {newIn !== null && <NewSession cwd={newIn} onClose={() => setNewIn(null)} />}
       {history && <HistoryDialog onClose={() => setHistory(false)} />}
-      {settings && <SettingsDialog onClose={() => setSettings(false)} />}
+      {settings && <SettingsDialog page={settings === true ? undefined : settings} onClose={() => setSettings(false)} />}
       {tasks && <TasksDialog onClose={() => setTasks(false)} />}
       {menu && <RowMenu at={menu} onClose={() => setMenu(null)} />}
     </aside>
@@ -257,7 +260,7 @@ function limitsTip(u: Usage) {
     ? `The ${name} limit is about ${usd(1 / rate)} at API prices. You used ${Math.round(used * 100)}% (about ${usd(used / rate)}); about ${usd((1 - used) / rate)} is left.`
     : `You used ${Math.round(used * 100)}% of your ${name} limit. Codiner does not know its dollar value yet.`
   return [line('5-hour', u.fiveHour, u.rate?.fiveHour), line('weekly', u.sevenDay, u.rate?.sevenDay)].filter(Boolean).join('\n\n')
-    + `\n\nDollar values are estimates: Codiner compares Claude Code's spend at API prices with how far the percentages move (${u.rate?.pairs ?? 0} measurements). Click to show dollars or percent.`
+    + `\n\nDollar values are estimates: Codiner compares Claude Code's spend at API prices with how far the percentages move (${u.rate?.pairs ?? 0} measurements). Click to see what your plan costs you.`
 }
 
 // What the conversation has cost so far. Only a label: the session's own pill explains it.

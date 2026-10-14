@@ -742,3 +742,22 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .task-log mark { background: color-mix(in srgb, var(--warn) 45%, transparent); color: inherit; border-radius: 2px; }
 .task-ln { display: inline-block; min-width: 4ch; margin-right: 10px; text-align: right; color: var(--muted); user-select: none; }
 .mcp-pill.ask { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+
+/* What your plan costs you (CostPanel.tsx): the banner over the sidebar's foot, and the Settings page. */
+.cost-banner { position: relative; margin: 6px 8px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); font-size: calc(12.5px * var(--fs, 1)); display: flex; flex-direction: column; gap: 6px; }
+.cost-banner-title { font-weight: 600; padding-right: 16px; }
+.cost-banner-text { color: var(--text); line-height: 1.4; }
+.cost-banner-actions { display: flex; gap: 6px; }
+.cost-banner-actions button { font-size: calc(12px * var(--fs, 1)); padding: 3px 9px; }
+.cost-banner-x { position: absolute; top: 6px; right: 6px; }
+.cost-banner:has(+ .side-foot .reset-order) { margin-bottom: 26px; }   /* room for "Reset order", which floats above the foot */
+.usage { cursor: pointer; }
+.cost-h { margin: 0 0 6px; font-size: calc(14px * var(--fs, 1)); }
+.cost-line { margin: 0 0 6px; font-size: calc(13px * var(--fs, 1)); line-height: 1.45; }
+.cost-note { margin: 6px 0 0; font-size: calc(12px * var(--fs, 1)); line-height: 1.4; }
+.cost-price { width: 70px; padding: 2px 6px; }
+.cost-table td:not(:first-child), .cost-table th:not(:first-child) { text-align: right; }
+.cost-table tr.cost-cur td { font-weight: 600; }
+.cost-review { border-top: 1px solid var(--line); padding: 6px 0; }
+.cost-review summary { cursor: pointer; font-size: calc(13px * var(--fs, 1)); }
+.cost-review[open] summary { margin-bottom: 6px; }

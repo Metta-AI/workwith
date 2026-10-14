@@ -560,7 +560,7 @@ export class Session {
       case 'rate_limit_event': {
         const i = msg.rate_limit_info ?? {}
         const w = i.unifiedWindows ?? {}
-        this.hooks.usage({ fiveHour: w.five_hour?.utilization, sevenDay: w.seven_day?.utilization, resetsAt: i.resetsAt, status: i.status })
+        this.hooks.usage({ fiveHour: w.five_hour?.utilization, sevenDay: w.seven_day?.utilization, resetsAt: i.resetsAt, status: i.status, ...(i.isUsingOverage ? { overage: true } : {}) })
         return
       }
     }

@@ -14,6 +14,7 @@ import { shortPath } from './DirPicker.tsx'
 import { XIcon } from './Icons.tsx'
 import { AppearancePanel } from './AppearanceDialog.tsx'
 import { StartContext } from './StartContext.tsx'
+import { CostPanel } from './CostPanel.tsx'
 import { DEFAULT_CACHE_GUARD } from '../../../shared/cache.ts'
 import { KEEP_WARM } from '../../../shared/notes.ts'
 
@@ -21,8 +22,8 @@ const GUARDS = [0, 20_000, 50_000, 100_000, 250_000, 500_000]
 const WARM_HOURS = [0, 1, 2, 4, 6, 8, 12]
 const WARM_MAX = [200_000, 300_000, 500_000, 750_000, 1_000_000]
 const WARM_USAGE = [50, 70, 80, 90, 100]
-const PAGES = [['general', 'General'], ['appearance', 'Appearance'], ['context', 'Start-up context'], ['files', 'Notes files']] as const
-type Page = typeof PAGES[number][0]
+const PAGES = [['general', 'General'], ['cost', 'Plan and cost'], ['appearance', 'Appearance'], ['context', 'Start-up context'], ['files', 'Notes files']] as const
+export type Page = typeof PAGES[number][0]
 
 type FileRow = { path: string; builtIn: boolean; exists: boolean; versions: number; last: number | null }
 type By =
@@ -39,7 +40,7 @@ const who = (by: By) =>
   : by.kind === 'claude' ? `Claude Code in ${shortPath(by.cwd)}`
   : 'Outside Codiner'
 
-export function SettingsDialog({ onClose }: { onClose(): void }) {
+export function SettingsDialog({ onClose, page: first }: { onClose(): void; page?: Page }) {
   const st = useStore()
   const [files, setFiles] = useState<FileRow[]>([])
   const [sel, setSel] = useState('')
@@ -50,7 +51,7 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
   const [adding, setAdding] = useState('')
   const tick = sel ? st.fileTick[sel] ?? 0 : 0
 
-  const [page, setPage] = useState<Page>(() => PAGES.find(([p]) => p === localStorage.getItem('codiner.settingsPage'))?.[0] ?? 'general')
+  const [page, setPage] = useState<Page>(() => first ?? PAGES.find(([p]) => p === localStorage.getItem('codiner.settingsPage'))?.[0] ?? 'general')
   const go = (p: Page) => { localStorage.setItem('codiner.settingsPage', p); setPage(p) }
   const guard = st.settings.cacheGuard ?? DEFAULT_CACHE_GUARD
   const [stale, setStale] = useState(false)   // the server predates file history: it needs a restart
@@ -150,6 +151,7 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
               of the 5-hour limit
             </label>
           </section>}
+          {page === 'cost' && <section className="settings-page"><CostPanel /></section>}
           {page === 'appearance' && <section className="settings-page"><AppearancePanel /></section>}
           {page === 'context' && <section className="settings-page"><StartContext /></section>}
           {page === 'files' && <div className="files-body">
