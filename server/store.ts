@@ -10,18 +10,24 @@ import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Event, ImageRef, SessionMeta, Settings } from '../shared/types.ts'
 
-export const DATA = process.env.CODINGER_HOME ?? process.env.CODINER_HOME ?? path.join(os.homedir(), '.codinger')
+const OLD_DATA = path.join(os.homedir(), '.codiner')
+export const DATA = process.env.CODINGER_HOME ?? process.env.CODINER_HOME ?? homeData()
 // Codinger was called Codiner until October 2026. Move ~/.codiner once, and leave a link
 // there for the sessions and tasks that a restart keeps running, which still use the old path.
 // Claude Code keeps the lead's conversation under its directory's name: move that too.
-const OLD_DATA = path.join(os.homedir(), '.codiner')
-if (DATA === path.join(os.homedir(), '.codinger') && !fs.existsSync(DATA) && fs.existsSync(OLD_DATA) && !fs.lstatSync(OLD_DATA).isSymbolicLink()) {
-  fs.renameSync(OLD_DATA, DATA)
-  fs.symlinkSync(DATA, OLD_DATA)
+function homeData(): string {
+  const data = path.join(os.homedir(), '.codinger')
+  if (fs.existsSync(data) || !fs.existsSync(OLD_DATA) || fs.lstatSync(OLD_DATA).isSymbolicLink()) return data
+  // Windows can't move a folder in use (a running task's log, a process's working
+  // directory): stay in the old one until a start when it can.
+  try { fs.renameSync(OLD_DATA, data) } catch { return OLD_DATA }
+  // A junction needs no rights on Windows, where a symbolic link does.
+  try { fs.symlinkSync(data, OLD_DATA, process.platform === 'win32' ? 'junction' : 'dir') } catch { /* no link */ }
   const projects = path.join(process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude'), 'projects')
   const key = (dir: string) => path.join(projects, dir.replace(/[^A-Za-z0-9]/g, '-'))
-  const from = key(path.join(OLD_DATA, 'lead')), to = key(path.join(DATA, 'lead'))
-  if (fs.existsSync(from) && !fs.existsSync(to)) fs.renameSync(from, to)
+  const from = key(path.join(OLD_DATA, 'lead')), to = key(path.join(data, 'lead'))
+  try { if (fs.existsSync(from) && !fs.existsSync(to)) fs.renameSync(from, to) } catch { /* the lead starts a new conversation */ }
+  return data
 }
 const EVENTS = path.join(DATA, 'events')
 export const IMAGES = path.join(DATA, 'images')
