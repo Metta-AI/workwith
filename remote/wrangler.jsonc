@@ -1,12 +1,21 @@
-// The hub for remote access (src/index.ts). Local: npx wrangler dev. Deploy: npx wrangler deploy.
+// The hub for remote access at web.codinger.app (src/index.ts), and the Codinger UI.
+// Build the UI first (npm run build, at the top). Local: npx wrangler dev --env dev. Deploy: npx wrangler deploy.
 {
-  "name": "codinger-remote",
+  "name": "codinger-web",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
-  "vars": { "BASE_HOST": "codinger.app" },
+  "assets": { "directory": "../dist", "not_found_handling": "single-page-application", "run_worker_first": ["/_remote/*", "/m/*"] },
+  "routes": [{ "pattern": "web.codinger.app", "custom_domain": true }],
+  "vars": { "ALLOWED_EMAILS": "squashai@gmail.com,joshua@huttj.com", "MAIL_FROM": "login@codinger.app" },
+  "send_email": [{ "name": "EMAIL", "allowed_destination_addresses": ["squashai@gmail.com", "joshua@huttj.com"] }],
   "durable_objects": { "bindings": [{ "name": "HUB", "class_name": "Hub" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hub"] }],
   "env": {
-    "dev": { "vars": { "BASE_HOST": "localhost" }, "durable_objects": { "bindings": [{ "name": "HUB", "class_name": "Hub" }] } }
+    "dev": {
+      "routes": [],
+      "vars": { "ALLOWED_EMAILS": "squashai@gmail.com,joshua@huttj.com", "MAIL_FROM": "login@codinger.app" },
+      "send_email": [{ "name": "EMAIL", "allowed_destination_addresses": ["squashai@gmail.com", "joshua@huttj.com"] }],
+      "durable_objects": { "bindings": [{ "name": "HUB", "class_name": "Hub" }] }
+    }
   }
 }

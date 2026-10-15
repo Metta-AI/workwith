@@ -1,24 +1,39 @@
-// The hub for remote access: one Worker and one Durable Object for the owner.
+// The hub for remote access: one Worker and one Durable Object for the owner,
+// at web.codinger.app.
 //
-// app.<BASE> lists the connected machines; a machine connects to
-// app.<BASE>/_remote/connect with its token and keeps that WebSocket open.
-// Everything for <machine>.<BASE> (the UI, /api, /ws) goes through that socket
-// to the machine (shared/remote.ts), and back.
-//
-// Sign-in is not here yet: DEV_TOKEN (remote/.dev.vars, or a secret) stands in
-// for it, for a machine's token and, as ?dev=<token> once, for a browser.
+// - The Codinger UI itself (the built dist/, Workers static assets).
+// - Sign-in by an email link, to the addresses in ALLOWED_EMAILS only.
+// - Connecting a machine: its Codinger asks for a code, you approve it here
+//   (signed in), and the machine gets a token.
+// - /m/<machine>/… goes through that machine's one outbound WebSocket
+//   (shared/remote.ts): each request, and each WebSocket as a channel. A signed-in
+//   browser or another machine (with its token) can use it.
 
 import { DurableObject } from 'cloudflare:workers'
-import { REQ_HEADERS, RES_HEADERS, RESERVED, type HubMsg, type MachineMsg } from '../../shared/remote.ts'
+import { EmailMessage } from 'cloudflare:email'
+import { REQ_HEADERS, RES_HEADERS, type HubMsg, type MachineMsg, type RemoteMachine } from '../../shared/remote.ts'
 
-type Env = { HUB: DurableObjectNamespace<Hub>; BASE_HOST: string; DEV_TOKEN?: string }
+type Env = {
+  HUB: DurableObjectNamespace<Hub>
+  EMAIL: SendEmail
+  ALLOWED_EMAILS: string   // comma-separated
+  MAIL_FROM: string
+}
 
 const TIMEOUT_MS = 60_000
-const COOKIE = 'codinger_dev'
+const COOKIE = 'codinger_session'
+const SESSION_DAYS = 30
+const LOGIN_MS = 15 * 60_000
+const LINK_MS = 10 * 60_000
+
+type Login = { email: string; exp: number; next?: string }
+type Session = { email: string; exp: number }
+type Link = { name: string; poll: string; exp: number; token?: string }
+type Machine = { name: string; created: number; tokenHash: string }
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
-    // One owner, so one hub.
+    // One owner, so one hub. Static files never get here (wrangler.jsonc: run_worker_first).
     return env.HUB.get(env.HUB.idFromName('owner')).fetch(req)
   },
 } satisfies ExportedHandler<Env>
@@ -28,63 +43,202 @@ export class Hub extends DurableObject<Env> {
 
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url)
-    const base = this.env.BASE_HOST
-    const host = url.hostname
-    // Until sign-in: ?dev=<token> once on an address signs that address in.
-    const dev = url.searchParams.get('dev')
-    if (dev && this.env.DEV_TOKEN && dev === this.env.DEV_TOKEN) {
-      url.searchParams.delete('dev')
-      return new Response(null, { status: 302, headers: { location: url.pathname + url.search, 'set-cookie': `${COOKIE}=${dev}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000` } })
+    const p = url.pathname
+    try {
+      if (p.startsWith('/m/')) return await this.tunnel(req, url)
+      switch (`${req.method} ${p}`) {
+        case 'GET /_remote/whoami': {
+          const s = await this.session(req)
+          return json(s ? { web: true, email: s.email } : { web: true, email: null }, s ? 200 : 401)
+        }
+        case 'GET /_remote/login': return loginPage(url.searchParams.get('next') ?? '')
+        case 'POST /_remote/login': return await this.login(req, url)
+        case 'GET /_remote/verify': return verifyPage(url.searchParams.get('t') ?? '')
+        case 'POST /_remote/verify': return await this.verify(req)
+        case 'POST /_remote/logout': return await this.logout(req)
+        case 'POST /_remote/link/start': return await this.linkStart(req, url)
+        case 'POST /_remote/link/poll': return await this.linkPoll(req)
+        case 'GET /_remote/link': return await this.linkPage(req, url)
+        case 'POST /_remote/link': return await this.linkApprove(req, url)
+        case 'GET /_remote/machines': {
+          if (!await this.allowed(req)) return json({ error: 'Not signed in' }, 401)
+          return json(await this.machines())
+        }
+        case 'GET /_remote/connect': return await this.attach(req)
+      }
+      const forget = /^\/_remote\/machines\/([a-z0-9-]{1,40})$/.exec(p)
+      if (forget && req.method === 'DELETE') {
+        if (!await this.session(req) || !sameOrigin(req, url)) return json({ error: 'Not signed in' }, 401)
+        await this.forget(forget[1])
+        return json({ ok: true })
+      }
+      return new Response('Not found', { status: 404 })
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e) }, 500)
     }
-    if (host === base || host === `app.${base}`) return this.app(req, url)
-    if (!host.endsWith(`.${base}`)) return new Response('Not found', { status: 404 })
-    const name = host.slice(0, -base.length - 1)
-    if (name.includes('.') || RESERVED.has(name)) return new Response('Not found', { status: 404 })
-
-    if (!this.signedIn(req)) return page('Sign in', '<p>You are not signed in.</p>', 401)
-
-    const machine = this.machine(name)
-    if (!machine) return page('Not connected', `<p><b>${esc(name)}</b> is not connected. Turn on remote access in its Codinger.</p><p><a href="//app.${esc(base)}${port(url)}/">Your machines</a></p>`, 502)
-    if (req.headers.get('upgrade')?.toLowerCase() === 'websocket') return this.channel(req, url, name, machine)
-    return this.request(req, url, machine)
   }
 
-  // ---- app.<BASE> -------------------------------------------------------------
+  // ---- sign-in -----------------------------------------------------------------
 
-  private async app(req: Request, url: URL): Promise<Response> {
-    if (url.pathname === '/_remote/connect') {
-      if (req.headers.get('upgrade')?.toLowerCase() !== 'websocket') return new Response('Expected a WebSocket', { status: 426 })
-      const token = req.headers.get('authorization')?.replace(/^Bearer /, '')
-      if (!this.env.DEV_TOKEN || token !== this.env.DEV_TOKEN) return new Response('Not allowed', { status: 403 })
-      const name = url.searchParams.get('name') ?? ''
-      if (!/^[a-z0-9-]{1,40}$/.test(name) || RESERVED.has(name)) return new Response('Bad name', { status: 400 })
-      // A machine that connects again takes the place of its old socket.
-      for (const old of this.ctx.getWebSockets(`m:${name}`)) { this.dropMachine(name); old.close(1012, 'Connected again') }
-      const [client, server] = Object.values(new WebSocketPair())
-      this.ctx.acceptWebSocket(server, ['m', `m:${name}`])
-      return new Response(null, { status: 101, webSocket: client })
+  private allowedEmail(email: string) {
+    return this.env.ALLOWED_EMAILS.split(',').map((s) => s.trim().toLowerCase()).includes(email)
+  }
+
+  // Ask for a link. The answer is the same for any address, so it tells nobody which ones are on the list.
+  private async login(req: Request, url: URL): Promise<Response> {
+    const form = await req.formData()
+    const email = String(form.get('email') ?? '').trim().toLowerCase()
+    const next = String(form.get('next') ?? '')
+    if (this.allowedEmail(email)) {
+      // At most 5 links an hour to one address.
+      const key = `sent:${email}`
+      const sent = ((await this.ctx.storage.get<number[]>(key)) ?? []).filter((t) => t > Date.now() - 3_600_000)
+      if (sent.length < 5) {
+        const t = token()
+        await this.ctx.storage.put(`login:${await hash(t)}`, { email, exp: Date.now() + LOGIN_MS, ...(next.startsWith('/_remote/link?') ? { next } : {}) } satisfies Login)
+        await this.ctx.storage.put(key, [...sent, Date.now()])
+        await this.mail(email, 'Sign in to Codinger', `Open this link to sign in to Codinger on web.codinger.app:\n\n${url.origin}/_remote/verify?t=${t}\n\nIt works once, for 15 minutes. If you did not ask for it, do nothing.`)
+      }
     }
-    if (!this.signedIn(req)) return page('Codinger', '<p>Sign in to see your machines.</p>', 401)
-    const names = this.ctx.getWebSockets('m').map((ws) => this.ctx.getTags(ws).find((t) => t.startsWith('m:'))!.slice(2)).sort()
-    const p = port(url)
-    const list = names.length
-      ? `<ul>${names.map((n) => `<li><a href="//${esc(n)}.${esc(this.env.BASE_HOST)}${p}/">${esc(n)}</a></li>`).join('')}</ul>`
-      : '<p>No machine is connected.</p>'
-    return page('Your machines', list)
+    return page('Check your email', '<p>If the address is on the list, a link to sign in is on the way. It works for 15 minutes.</p>')
   }
 
-  private signedIn(req: Request): boolean {
-    const t = this.env.DEV_TOKEN
-    return !!t && cookie(req, COOKIE) === t
+  // A POST from the page the link opens, so a mail scanner that opens links does not use it up.
+  private async verify(req: Request): Promise<Response> {
+    const form = await req.formData()
+    const key = `login:${await hash(String(form.get('t') ?? ''))}`
+    const login = await this.ctx.storage.get<Login>(key)
+    await this.ctx.storage.delete(key)
+    if (!login || login.exp < Date.now()) return page('Link expired', '<p>This link is used or too old. <a href="/_remote/login">Ask for a new one</a>.</p>', 400)
+    const s = token()
+    await this.ctx.storage.put(`session:${await hash(s)}`, { email: login.email, exp: Date.now() + SESSION_DAYS * 86_400_000 } satisfies Session)
+    return new Response(null, { status: 303, headers: { location: login.next ?? '/', 'set-cookie': `${COOKIE}=${s}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_DAYS * 86_400}` } })
   }
 
-  private machine(name: string): WebSocket | undefined {
+  private async logout(req: Request): Promise<Response> {
+    const s = cookie(req, COOKIE)
+    if (s) await this.ctx.storage.delete(`session:${await hash(s)}`)
+    return new Response(null, { status: 303, headers: { location: '/', 'set-cookie': `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0` } })
+  }
+
+  private async session(req: Request): Promise<Session | null> {
+    const s = cookie(req, COOKIE)
+    if (!s) return null
+    const v = await this.ctx.storage.get<Session>(`session:${await hash(s)}`)
+    return v && v.exp > Date.now() && this.allowedEmail(v.email) ? v : null
+  }
+
+  // A machine, by the token in its Authorization header.
+  private async machineOf(req: Request): Promise<Machine | null> {
+    const t = req.headers.get('authorization')?.replace(/^Bearer /, '')
+    if (!t) return null
+    const name = await this.ctx.storage.get<string>(`token:${await hash(t)}`)
+    return name ? (await this.ctx.storage.get<Machine>(`machine:${name}`)) ?? null : null
+  }
+
+  // Signed in, or one of your machines.
+  private async allowed(req: Request) { return !!(await this.session(req)) || !!(await this.machineOf(req)) }
+
+  private async mail(to: string, subject: string, text: string) {
+    const from = this.env.MAIL_FROM
+    const raw = [
+      `From: Codinger <${from}>`, `To: <${to}>`, `Subject: ${subject}`, `Date: ${new Date().toUTCString()}`,
+      `Message-ID: <${crypto.randomUUID()}@${from.split('@')[1]}>`, 'MIME-Version: 1.0', 'Content-Type: text/plain; charset=utf-8', '', text,
+    ].join('\r\n')
+    await this.env.EMAIL.send(new EmailMessage(from, to, raw))
+  }
+
+  // ---- connecting a machine --------------------------------------------------------
+
+  // The machine asks; it shows you the link with the code, and polls with its secret.
+  private async linkStart(req: Request, url: URL): Promise<Response> {
+    const { name } = await req.json<{ name?: string }>()
+    if (!name || !/^[a-z0-9-]{1,40}$/.test(name)) return json({ error: 'Bad name' }, 400)
+    const code = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 32]).join('')
+    const poll = token()
+    await this.ctx.storage.put(`link:${code}`, { name, poll: await hash(poll), exp: Date.now() + LINK_MS } satisfies Link)
+    return json({ code, poll, url: `${url.origin}/_remote/link?code=${code}` })
+  }
+
+  private async linkPoll(req: Request): Promise<Response> {
+    const { code, poll } = await req.json<{ code?: string; poll?: string }>()
+    const key = `link:${code}`
+    const link = await this.ctx.storage.get<Link>(key)
+    if (!link || link.poll !== await hash(String(poll)) || link.exp < Date.now()) return json({ error: 'No such request, or it expired' }, 404)
+    if (!link.token) return json({ waiting: true })
+    await this.ctx.storage.delete(key)
+    return json({ token: link.token, name: link.name })
+  }
+
+  private async linkPage(req: Request, url: URL): Promise<Response> {
+    if (!await this.session(req)) return new Response(null, { status: 303, headers: { location: `/_remote/login?next=${encodeURIComponent(url.pathname + url.search)}` } })
+    const code = url.searchParams.get('code') ?? ''
+    const link = await this.ctx.storage.get<Link>(`link:${code}`)
+    if (!link || link.exp < Date.now() || link.token) return page('Not found', '<p>This request is used or too old. Start again in Codinger.</p>', 404)
+    const again = await this.ctx.storage.get<Machine>(`machine:${link.name}`)
+    return page('Connect a machine', `<p>Connect <b>${esc(link.name)}</b> to your Codinger? Check that Codinger on that machine shows the code <b>${esc(code)}</b>.</p>
+${again ? `<p>A machine with this name is connected already. It will be disconnected.</p>` : ''}
+<form method="post"><input type="hidden" name="code" value="${esc(code)}"><button>Connect ${esc(link.name)}</button></form>`)
+  }
+
+  private async linkApprove(req: Request, url: URL): Promise<Response> {
+    if (!await this.session(req) || !sameOrigin(req, url)) return page('Not signed in', '<p><a href="/_remote/login">Sign in</a> first.</p>', 401)
+    const code = String((await req.formData()).get('code') ?? '')
+    const key = `link:${code}`
+    const link = await this.ctx.storage.get<Link>(key)
+    if (!link || link.exp < Date.now() || link.token) return page('Not found', '<p>This request is used or too old. Start again in Codinger.</p>', 404)
+    await this.forget(link.name)
+    const t = token()
+    const tokenHash = await hash(t)
+    await this.ctx.storage.put(`machine:${link.name}`, { name: link.name, created: Date.now(), tokenHash } satisfies Machine)
+    await this.ctx.storage.put(`token:${tokenHash}`, link.name)
+    await this.ctx.storage.put(key, { ...link, token: t } satisfies Link)
+    return page('Connected', `<p><b>${esc(link.name)}</b> is connected. You can close this page.</p><p><a href="/">Open Codinger</a></p>`)
+  }
+
+  private async forget(name: string) {
+    const m = await this.ctx.storage.get<Machine>(`machine:${name}`)
+    if (m) await this.ctx.storage.delete([`machine:${name}`, `token:${m.tokenHash}`])
+    for (const ws of this.ctx.getWebSockets(`m:${name}`)) ws.close(4001, 'Disconnected from web.codinger.app')
+    this.dropMachine(name)
+  }
+
+  private async machines(): Promise<RemoteMachine[]> {
+    const known = await this.ctx.storage.list<Machine>({ prefix: 'machine:' })
+    return [...known.values()].map((m) => ({ name: m.name, connected: !!this.socket(m.name) })).sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  // The machine's own socket, kept open.
+  private async attach(req: Request): Promise<Response> {
+    if (req.headers.get('upgrade')?.toLowerCase() !== 'websocket') return new Response('Expected a WebSocket', { status: 426 })
+    const m = await this.machineOf(req)
+    if (!m) return new Response('Not allowed', { status: 403 })
+    // A machine that connects again takes the place of its old socket.
+    for (const old of this.ctx.getWebSockets(`m:${m.name}`)) { this.dropMachine(m.name); old.close(1012, 'Connected again') }
+    const [client, server] = Object.values(new WebSocketPair())
+    this.ctx.acceptWebSocket(server, ['m', `m:${m.name}`])
+    return new Response(null, { status: 101, webSocket: client })
+  }
+
+  private socket(name: string): WebSocket | undefined {
     return this.ctx.getWebSockets(`m:${name}`)[0]
   }
 
-  // ---- HTTP through the machine ---------------------------------------------
+  // ---- /m/<machine>/… through the machine ------------------------------------------
 
-  private async request(req: Request, url: URL, machine: WebSocket): Promise<Response> {
+  private async tunnel(req: Request, url: URL): Promise<Response> {
+    const [, , name, ...rest] = url.pathname.split('/')
+    // A browser needs its session and this site as the origin; a machine, its token.
+    const from = await this.machineOf(req)
+    if (!from && (!await this.session(req) || !sameOrigin(req, url))) return json({ error: 'Not signed in' }, 401)
+    const machine = this.socket(name)
+    if (!machine) return json({ error: `${name} is not connected` }, 502)
+    const path = '/' + rest.join('/') + url.search
+    if (req.headers.get('upgrade')?.toLowerCase() === 'websocket') return this.channel(req, name, path, machine)
+    return this.request(req, path, machine)
+  }
+
+  private async request(req: Request, path: string, machine: WebSocket): Promise<Response> {
     const id = crypto.randomUUID()
     const headers: Record<string, string> = {}
     for (const h of REQ_HEADERS) { const v = req.headers.get(h); if (v) headers[h] = v }
@@ -92,22 +246,20 @@ export class Hub extends DurableObject<Env> {
     const res = await new Promise<Extract<MachineMsg, { t: 'res' }> | null>((resolve) => {
       const timer = setTimeout(() => { this.pending.delete(id); resolve(null) }, TIMEOUT_MS)
       this.pending.set(id, (m) => { clearTimeout(timer); resolve(m) })
-      send(machine, { t: 'req', id, method: req.method, path: url.pathname + url.search, headers, ...(body ? { body } : {}) })
+      send(machine, { t: 'req', id, method: req.method, path, headers, ...(body ? { body } : {}) })
     })
-    if (!res) return new Response('The machine did not answer in time.', { status: 504 })
+    if (!res) return json({ error: 'The machine did not answer in time' }, 504)
     const out = new Headers()
     for (const h of RES_HEADERS) if (res.headers[h]) out.set(h, res.headers[h])
     return new Response(req.method === 'HEAD' ? null : fromBase64(res.body), { status: res.status, headers: out })
   }
 
-  // ---- WebSockets through the machine ---------------------------------------
-
-  private channel(req: Request, url: URL, name: string, machine: WebSocket): Response {
+  private channel(req: Request, name: string, path: string, machine: WebSocket): Response {
     const chan = crypto.randomUUID()
     const protocols = (req.headers.get('sec-websocket-protocol') ?? '').split(',').map((s) => s.trim()).filter(Boolean)
     const [client, server] = Object.values(new WebSocketPair())
     this.ctx.acceptWebSocket(server, ['b', `b:${name}`, `c:${chan}`])
-    send(machine, { t: 'open', chan, path: url.pathname + url.search, protocols })
+    send(machine, { t: 'open', chan, path, protocols })
     return new Response(null, { status: 101, webSocket: client, headers: protocols[0] ? { 'sec-websocket-protocol': protocols[0] } : {} })
   }
 
@@ -125,7 +277,7 @@ export class Hub extends DurableObject<Env> {
     // A browser: on to its machine.
     const name = tags.find((t) => t.startsWith('b:'))!.slice(2)
     const chan = tags.find((t) => t.startsWith('c:'))!.slice(2)
-    const machine = this.machine(name)
+    const machine = this.socket(name)
     if (machine) send(machine, { t: 'msg', chan, data })
     else ws.close(1011, 'The machine went away')
   }
@@ -136,7 +288,7 @@ export class Hub extends DurableObject<Env> {
     if (tags[0] === 'm') return this.dropMachine(tags[1].slice(2))
     const name = tags.find((t) => t.startsWith('b:'))!.slice(2)
     const chan = tags.find((t) => t.startsWith('c:'))!.slice(2)
-    const machine = this.machine(name)
+    const machine = this.socket(name)
     if (machine) send(machine, { t: 'close', chan })
   }
 
@@ -151,9 +303,16 @@ export class Hub extends DurableObject<Env> {
 // ---- helpers -----------------------------------------------------------------
 
 const send = (ws: WebSocket, m: HubMsg) => { try { ws.send(JSON.stringify(m)) } catch { /* gone */ } }
-const port = (url: URL) => url.port ? `:${url.port}` : ''
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const cookie = (req: Request, name: string) => req.headers.get('cookie')?.split(/;\s*/).find((c) => c.startsWith(`${name}=`))?.slice(name.length + 1)
+const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'content-type': 'application/json' } })
+const token = () => toBase64(crypto.getRandomValues(new Uint8Array(32))).replace(/[+/=]/g, (c) => ({ '+': '-', '/': '_', '=': '' })[c]!)
+async function hash(s: string) { return toBase64(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))) }
+// A request a page on this site made: a browser sends Origin on a WebSocket and on any POST, PUT, PATCH or DELETE.
+function sameOrigin(req: Request, url: URL) {
+  const o = req.headers.get('origin')
+  return o ? o === url.origin : req.method === 'GET' || req.method === 'HEAD'
+}
 
 function toBase64(b: Uint8Array): string {
   let s = ''
@@ -169,6 +328,9 @@ function fromBase64(s: string): Uint8Array {
 
 function page(title: string, body: string, status = 200): Response {
   return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
-<style>body{font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:3rem auto;padding:0 1rem;color:#222}a{color:#0b6bcb}</style>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:3rem auto;padding:0 1rem;color:#222}a{color:#0b6bcb}input,button{font:inherit;padding:.4rem .6rem}button{cursor:pointer}</style>
 <h1>${esc(title)}</h1>${body}`, { status, headers: { 'content-type': 'text/html; charset=utf-8' } })
 }
+
+const loginPage = (next: string) => page('Sign in to Codinger', `<form method="post"><input type="hidden" name="next" value="${esc(next)}"><p><input type="email" name="email" placeholder="you@example.com" required autofocus size="30"></p><p><button>Email me a link</button></p></form>`)
+const verifyPage = (t: string) => page('Sign in to Codinger', `<form method="post"><input type="hidden" name="t" value="${esc(t)}"><button autofocus>Sign in</button></form>`)

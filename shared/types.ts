@@ -161,6 +161,9 @@ export type Event =
 
 // Claude Code's login: 'pending' while `claude auth login` waits for you (url: its sign-in page).
 export type AuthState = { state: 'ok' | 'needed' | 'pending' | 'failed'; url?: string; error?: string }
+// Remote access through web.codinger.app (server/remote.ts). linked: it has its token;
+// linking: waiting for you to approve the code on the web.
+export type RemoteStatus = { hub: string; name: string; on: boolean; linked: boolean; connected: boolean; linking?: { code: string; url: string } }
 
 // rate: how much of each window a dollar of spend (at API prices) uses, as server/meter.ts estimates it.
 // overage: extra usage paid for the call that sent this report.
@@ -185,7 +188,8 @@ export type Settings = {
 }
 
 export type ServerMsg =
-  | { type: 'hello'; sessions: SessionMeta[]; settings: Settings; usage: Usage; platform: string; home: string; auth: AuthState; stale?: boolean }
+  | { type: 'hello'; sessions: SessionMeta[]; settings: Settings; usage: Usage; platform: string; home: string; auth: AuthState; stale?: boolean; remote?: RemoteStatus }
+  | { type: 'remote'; remote: RemoteStatus }
   | { type: 'auth'; auth: AuthState }
   // The server's code on disk is newer than the running server.
   | { type: 'stale'; stale: boolean }

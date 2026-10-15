@@ -23,6 +23,8 @@ export type MachineMsg =
 export const REQ_HEADERS = ['content-type', 'accept', 'if-none-match', 'range']
 export const RES_HEADERS = ['content-type', 'cache-control', 'etag', 'content-disposition', 'content-range', 'accept-ranges', 'last-modified']
 
-// A machine's name is the first label of its address: lower-case letters, digits and dashes.
+// A machine you connected, as web.codinger.app/_remote/machines lists it.
+export type RemoteMachine = { name: string; connected: boolean }
+
+// A machine's name: lower-case letters, digits and dashes (it goes in /m/<name>/).
 export const machineName = (s: string) => s.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'machine'
-export const RESERVED = new Set(['app', 'www', 'api', 'mail'])

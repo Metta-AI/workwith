@@ -35,7 +35,7 @@ import { MAIL_TOOLS, flushMail, mailTools, release, startMail, stepped, turnEnde
 import { AUTOPILOT_MODES, amount, nudge, startAutopilot, usedOf, verdict } from './autopilot.ts'
 import { blame, initFileHistory, moveHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
 import { CLAUDE, authState, cancelLogin, childEnv, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
-import { startRemote } from './remote.ts'
+import { remoteCancelLink, remoteForget, remoteLink, remoteOn, remoteProxy, remoteStatus, remoteUpgrade, startRemote } from './remote.ts'
 import {
   DATA, LEAD_DIR, LEAD_NOTES, OLD_LEAD_NOTES, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, leadRenamed, resolveModel, loadSessions, promptFile, loadSettings, saveImage, saveSessions, saveSettings,
 } from './store.ts'
@@ -854,6 +854,16 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   const method = req.method ?? 'GET'
   const [a, id, b, c, d] = parts
 
+  // Remote access (server/remote.ts): set up on this machine only, not from the web.
+  if (a === 'remote') {
+    if (method === 'GET' && !id) return send(res, 200, remoteStatus())
+    if (req.headers['x-codinger-remote']) throw new HttpError(403, 'Set up remote access on the machine itself')
+    if (method === 'POST' && id === 'link') return send(res, 200, await remoteLink(String((await json(req)).name ?? '')))
+    if (method === 'POST' && id === 'cancel') { remoteCancelLink(); return send(res, 200, remoteStatus()) }
+    if (method === 'POST' && id === 'on') { remoteOn(!!(await json(req)).on); return send(res, 200, remoteStatus()) }
+    if (method === 'POST' && id === 'forget') { remoteForget(); return send(res, 200, remoteStatus()) }
+  }
+
   if (a === 'images' && method === 'GET') {
     const file = imageFile(url.pathname)
     if (!file || !fs.existsSync(file)) throw new HttpError(404, 'No such image')
@@ -1257,6 +1267,9 @@ const server = http.createServer(async (req, res) => {
     }
     const look = url.pathname.startsWith(`/mcp/${MCP_TOKEN}/look/`) && url.pathname.split('/').pop()
     if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look), mcpTool(look), artifactTool(look), ...taskTools(look), ...mailTools(look)])
+    // The web UI asks this first; here it is a machine's own page.
+    if (url.pathname === '/_remote/whoami') return send(res, 200, { web: false })
+    if (url.pathname.startsWith('/api/remote/m/') || url.pathname === '/api/remote/machines') return await remoteProxy(req, res, url)
     if (url.pathname.startsWith('/api/')) return await api(req, res, url)
     if (vite) return vite.middlewares(req, res)
     serveStatic(url.pathname, res)
@@ -1284,12 +1297,16 @@ function serveStatic(p: string, res: http.ServerResponse) {
 
 const wss = new WebSocketServer({ noServer: true })
 server.on('upgrade', (req, socket, head) => {
+  if (req.url?.startsWith('/api/remote/m/')) {
+    if (!localHost(req) || !localOrigin(req)) { socket.destroy(); return }
+    return remoteUpgrade(req, socket, head)
+  }
   if (req.url !== '/ws') return // Vite's HMR socket has its own listener
   if (!localHost(req) || !localOrigin(req)) { socket.destroy(); return }
   wss.handleUpgrade(req, socket, head, (ws) => {
     sockets.add(ws)
     ws.on('close', () => sockets.delete(ws))
-    ws.send(JSON.stringify({ type: 'hello', sessions: metas(), settings, usage, platform: process.platform, home: os.homedir(), auth: authState(), stale } satisfies ServerMsg))
+    ws.send(JSON.stringify({ type: 'hello', sessions: metas(), settings, usage, platform: process.platform, home: os.homedir(), auth: authState(), stale, remote: remoteStatus() } satisfies ServerMsg))
     ws.send(JSON.stringify({ type: 'tasks', tasks: allTasks() } satisfies ServerMsg))
     ws.send(JSON.stringify(artifactsMsg()))
   })
@@ -1326,7 +1343,7 @@ initAuth({
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Codinger on http://localhost:${PORT}${DEV ? ' (dev)' : ''}`)
-  startRemote(PORT)
+  startRemote(PORT, (remote) => broadcast({ type: 'remote', remote }))
 })
 
 // ---- restarting itself --------------------------------------------------------
