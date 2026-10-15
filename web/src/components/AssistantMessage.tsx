@@ -137,6 +137,15 @@ function lineMid(r: Range | null, root: HTMLElement): number | null {
   return box ? Math.round(box.top + box.height / 2 - root.getBoundingClientRect().top) : null
 }
 const contentsOf = (el: HTMLElement) => { const r = document.createRange(); r.selectNodeContents(el); return r }
+// The outermost closed <details> that hides a passage, if any (its summary shows).
+function closedAround(anchor: Anchor, root: HTMLElement): HTMLDetailsElement | null {
+  const n = rangesFor(anchor, root)[0]?.startContainer
+  const at = n?.nodeType === 1 ? n as Element : n?.parentElement
+  let out: HTMLDetailsElement | null = null
+  for (let d = at?.closest('details'); d && root.contains(d); d = d.parentElement?.closest('details'))
+    if (!d.open && !d.querySelector(':scope > summary')?.contains(at!)) out = d
+  return out
+}
 
 // Reactions sit at the left of their passage, one mark per passage; marks on
 // one line form a row, the line's own (whole-paragraph) reaction nearest the
@@ -145,8 +154,9 @@ const contentsOf = (el: HTMLElement) => { const r = document.createRange(); r.se
 // moves. Hovering a mark shows its passage; clicking one (or a selection's
 // highlight) opens the comment card for that passage, where its reactions can
 // be added to or taken off. A reaction inside an item to consider counts as a
-// reply to it.
-type RailItem = { key: string; anchor: Anchor; quote: string; whole: boolean; emoji: string[]; drafts: NoteDraft[] }
+// reply to it. Marks for passages in a closed <details> clump into one mark on
+// its summary; a click on it opens the details.
+type RailItem = { key: string; anchor: Anchor; quote: string; whole: boolean; emoji: string[]; drafts: NoteDraft[]; folded?: boolean }
 const keyOf = (a: Anchor) => JSON.stringify(a)
 // A passage to react to: a whole paragraph or list item, or a selection. A held
 // press (or a drag up) on its button or mark opens its row of emoji.
@@ -186,8 +196,9 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     if (!el) return
     const at = new Map<number, RailItem[]>()
     for (const it of items) {
-      const top = lineMid(rangesFor(it.anchor, el)[0] ?? null, el)
-      if (top != null) at.set(top, [...(at.get(top) ?? []), it])
+      const shut = closedAround(it.anchor, el)
+      const top = lineMid(shut ? contentsOf(shut.querySelector('summary')!) : rangesFor(it.anchor, el)[0] ?? null, el)
+      if (top != null) at.set(top, [...(at.get(top) ?? []), shut ? { ...it, folded: true } : it])
     }
     const next = [...at].map(([top, its]) => ({ top, items: its.sort((a, b) => Number(b.whole) - Number(a.whole)) }))
     setRows((prev) => JSON.stringify(prev) === JSON.stringify(next) ? prev : next)
@@ -226,9 +237,13 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
   pileRef.current = pile
   useLayoutEffect(pile)
   useEffect(() => {
-    const ro = new ResizeObserver(() => { placeRef.current(); pileRef.current() })
-    if (root.current) ro.observe(root.current)
-    return () => ro.disconnect()
+    const el = root.current
+    const again = () => { placeRef.current(); pileRef.current() }
+    const ro = new ResizeObserver(again)
+    if (el) ro.observe(el)
+    // <details> fire toggle on themselves only, so listen in the capture phase.
+    el?.addEventListener('toggle', again, true)
+    return () => { ro.disconnect(); el?.removeEventListener('toggle', again, true) }
   }, [root])
 
   // ---- which paragraph or list item the pointer is level with
@@ -384,9 +399,17 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
         {popFor(tp)}
       </div>
     )
+    const folded = r.items.filter((it) => it.folded)
     return (
       <div key={r.top} className="rail-row" style={{ top: r.top }}>
-        {r.items.map((it) => {
+        {folded.length > 0 && (
+          <div key="folded" className="rail-ack">
+            <button className={`react-mark${folded.some((it) => it.drafts.length) ? ' draft' : ''}`} aria-label="Open the details to show these reactions"
+              onClick={() => { const d = root.current && closedAround(folded[0].anchor, root.current); if (d) d.open = true }}
+            >{[...new Set(folded.flatMap((it) => it.emoji))].map((e) => <span key={e} className="em">{e}</span>)}</button>
+          </div>
+        )}
+        {r.items.filter((it) => !it.folded).map((it) => {
           if (it === own) return ack
           const p = pickOf(it.anchor, it.quote, it.whole)
           return (
