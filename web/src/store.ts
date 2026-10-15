@@ -38,6 +38,7 @@ export type Machine = {
   home: string
   auth: AuthState
   stale: boolean
+  staleAt?: number         // the time of its newest code on disk
   update?: UpdateStatus    // its update from origin/main (server/update.ts)
   remote?: RemoteStatus    // its own remote access
   device?: 'laptop' | 'desktop'
@@ -68,6 +69,7 @@ type State = {
   tasks: Task[]   // long-running commands agents started (server/tasks.ts)
   fileTick: Record<string, number>   // bumped when a tracked file gets a new version
   stale: boolean                     // the server's code on disk is newer than the server
+  staleAt?: number
   update?: UpdateStatus              // an update from origin/main that waits, runs or stopped
   restarting: boolean
   loaded: boolean                    // the server's hello came: sessions and settings are real
@@ -170,6 +172,7 @@ Object.defineProperties(state, {
   home: { get: () => cur().home },
   auth: { get: () => cur().auth },
   stale: { get: () => cur().stale },
+  staleAt: { get: () => cur().staleAt },
   update: { get: () => cur().update },
 })
 
@@ -328,7 +331,7 @@ function onServer(m: ServerMsg, machine: string) {
   const looks = looksFrom() === machine
   switch (m.type) {
     case 'hello':
-      Object.assign(M, { sessions: own(m.sessions), settings: m.settings, usage: m.usage, loaded: true, platform: m.platform, home: m.home, auth: m.auth ?? { state: 'ok' }, stale: !!m.stale, update: m.update, remote: m.remote, device: m.device })
+      Object.assign(M, { sessions: own(m.sessions), settings: m.settings, usage: m.usage, loaded: true, platform: m.platform, home: m.home, auth: m.auth ?? { state: 'ok' }, stale: !!m.stale, staleAt: m.staleAt, update: m.update, remote: m.remote, device: m.device })
       if (looks) applyAppearance(m.settings.appearance)
       if (!machine) { state.restarting = false; onRemote(m.remote) }
       // A selected session that is gone, or a lead: the latest one instead.
@@ -346,7 +349,7 @@ function onServer(m: ServerMsg, machine: string) {
     case 'artifacts': if (looks) { state.artifacts = m.artifacts; state.artifactsPort = m.port; state.prolifica = m.prolifica }; break
     case 'preview': state.preview = { ...state.preview, [g(m.sessionId)]: { target: m.target, at: m.at } }; break
     case 'auth': M.auth = m.auth; break
-    case 'stale': M.stale = m.stale; break
+    case 'stale': M.stale = m.stale; M.staleAt = m.staleAt; break
     case 'update': M.update = m.update; break
     case 'device': M.device = m.device; break
     case 'remote': M.remote = m.remote; if (!machine) onRemote(m.remote); break

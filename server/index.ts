@@ -1421,7 +1421,7 @@ server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => {
     sockets.add(ws)
     ws.on('close', () => sockets.delete(ws))
-    ws.send(JSON.stringify({ type: 'hello', sessions: metas(), settings, usage, platform: process.platform, home: os.homedir(), auth: authState(), stale, update: updateStatus(), remote: remoteStatus(), device: deviceType() } satisfies ServerMsg))
+    ws.send(JSON.stringify({ type: 'hello', sessions: metas(), settings, usage, platform: process.platform, home: os.homedir(), auth: authState(), stale, staleAt, update: updateStatus(), remote: remoteStatus(), device: deviceType() } satisfies ServerMsg))
     ws.send(JSON.stringify({ type: 'tasks', tasks: allTasks() } satisfies ServerMsg))
     ws.send(JSON.stringify(artifactsMsg()))
   })
@@ -1476,10 +1476,12 @@ function codeTime(): number {
   return Math.max(t, fs.statSync(path.join(ROOT, 'package.json')).mtimeMs)
 }
 let stale = false
+let staleAt = 0  // the time of the newest code: a newer change shows a hidden banner again
 setInterval(() => {
-  let now = stale
-  try { now = codeTime() > STARTED } catch { /* a file mid-save */ }
-  if (now !== stale) { stale = now; broadcast({ type: 'stale', stale }) }
+  let t = staleAt
+  try { t = codeTime() } catch { /* a file mid-save */ }
+  const now = t > STARTED
+  if (now !== stale || (now && t !== staleAt)) { stale = now; staleAt = now ? t : 0; broadcast({ type: 'stale', stale, staleAt }) }
 }, 5000).unref()
 
 function restart() {

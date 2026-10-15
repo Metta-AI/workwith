@@ -574,6 +574,7 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .75); display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
 .lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 6px; box-shadow: 0 8px 40px rgba(0, 0, 0, .5); }
 .signin { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 20px; background: rgba(212, 167, 44, .16); border-bottom: 1px solid var(--warn); font-size: calc(13px * var(--fs, 1)); }
+.signin .banner-x { margin-left: auto; padding: 6px; }
 .title-before { font-size: calc(12px * var(--fs, 1)); } .title-before .link { padding: 0 2px; text-decoration: underline; }
 h1.rename { cursor: text; border-radius: 5px; } h1.rename:hover { background: rgba(127, 127, 127, .12); }
 .signin.restart { background: var(--accent-soft); border-bottom-color: var(--accent); }
@@ -971,7 +972,8 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
   .app.side-open .sidebar { transform: none; visibility: visible; transition: transform .2s ease-out; }
   .brand { justify-content: flex-start; gap: 8px; }
   .side-hide { display: inline-flex; margin-left: auto; padding: 6px; }
-  .side-show { display: inline-flex; position: fixed; top: calc(12px + env(safe-area-inset-top)); left: calc(6px + env(safe-area-inset-left)); z-index: 6; padding: 8px; color: var(--text); }
+  /* Its middle (19px down) lines up with the first line of a banner, or of the title. */
+  .side-show { display: inline-flex; position: fixed; top: calc(2px + env(safe-area-inset-top)); left: calc(6px + env(safe-area-inset-left)); z-index: 6; padding: 8px; color: var(--text); }
   .row { padding-top: 9px; padding-bottom: 9px; }
   .row-close { visibility: visible; }
   main { padding-top: env(safe-area-inset-top); }
@@ -987,8 +989,9 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
   .session-head:not(.head-open) .head-sub > :not(.status-pill) { display: none; }
   /* The buttons stay on the first line; the gauges and the mode open on lines below. */
   .head-side, .head-actions { display: contents; }
-  .head-gauges { order: 3; flex-basis: 100%; flex-wrap: wrap; gap: 6px; }
-  .session-head.head-open .head-mode { display: flex; order: 4; flex-basis: 100%; gap: 6px; }
+  /* They start at the title, not under the mascot (30px wide, then the 6px gap). */
+  .head-gauges { order: 3; flex-basis: calc(100% - 36px); margin-left: 36px; flex-wrap: wrap; gap: 6px; }
+  .session-head.head-open .head-mode { display: flex; order: 4; flex-basis: calc(100% - 36px); margin-left: 36px; gap: 6px; }
   .session-head:not(.head-open) .head-gauges, .session-head:not(.head-open) .head-mode { display: none; }
   .head-actions .head-more { display: inline-flex; }
   .head-more .icon { transform: rotate(90deg); transition: transform .15s; }
