@@ -108,6 +108,10 @@ export function SettingsDialog({ onClose, page: first }: { onClose(): void; page
               <input type="checkbox" checked={st.showSteps} onChange={(e) => { state.showSteps = e.target.checked; changed() }} />
               Show Claude's in-between messages
             </label>
+            <label className="settings-check" title="As in Google Docs: the selection stays, so you can copy it. Click Comment, or press ⌘⌥M, to comment on it. Applies to this browser.">
+              <input type="checkbox" checked={st.commentButton} onChange={(e) => { state.commentButton = e.target.checked; changed() }} />
+              Selecting text shows a Comment button, instead of opening a comment
+            </label>
             <label className="settings-check" title="For work on Codiner itself: a banner offers a server restart">
               <input type="checkbox" checked={!!st.settings.selfRestart} onChange={(e) => void api('/api/settings', 'PUT', { selfRestart: e.target.checked })} />
               Offer to restart when Codiner's code changes

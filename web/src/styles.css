@@ -776,3 +776,7 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .held-part .icon-btn { margin-left: auto; flex: none; }
 .held-quote { color: var(--muted); font-style: italic; flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .held-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The Comment button by a selection, when selecting does not open a comment (Settings). */
+.comment-offer { position: fixed; z-index: 50; transform: translate(6px, calc(-100% - 4px)); padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--text); font-size: calc(12.5px * var(--fs, 1)); box-shadow: 0 2px 8px rgba(0, 0, 0, .15); cursor: pointer; }
+.comment-offer:hover { border-color: var(--accent); color: var(--accent); }

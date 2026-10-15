@@ -39,6 +39,7 @@ type State = {
   auth: AuthState
   lightbox: string | null     // an image shown full size
   showSteps: boolean          // keep Claude's in-between messages out of the activity rows
+  commentButton: boolean      // selecting text offers a Comment button instead of opening one (Transcript)
   money: 'usd' | 'pct' | 'week'   // costs in dollars, or as a share of the 5-hour or weekly limit (web/src/cache.ts)
   runs: Record<string, Run>
   tasks: Task[]   // long-running commands agents started (server/tasks.ts)
@@ -73,6 +74,7 @@ export const state: State = {
   auth: { state: 'ok' },
   lightbox: null,
   showSteps: saved('codiner.showSteps', false),
+  commentButton: saved('codiner.commentButton', false),
   // 'both' was a choice until October 2026.
   money: (['usd', 'pct', 'week'] as const).find((x) => x === saved('codiner.money', 'pct')) ?? 'pct',
   runs: {},
@@ -116,6 +118,7 @@ export function changed() {
     localStorage.setItem('codiner.composer', JSON.stringify(state.composer))
     localStorage.setItem('codiner.selected', JSON.stringify(state.selected))
     localStorage.setItem('codiner.showSteps', JSON.stringify(state.showSteps))
+    localStorage.setItem('codiner.commentButton', JSON.stringify(state.commentButton))
   }, 300)
 }
 // Tell the server which sessions you are writing a reply in, so the lead's

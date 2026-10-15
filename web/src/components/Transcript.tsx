@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { Anchor, Block, Event, ImageRef, Part } from '../../../shared/types.ts'
-import { addDraft, agentName, api, draftsOf, removeDraft, rewind, uid, useStore } from '../store.ts'
+import { addDraft, agentName, api, draftsOf, removeDraft, rewind, state, uid, useStore } from '../store.ts'
 import { anchorFromRange } from '../anchoring.ts'
 import { renderInline, renderMd, renderText } from '../util.ts'
 import { AssistantMessage, type Reaction } from './AssistantMessage.tsx'
@@ -93,6 +94,25 @@ export function Transcript({ sid }: { sid: string }) {
   }, [!!events])
 
   // Select any of Claude's text and a comment opens on it, focused, as in Marginer.
+  // With the Comment button on (Settings), the selection stays for copying, and a
+  // button by it (or ⌘⌥M, as in Google Docs) opens the comment.
+  const [offer, setOffer] = useState<{ x: number; y: number; make(): void } | null>(null)
+  useEffect(() => {
+    if (!offer) return
+    const gone = () => { if (getSelection()?.isCollapsed) setOffer(null) }
+    const key = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.altKey && e.code === 'KeyM') { e.preventDefault(); offer.make() } }
+    // It follows the selection as the transcript scrolls.
+    const move = () => {
+      const sel = getSelection()
+      if (!sel?.rangeCount) return
+      const box = sel.getRangeAt(0).getBoundingClientRect()
+      setOffer((o) => o && (o.x !== box.right || o.y !== box.top) ? { ...o, x: box.right, y: box.top } : o)
+    }
+    document.addEventListener('selectionchange', gone)
+    document.addEventListener('keydown', key)
+    document.addEventListener('scroll', move, true)
+    return () => { document.removeEventListener('selectionchange', gone); document.removeEventListener('keydown', key); document.removeEventListener('scroll', move, true) }
+  }, [offer?.make])
   useEffect(() => {
     const up = () => setTimeout(() => {
       const sel = getSelection()
@@ -106,12 +126,18 @@ export function Transcript({ sid }: { sid: string }) {
       const anchor = anchorFromRange(r, el)
       if (!anchor) return
       const quote = sel.toString().trim().replace(/\n{3,}/g, '\n\n')
-      // One empty comment at a time: starting a new one drops the untouched last one.
-      for (const d of draftsOf(sid)) if (d.kind === 'note' && !d.text.trim() && !d.images.length) removeDraft(sid, d.id)
-      sel.removeAllRanges()
       // A comment inside an item to consider counts as the reply to it.
       const itemKey = at(r.commonAncestorContainer)?.closest<HTMLElement>('.consider[data-item]')?.dataset.item
-      addDraft(sid, { id: uid(), kind: 'note', anchor, quote, text: '', images: [], createdAt: Date.now(), ...(itemKey ? { itemKey } : {}) })
+      const make = () => {
+        setOffer(null)
+        // One empty comment at a time: starting a new one drops the untouched last one.
+        for (const d of draftsOf(sid)) if (d.kind === 'note' && !d.text.trim() && !d.images.length) removeDraft(sid, d.id)
+        getSelection()?.removeAllRanges()
+        addDraft(sid, { id: uid(), kind: 'note', anchor, quote, text: '', images: [], createdAt: Date.now(), ...(itemKey ? { itemKey } : {}) })
+      }
+      if (!state.commentButton) return make()
+      const box = r.getBoundingClientRect()
+      setOffer({ x: box.right, y: box.top, make })
     }, 0)
     document.addEventListener('mouseup', up)
     return () => document.removeEventListener('mouseup', up)
@@ -121,6 +147,8 @@ export function Transcript({ sid }: { sid: string }) {
 
   return (
     <div className="transcript-wrap">
+    {/* Keeps the selection: mousedown would otherwise clear it before the click. */}
+    {offer && createPortal(<button className="comment-offer" style={{ left: offer.x, top: offer.y }} title="Comment (⌘⌥M)" onMouseDown={(e) => e.preventDefault()} onClick={() => offer.make()}>Comment</button>, document.body)}
     <div
       className="transcript" ref={scroller}
       // New output is followed only while you are at the very bottom; any move up lets go at once.
