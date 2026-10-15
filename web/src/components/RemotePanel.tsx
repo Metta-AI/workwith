@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { api, LOCAL, machineList, offline, useStore } from '../store.ts'
 
 // The hub's second address, for networks where web.codinger.app does not resolve.
-const WORKERS_DEV = 'https://codinger-web.niftyperks.workers.dev'
+const WORKERS_DEV = 'https://codinger-web.huttj.workers.dev'
 
 export function RemotePanel() {
   const st = useStore()
@@ -69,7 +69,23 @@ function MachinePanel() {
           : r.connected ? <span>is connected to {r.hub.replace(/^https?:\/\//, '')}.</span>
           : <span className="muted">is connecting…</span>}
       </p>
+      <HubAddress hub={r.hub} onSave={(h) => void call('hub', { hub: h })} />
       <p><button onClick={() => { if (confirm(`Disconnect ${r.name} from web.codinger.app? To connect it again, you approve it again.`)) void call('forget') }}>Disconnect this machine</button></p>
     </div>
+  )
+}
+
+// Where a connected machine reaches the hub. Both addresses are the same hub, so a change needs no new approval.
+function HubAddress({ hub, onSave }: { hub: string; onSave(h: string): void }) {
+  const [edit, setEdit] = useState<string | null>(null)
+  if (edit == null) return <p className="muted">Through <code>{hub.replace(/^https:\/\//, '')}</code> · <button className="link" onClick={() => setEdit(hub)}>Change</button></p>
+  return (
+    <form className="remote-hub" onSubmit={(e) => { e.preventDefault(); onSave(edit); setEdit(null) }}>
+      <label>Address of the hub <input value={edit} autoFocus onChange={(e) => setEdit(e.target.value)} /></label>
+      <p className="muted">
+        <button type="button" className="link" onClick={() => setEdit('https://web.codinger.app')}>web.codinger.app</button> · <button type="button" className="link" onClick={() => setEdit(WORKERS_DEV)}>{WORKERS_DEV.replace(/^https:\/\//, '')}</button>
+      </p>
+      <p><button type="submit" className="primary">Save</button> <button type="button" onClick={() => setEdit(null)}>Cancel</button></p>
+    </form>
   )
 }

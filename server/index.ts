@@ -36,7 +36,7 @@ import { AUTOPILOT_MODES, amount, nudge, startAutopilot, usedOf, verdict } from 
 import { blame, initFileHistory, moveHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
 import { CLAUDE, authState, cancelLogin, childEnv, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
 import { deviceType, findDevice } from './device.ts'
-import { remoteCancelLink, remoteForget, remoteLink, remoteOn, remoteProxy, remoteStatus, remoteUpgrade, startRemote } from './remote.ts'
+import { remoteCancelLink, remoteForget, remoteHub, remoteLink, remoteOn, remoteProxy, remoteStatus, remoteUpgrade, startRemote } from './remote.ts'
 import {
   DATA, LEAD_DIR, LEAD_NOTES, OLD_LEAD_NOTES, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, leadRenamed, resolveModel, loadSessions, promptFile, loadSettings, saveImage, saveSessions, saveSettings,
 } from './store.ts'
@@ -863,6 +863,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     if (method === 'POST' && id === 'cancel') { remoteCancelLink(); return send(res, 200, remoteStatus()) }
     if (method === 'POST' && id === 'on') { remoteOn(!!(await json(req)).on); return send(res, 200, remoteStatus()) }
     if (method === 'POST' && id === 'forget') { remoteForget(); return send(res, 200, remoteStatus()) }
+    if (method === 'POST' && id === 'hub') { remoteHub(String((await json(req)).hub ?? '')); return send(res, 200, remoteStatus()) }
   }
 
   if (a === 'images' && method === 'GET') {

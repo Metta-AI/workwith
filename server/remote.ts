@@ -63,7 +63,7 @@ export function startRemote(localPort: number, onChange: (s: RemoteStatus) => vo
 
 export async function remoteLink(name: string, hub?: string): Promise<RemoteStatus> {
   saved.name = machineName(name || saved.name)
-  if (hub?.trim()) { const h = hub.trim().replace(/\/$/, ''); saved.hub = /^https?:\/\//.test(h) ? h : `https://${h}` }
+  if (hub?.trim()) setHub(hub)
   save()
   // Say why it failed: a network or certificate problem shows only in the cause.
   const r = await fetch(`${hubUrl()}/_remote/link/start`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: saved.name }) })
@@ -94,6 +94,21 @@ export async function remoteLink(name: string, hub?: string): Promise<RemoteStat
   }
   setTimeout(wait, 2000).unref()
   return remoteStatus()
+}
+
+// An address the hub answers at: "web.codinger.app" or a full URL. Empty: the default.
+function setHub(hub: string) {
+  const h = hub.trim().replace(/\/$/, '')
+  if (!h) delete saved.hub
+  else saved.hub = /^https?:\/\//.test(h) ? h : `https://${h}`
+}
+
+// Another address of the same hub: the token works there too, so no new approval.
+export function remoteHub(hub: string) {
+  setHub(hub)
+  save()
+  if (saved.on && saved.token) { disconnect(); connect() }
+  tell()
 }
 
 export function remoteCancelLink() { linking = null; tell() }
