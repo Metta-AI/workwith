@@ -134,7 +134,8 @@ export function PublishControl({ a }: { a: Artifact }) {
 }
 
 // A small menu in place of a native select: the current choice on a button, the choices below it.
-type Choice<T> = { value: T; label: string; sub?: string }
+// short: what the button says when it is chosen (the label by default).
+type Choice<T> = { value: T; label: string; sub?: string; short?: string }
 function Picker<T>({ value, choices, onPick, label, className }: { value: T; choices: Choice<T>[]; onPick(v: T): void; label: string; className?: string }) {
   const [open, setOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
@@ -150,7 +151,7 @@ function Picker<T>({ value, choices, onPick, label, className }: { value: T; cho
   return (
     <div className={`menu-wrap picker${className ? ' ' + className : ''}`} ref={box}>
       <button className={`picker-btn${open ? ' on' : ''}`} aria-label={label} aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className="picker-label">{cur?.label ?? label}</span><ChevronIcon size={11} className="picker-caret" />
+        <span className="picker-label">{cur?.short ?? cur?.label ?? label}</span><ChevronIcon size={11} className="picker-caret" />
       </button>
       {open && (
         <div className="menu picker-menu" role="listbox">
@@ -174,6 +175,7 @@ function VersionPicker({ a, v, onPick }: { a: Artifact; v?: number; onPick(v?: n
   const choices = [...a.versions].reverse().map((x) => ({
     value: x.n === a.latest ? 0 : x.n,
     label: x.n === a.latest ? `Latest · v${x.n}` : `Version ${x.n}`,
+    short: `v${x.n}`,
     sub: [timeAgo(x.at), who(x.n)].filter(Boolean).join(' · '),
   }))
   return <Picker label="Version" className="version-picker" value={v != null && v !== a.latest ? v : 0} choices={choices} onPick={(n) => onPick(n || undefined)} />
@@ -203,12 +205,16 @@ export function ArtifactPane({ sid, width, wide, onWide, onHide }: { sid: string
           ? <span className="artifact-url" title={target.url}>{target.url}</span>
           : <Picker label="Artifact" className="artifact-picker" value={a?.name ?? ''} onPick={(name) => showIn(sid, { artifact: name })}
             choices={(a && !mine.includes(a) ? [a, ...mine] : mine).map((x) => ({ value: x.name, label: x.title, sub: timeAgo(x.mtime) }))} />}
-        {a && <VersionPicker a={a} v={v} onPick={(n) => showIn(sid, { artifact: a.name, v: n })} />}
+        <span className="grow" />
+        {/* The title at the left; the view's buttons, then the version and Publish together, at the right. */}
         <button className="icon-btn" data-tip="Load again" onClick={() => setReload(Date.now())}><RefreshIcon size={14} /></button>
         {target && <a className="icon-btn" data-tip="Open in a new tab" href={srcOf(target, a, st.artifactsPort, 0)} target="_blank" rel="noreferrer"><OpenIcon size={14} /></a>}
         <button className="icon-btn" data-tip={wide ? 'Show the conversation' : 'Use the full width'} onClick={onWide}>{wide ? <NarrowIcon size={14} /> : <WideIcon size={14} />}</button>
-        <span className="grow" />
-        {a && <PublishControl a={a} />}
+        {a && <>
+          <span className="artifact-sep" />
+          <VersionPicker a={a} v={v} onPick={(n) => showIn(sid, { artifact: a.name, v: n })} />
+          <PublishControl a={a} />
+        </>}
         <button className="icon-btn" data-tip="Hide" onClick={onHide}><XIcon size={13} /></button>
       </div>
       {a && v != null && <VersionBar a={a} v={v} onLatest={() => showIn(sid, { artifact: a.name })} />}
