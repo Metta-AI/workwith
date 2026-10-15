@@ -7,16 +7,31 @@ import { MEDIA_URL, embedOf, mediaKind } from '../../shared/media.ts'
 import { api, media } from './store.ts'
 
 export const marked = new Marked(
-  markedHighlight({ emptyLangClass: 'hljs', langPrefix: 'hljs language-', highlight: (code, lang) => highlight(code, lang) }),
+  markedHighlight({ emptyLangClass: 'hljs', langPrefix: 'hljs language-', highlight: (code, lang) => linkUrls(highlight(code, lang)) }),
   { gfm: true, breaks: false },
   {
     renderer: {
-      // A web URL in inline code is a link too (the hook below opens it in a new tab).
-      codespan: ({ text }) => /^https?:\/\/\S+$/i.test(text) && `<a href="${escapeHtml(text).replace(/"/g, '&quot;')}"><code>${escapeHtml(text)}</code></a>`,
+      codespan: urlCode,
       image: ({ href, text }) => mediaHtml(href, text),
     },
   },
 )
+
+// A web URL in inline code is a link too (the hook below opens it in a new tab).
+function urlCode({ text }: { text: string }): string | false {
+  return /^https?:\/\/\S+$/i.test(text) && `<a href="${escapeHtml(text).replace(/"/g, '&quot;')}"><code>${escapeHtml(text)}</code></a>`
+}
+
+// So is a web URL in a code block: in the text between the highlighter's tags, up to a
+// quote or a bracket (raw or escaped), without punctuation at its end.
+const URL_IN_CODE = /(<[^>]*>)|https?:\/\/(?:(?!&quot;|&#39;|&#x27;|&lt;|&gt;)[^\s<>"'`])+/g
+function linkUrls(html: string): string {
+  return html.replace(URL_IN_CODE, (m, tag?: string) => {
+    if (tag) return tag
+    const url = m.replace(/[.,;:!?)\]]+$/, '')
+    return `<a href="${url}">${url}</a>${m.slice(url.length)}`
+  })
+}
 
 // A markdown image that is not one: a video, audio, a PDF, a page or another file an agent
 // kept (server/media.ts), or a YouTube or Vimeo address. false: a plain image.
@@ -65,8 +80,8 @@ export function renderMd(md: string): string {
 // shows as "<id>" instead of going missing as an unknown tag.
 const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 const textMarked = new Marked(
-  markedHighlight({ emptyLangClass: 'hljs', langPrefix: 'hljs language-', highlight: (code, lang) => highlight(code, lang) }),
-  { gfm: true, breaks: false, renderer: { html: ({ text }) => escapeHtml(text) } },
+  markedHighlight({ emptyLangClass: 'hljs', langPrefix: 'hljs language-', highlight: (code, lang) => linkUrls(highlight(code, lang)) }),
+  { gfm: true, breaks: false, renderer: { html: ({ text }) => escapeHtml(text), codespan: urlCode } },
 )
 export function renderText(md: string): string {
   return served(DOMPurify.sanitize(textMarked.parse(md, { async: false }) as string))
