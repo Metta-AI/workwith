@@ -859,7 +859,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   if (a === 'remote') {
     if (method === 'GET' && !id) return send(res, 200, remoteStatus())
     if (req.headers['x-codinger-remote']) throw new HttpError(403, 'Set up remote access on the machine itself')
-    if (method === 'POST' && id === 'link') return send(res, 200, await remoteLink(String((await json(req)).name ?? '')))
+    if (method === 'POST' && id === 'link') { const b = await json(req); return send(res, 200, await remoteLink(String(b.name ?? ''), b.hub ? String(b.hub) : undefined)) }
     if (method === 'POST' && id === 'cancel') { remoteCancelLink(); return send(res, 200, remoteStatus()) }
     if (method === 'POST' && id === 'on') { remoteOn(!!(await json(req)).on); return send(res, 200, remoteStatus()) }
     if (method === 'POST' && id === 'forget') { remoteForget(); return send(res, 200, remoteStatus()) }

@@ -28,12 +28,17 @@ import type { RemoteStatus } from '../shared/types.ts'
 import { DATA } from './store.ts'
 
 const BATCH_MS = Number(process.env.CODINGER_REMOTE_BATCH_MS) || 1000
-const HUB = (process.env.CODINGER_REMOTE_HUB ?? 'https://web.codinger.app').replace(/\/$/, '')
+// The hub's address: web.codinger.app, or the Worker's own workers.dev address where that
+// domain does not resolve. Chosen in Settings (saved), else CODINGER_REMOTE_HUB.
+const DEFAULT_HUB = (process.env.CODINGER_REMOTE_HUB ?? 'https://web.codinger.app').replace(/\/$/, '')
 const FILE = path.join(DATA, 'remote.json')
 
-type Saved = { on: boolean; name: string; token?: string }
+type Saved = { on: boolean; name: string; token?: string; hub?: string }
 let saved: Saved = { on: false, name: machineName(os.hostname().replace(/\.local$/, '')) }
 try { saved = { ...saved, ...JSON.parse(fs.readFileSync(FILE, 'utf8')) } } catch { /* not set up */ }
+const hubUrl = () => saved.hub ?? DEFAULT_HUB
+// Forget the token; keep the name and the hub's address.
+const unlink = () => { saved = { on: false, name: saved.name, ...(saved.hub ? { hub: saved.hub } : {}) } }
 const save = () => fs.writeFileSync(FILE, JSON.stringify(saved, null, 1), { mode: 0o600 })
 
 let port = 0
@@ -44,7 +49,7 @@ let linking: { code: string; url: string } | null = null
 let retry: NodeJS.Timeout | null = null
 
 export function remoteStatus(): RemoteStatus {
-  return { hub: HUB, name: saved.name, on: saved.on, linked: !!saved.token, connected, ...(linking ? { linking } : {}) }
+  return { hub: hubUrl(), name: saved.name, on: saved.on, linked: !!saved.token, connected, ...(linking ? { linking } : {}) }
 }
 const tell = () => changed(remoteStatus())
 
@@ -56,13 +61,14 @@ export function startRemote(localPort: number, onChange: (s: RemoteStatus) => vo
 
 // ---- the settings -------------------------------------------------------------
 
-export async function remoteLink(name: string): Promise<RemoteStatus> {
+export async function remoteLink(name: string, hub?: string): Promise<RemoteStatus> {
   saved.name = machineName(name || saved.name)
+  if (hub?.trim()) { const h = hub.trim().replace(/\/$/, ''); saved.hub = /^https?:\/\//.test(h) ? h : `https://${h}` }
   save()
   // Say why it failed: a network or certificate problem shows only in the cause.
-  const r = await fetch(`${HUB}/_remote/link/start`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: saved.name }) })
-    .catch((e: Error & { cause?: Error }) => { throw new Error(`Could not reach ${HUB}: ${e.cause?.message ?? e.message}`) })
-  if (!r.ok) throw new Error(`${HUB} answered ${r.status}: ${(await r.text()).slice(0, 200)}`)
+  const r = await fetch(`${hubUrl()}/_remote/link/start`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: saved.name }) })
+    .catch((e: Error & { cause?: Error }) => { throw new Error(`Could not reach ${hubUrl()}: ${e.cause?.message ?? e.message}`) })
+  if (!r.ok) throw new Error(`${hubUrl()} answered ${r.status}: ${(await r.text()).slice(0, 200)}`)
   const { code, poll, url } = await r.json() as { code: string; poll: string; url: string }
   linking = { code, url }
   tell()
@@ -72,7 +78,7 @@ export async function remoteLink(name: string): Promise<RemoteStatus> {
     if (linking?.code !== code) return
     if (Date.now() > until) { linking = null; tell(); return }
     try {
-      const p = await fetch(`${HUB}/_remote/link/poll`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, poll }) })
+      const p = await fetch(`${hubUrl()}/_remote/link/poll`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, poll }) })
       const j = await p.json() as { token?: string; name?: string; waiting?: boolean }
       if (j.token) {
         Object.assign(saved, { token: j.token, name: j.name ?? saved.name, on: true })
@@ -103,7 +109,7 @@ export function remoteOn(on: boolean) {
 // Forget this machine's token (approve it again to come back).
 export function remoteForget() {
   disconnect()
-  saved = { on: false, name: saved.name }
+  unlink()
   save()
   tell()
 }
@@ -114,7 +120,7 @@ function connect() {
   if (hub || !saved.token) return
   if (retry) { clearTimeout(retry); retry = null }
   const local = `127.0.0.1:${port}`
-  const ws = new WebSocket(`${HUB.replace(/^http/, 'ws')}/_remote/connect`, { headers: { authorization: `Bearer ${saved.token}` } })
+  const ws = new WebSocket(`${hubUrl().replace(/^http/, 'ws')}/_remote/connect`, { headers: { authorization: `Bearer ${saved.token}` } })
   hub = ws
   const chans = new Map<string, Chan>()
   const send = (m: MachineMsg) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m)) }
@@ -122,7 +128,7 @@ function connect() {
   ws.on('open', () => { wait = 1000; connected = true; tell() })
   ws.on('unexpected-response', (_req, res) => {
     // The hub does not know this token any more: forgotten on the web.
-    if (res.statusCode === 403) { saved = { on: false, name: saved.name }; save() }
+    if (res.statusCode === 403) { unlink(); save() }
   })
   ws.on('message', (raw) => {
     let m: HubMsg
@@ -137,7 +143,7 @@ function connect() {
     chans.clear()
     if (hub === ws) hub = null
     connected = false
-    if (code === 4001) { saved = { on: false, name: saved.name }; save() } // disconnected on the web
+    if (code === 4001) { unlink(); save() } // disconnected on the web
     tell()
     if (!saved.on || !saved.token || code === 1012) return
     retry = setTimeout(connect, wait)
@@ -229,12 +235,12 @@ export async function remoteProxy(req: http.IncomingMessage, res: http.ServerRes
   if (!saved.token) { res.writeHead(409, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'This machine is not connected to web.codinger.app' })); return }
   const target = url.pathname === '/api/remote/machines' ? '/_remote/machines' : url.pathname.replace(/^\/api\/remote/, '')
   const body = req.method === 'GET' || req.method === 'HEAD' ? undefined : await new Promise<Buffer>((resolve) => { const b: Buffer[] = []; req.on('data', (d) => b.push(d)); req.on('end', () => resolve(Buffer.concat(b))) })
-  const r = await fetch(HUB + target + url.search, {
+  const r = await fetch(hubUrl() + target + url.search, {
     method: req.method,
     headers: { authorization: `Bearer ${saved.token}`, ...(req.headers['content-type'] ? { 'content-type': req.headers['content-type'] } : {}) },
     body: body && new Uint8Array(body),
   }).catch((e: Error) => e)
-  if (r instanceof Error) { res.writeHead(502, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `Could not reach ${HUB}: ${r.message}` })); return }
+  if (r instanceof Error) { res.writeHead(502, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `Could not reach ${hubUrl()}: ${r.message}` })); return }
   const headers: Record<string, string> = {}
   for (const h of RES_HEADERS) { const v = r.headers.get(h); if (v) headers[h] = v }
   res.writeHead(r.status, headers).end(Buffer.from(await r.arrayBuffer()))
@@ -245,7 +251,7 @@ const wss = new WebSocketServer({ noServer: true })
 export function remoteUpgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer) {
   if (!saved.token) { socket.destroy(); return }
   const target = new URL(req.url ?? '/', 'http://x').pathname.replace(/^\/api\/remote/, '')
-  const far = new WebSocket(`${HUB.replace(/^http/, 'ws')}${target}`, { headers: { authorization: `Bearer ${saved.token}` } })
+  const far = new WebSocket(`${hubUrl().replace(/^http/, 'ws')}${target}`, { headers: { authorization: `Bearer ${saved.token}` } })
   far.on('error', () => socket.destroy())
   far.on('open', () => wss.handleUpgrade(req, socket, head, (near) => {
     near.on('message', (d) => far.send(String(d)))

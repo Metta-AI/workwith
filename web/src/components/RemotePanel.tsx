@@ -5,6 +5,9 @@
 import { useState } from 'react'
 import { api, LOCAL, machineList, offline, useStore } from '../store.ts'
 
+// The hub's second address, for networks where web.codinger.app does not resolve.
+const WORKERS_DEV = 'https://codinger-web.niftyperks.workers.dev'
+
 export function RemotePanel() {
   const st = useStore()
   if (st.web) return (
@@ -22,6 +25,7 @@ function MachinePanel() {
   const st = useStore()
   const r = st.machines[LOCAL]?.remote
   const [name, setName] = useState(r?.name ?? '')
+  const [hub, setHub] = useState(r?.hub ?? '')
   const [busy, setBusy] = useState(false)
   if (!r) return <p className="muted">Loading…</p>
   const call = (path: string, body?: unknown) => api(`/api/remote/${path}`, 'POST', body, LOCAL)
@@ -31,7 +35,7 @@ function MachinePanel() {
     const tab = window.open('', '_blank')
     setBusy(true)
     try {
-      const s = await call('link', { name: name.trim() || r.name })
+      const s = await call('link', { name: name.trim() || r.name, hub: hub.trim() || r.hub })
       if (s.linking && tab) tab.location.href = s.linking.url
       else tab?.close()
     } catch { tab?.close() } finally { setBusy(false) }
@@ -49,6 +53,8 @@ function MachinePanel() {
     <div className="remote-panel">
       <p>Connect this machine to <b>web.codinger.app</b>. Then you can use its sessions from any browser where you are signed in, and from your other machines.</p>
       <label>Name of this machine <input value={name} onChange={(e) => setName(e.target.value)} placeholder={r.name} /></label>
+      <label>Address of the hub <input value={hub} onChange={(e) => setHub(e.target.value)} placeholder={r.hub} /></label>
+      <p className="muted">Use <code>{WORKERS_DEV}</code> if <code>web.codinger.app</code> does not work on this network.</p>
       <p><button className="primary" disabled={busy} onClick={() => void link()}>{busy ? 'Starting…' : 'Connect this machine'}</button></p>
       <p className="muted">The machine makes the connection itself. It opens no port.</p>
     </div>
