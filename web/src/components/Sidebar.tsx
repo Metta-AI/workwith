@@ -7,6 +7,7 @@ import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { NewSession } from './NewSession.tsx'
 import { ArchiveIcon, GearIcon, TerminalIcon, XIcon } from './Icons.tsx'
 import { TasksDialog } from './TasksDialog.tsx'
+import { ArtifactIcon } from './Artifacts.tsx'
 import { SettingsDialog } from './SettingsDialog.tsx'
 import { cacheOf, minutes, spendOf, useNow, usd } from '../cache.ts'
 import { CostBanner } from './CostPanel.tsx'
@@ -180,6 +181,7 @@ export function Sidebar({ width }: { width: number }) {
             </div>
           )}
         </div>
+        {st.artifacts.length > 0 && <button className={`link side-artifacts${st.page === 'artifacts' ? ' on' : ''}`} title={`Artifacts: ${st.artifacts.length}`} onClick={() => { state.page = state.page === 'artifacts' ? null : 'artifacts'; changed() }}><ArtifactIcon size={14} /></button>}
         {st.tasks.length > 0 && (() => {
           const running = st.tasks.filter((t) => !t.ended).length
           return <button className="link side-tasks" title={`Tasks: ${running} running`} onClick={() => setTasks(true)}><TerminalIcon size={14} />{running > 0 && <span>{running}</span>}</button>

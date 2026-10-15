@@ -1,0 +1,316 @@
+// Artifacts: small HTML pages over data that agents make, each in its own folder
+// under ~/.codinger/artifacts/<name>/, in the shape of a page on Prolifica:
+//
+//   index.html      the page; it reads its data with `await prolifica.data('slot')`
+//   artifact.json   { title, description, slots: {slot: {kind, description}}, bindings: {slot: "data/x.csv"} }
+//   data/           the files the bindings name
+//
+// A second HTTP server, on a port of its own, runs them: never Codinger's origin,
+// so an artifact's script cannot reach Codinger's API. It injects the bridge
+// Prolifica's pages run with (fetched from Prolifica, kept up to date), so a page
+// that works here works there unchanged.
+//
+// Codinger's own record of each (which session's tool calls wrote it, where it was
+// published) is in ~/.codinger/artifacts.json, apart from the files agents write.
+
+import fs from 'node:fs'
+import http from 'node:http'
+import path from 'node:path'
+import { createHash } from 'node:crypto'
+import { DATA } from './store.ts'
+import { ORIGIN, call } from './prolifica.ts'
+import type { Artifact, ArtifactPublished, ArtifactTouch, Visibility } from '../shared/artifacts.ts'
+
+export const ARTIFACTS = path.join(DATA, 'artifacts')
+const RECORD = path.join(DATA, 'artifacts.json')
+const BRIDGE = path.join(DATA, 'bridge.js')
+fs.mkdirSync(ARTIFACTS, { recursive: true })
+
+type Rec = { created?: ArtifactTouch; edits: ArtifactTouch[]; published?: ArtifactPublished }
+let record: Record<string, Rec> = (() => { try { return JSON.parse(fs.readFileSync(RECORD, 'utf8')) } catch { return {} } })()
+const saveRecord = () => fs.writeFile(RECORD, JSON.stringify(record, null, 1), () => {})
+const recOf = (name: string) => (record[name] ??= { edits: [] })
+
+const NAME_RE = /^[a-z0-9][a-z0-9._-]{0,79}$/i
+const dirOf = (name: string) => path.join(ARTIFACTS, name)
+
+type Manifest = {
+  title?: string; description?: string; short_title?: string; view_name?: string
+  slots?: Record<string, { kind?: string; description?: string }>
+  bindings?: Record<string, string>
+}
+function manifest(name: string): Manifest {
+  return JSON.parse(fs.readFileSync(path.join(dirOf(name), 'artifact.json'), 'utf8'))
+}
+
+// The latest change to any file in the folder (one level of subfolders: data/).
+function mtimeOf(dir: string): number {
+  let t = 0
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name)
+    if (e.isDirectory()) { for (const f of fs.readdirSync(p)) t = Math.max(t, fs.statSync(path.join(p, f)).mtimeMs) }
+    else t = Math.max(t, fs.statSync(p).mtimeMs)
+  }
+  return Math.round(t)
+}
+
+export function listArtifacts(): Artifact[] {
+  const out: Artifact[] = []
+  for (const e of fs.readdirSync(ARTIFACTS, { withFileTypes: true })) {
+    if (!e.isDirectory() || !NAME_RE.test(e.name) || !fs.existsSync(path.join(dirOf(e.name), 'index.html'))) continue
+    const r = record[e.name] ?? { edits: [] }
+    const a: Artifact = { name: e.name, title: e.name, mtime: mtimeOf(dirOf(e.name)), created: r.created, edits: r.edits, published: r.published }
+    try { const m = manifest(e.name); a.title = m.title || e.name; a.description = m.description } catch (err) { a.error = `artifact.json: ${(err as Error).message}` }
+    out.push(a)
+  }
+  return out.sort((a, b) => b.mtime - a.mtime)
+}
+
+// The artifact a file belongs to, if it is inside one's folder.
+function artifactOfPath(file: unknown): string | null {
+  if (typeof file !== 'string') return null
+  const rel = path.relative(ARTIFACTS, path.resolve(file))
+  const name = rel.split(path.sep)[0]
+  return !rel.startsWith('..') && !path.isAbsolute(rel) && rel.includes(path.sep) && NAME_RE.test(name) ? name : null
+}
+
+function touch(name: string, t: ArtifactTouch) {
+  const r = recOf(name)
+  if (r.edits.some((e) => e.sid === t.sid && e.seq === t.seq)) return
+  r.created ??= t
+  r.edits = [...r.edits, t].slice(-100)
+  saveRecord()
+}
+
+// A tool call finished: if it wrote into an artifact's folder, note which session and message did.
+export function noteTool(tool: string, input: any, t: ArtifactTouch): boolean {
+  if (!['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(tool)) return false
+  const name = artifactOfPath(input?.file_path ?? input?.notebook_path)
+  if (!name) return false
+  touch(name, t)
+  return true
+}
+
+// ---- the show_artifact tool -------------------------------------------------------
+
+export const artifactsPrompt = () => `
+
+## Artifacts
+When the user wants to see something (a chart, a table to explore, a dashboard, a report over data, a small tool), and whenever you analyse data, make an artifact: a page that Codinger shows in a pane next to this session. Each artifact is a folder in \`${ARTIFACTS}/<name>/\`, with a short lowercase name with hyphens:
+- \`index.html\`: one self-contained page. Use \`<script type="module">\` (top-level await works) and libraries from a CDN (https://esm.sh/..., https://cdn.jsdelivr.net/npm/...). There is no build step.
+- \`data/\`: the data, as files (csv, json, md, txt, images). Do not put data in the page.
+- \`artifact.json\`: \`{"title": "...", "description": "Two to four short sentences on what it shows.", "slots": {"rows": {"kind": "csv", "description": "One row per ...: the columns the page uses"}}, "bindings": {"rows": "data/rows.csv"}}\`
+
+The page reads its data by slot name: \`const rows = await prolifica.data('rows')\` (csv: an array of objects, numbers parsed; json: the parsed value; text and markdown: a string; image: a URL). \`prolifica.dataUrl('rows')\` gives the raw URL. The user can publish an artifact to Prolifica (prolifica.app), where other people run the same page over their own data. So keep what is particular to this data (names, units, dates) in the data, not in the page.
+- Make the page work at any width and in light and dark (prefers-color-scheme). Size charts from their container, and draw them again on resize.
+- Put \`data-pid="a-stable-name"\` on each chart, card and control.
+- After you make or change an artifact, call show_artifact with its name. It shows the page to the user and returns the script errors of the load. Fix them until it loads clean.
+- To change an artifact, edit it in place, even one another session made: Codinger records which session changed what.
+- show_artifact also takes \`url\`, to show a page that a dev server on this machine serves.
+`
+
+// What each artifact's page reported from its last load in a browser: script errors,
+// failed loads, console.error. A load starts a new list.
+const reports = new Map<string, { at: number; lines: string[]; loaded: boolean }>()
+
+export function checkArtifact(name: string): string | null {
+  if (!NAME_RE.test(name) || !fs.existsSync(path.join(dirOf(name), 'index.html'))) return `There is no artifact "${name}": make ${path.join(dirOf(name), 'index.html')} first.`
+  try {
+    const m = manifest(name)
+    const missing = Object.entries(m.bindings ?? {}).filter(([, f]) => !f.startsWith('prolifica:') && !fs.existsSync(path.join(dirOf(name), f)))
+    if (missing.length) return `artifact.json binds ${missing.map(([s, f]) => `${s} to ${f}`).join(', ')}, but there is no such file.`
+  } catch (e) { return `artifact.json could not be read: ${(e as Error).message}` }
+  return null
+}
+
+export function showArtifact(name: string, t: ArtifactTouch) {
+  touch(name, t)
+  reports.delete(name)
+}
+
+// After the pane reloads the page: what it reported, or why there is nothing. It waits
+// for the load (up to 8 s), then a little more for the module scripts' await.
+export async function reportOf(name: string): Promise<string> {
+  const until = Date.now() + 8000
+  while (!reports.get(name)?.loaded && Date.now() < until) await new Promise((r) => setTimeout(r, 250))
+  if (reports.get(name)?.loaded) await new Promise((r) => setTimeout(r, 1500))
+  const r = reports.get(name)
+  if (!r) return 'No browser loaded it (the user may not have Codinger open), so script errors could not be checked.'
+  if (!r.lines.length) return r.loaded ? 'It loaded with no script errors.' : 'It started to load, with no script errors so far.'
+  return `It reported:\n${r.lines.slice(0, 30).join('\n')}`
+}
+
+// ---- the host ---------------------------------------------------------------------
+
+const KINDS: Record<string, [string, string]> = {
+  '.csv': ['csv', 'text/csv'], '.json': ['json', 'application/json'], '.md': ['markdown', 'text/markdown'], '.txt': ['text', 'text/plain'],
+  '.png': ['image', 'image/png'], '.jpg': ['image', 'image/jpeg'], '.jpeg': ['image', 'image/jpeg'], '.gif': ['image', 'image/gif'],
+  '.webp': ['image', 'image/webp'], '.svg': ['image', 'image/svg+xml'],
+}
+const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', ...Object.fromEntries(Object.entries(KINDS).map(([k, [, t]]) => [k, t])) }
+const typeOf = (f: string) => TYPES[path.extname(f).toLowerCase()] ?? 'application/octet-stream'
+
+// Prolifica's bridge, kept in ~/.codinger/bridge.js. Asked for again at most once an
+// hour (a conditional request, so an unchanged one costs nothing); the kept copy
+// serves when Prolifica can't be reached.
+let bridgeCheck = 0
+async function bridge(): Promise<string> {
+  let kept: { etag?: string; js: string } | null = null
+  try { kept = JSON.parse(fs.readFileSync(BRIDGE + '.json', 'utf8')) } catch { /* none yet */ }
+  if (kept && Date.now() - bridgeCheck < 3600_000) return kept.js
+  bridgeCheck = Date.now()
+  try {
+    const r = await fetch(`${ORIGIN}/bridge.js`, { headers: kept?.etag ? { 'if-none-match': kept.etag } : {}, signal: AbortSignal.timeout(5000) })
+    if (r.status === 200) {
+      kept = { etag: r.headers.get('etag') ?? undefined, js: await r.text() }
+      fs.writeFileSync(BRIDGE + '.json', JSON.stringify(kept))
+    }
+  } catch { /* offline: the kept copy */ }
+  return kept?.js ?? `console.error('Codinger could not get the Prolifica bridge from ${ORIGIN}, so prolifica.data() is missing.')`
+}
+
+const esc = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
+
+// What the page reports back about itself, for show_artifact (sendBeacon: no CORS needed).
+const reporter = (name: string) => `<script>(()=>{const u='/_report/${name}';const s=(m)=>{try{navigator.sendBeacon(u,JSON.stringify(m))}catch(e){}};s({t:'start'});`
+  + `addEventListener('error',(e)=>{const el=e.target;s(el&&el!==window&&(el.src||el.href)?{t:'error',m:'Failed to load '+(el.src||el.href)}:{t:'error',m:String(e.message||e.error),at:e.filename?e.filename+':'+e.lineno:''})},true);`
+  + `addEventListener('unhandledrejection',(e)=>s({t:'error',m:String(e.reason&&e.reason.stack||e.reason)}));`
+  + `const ce=console.error;console.error=(...a)=>{s({t:'console',m:a.map(String).join(' ')});ce.apply(console,a)};addEventListener('load',()=>s({t:'load'}))})()</script>`
+
+function inject(html: string, tags: string): string {
+  const head = /<head(\s[^>]*)?>/i.exec(html)
+  if (head) return html.slice(0, head.index + head[0].length) + tags + html.slice(head.index + head[0].length)
+  const doc = /<html(\s[^>]*)?>/i.exec(html)
+  if (doc) return html.slice(0, doc.index + doc[0].length) + `<head>${tags}</head>` + html.slice(doc.index + doc[0].length)
+  return tags + html
+}
+
+function page(name: string, app: string): string {
+  const dir = dirOf(name)
+  const m = manifest(name)
+  const bindings: Record<string, unknown> = {}
+  for (const [slot, file] of Object.entries(m.bindings ?? {})) {
+    const local = !file.startsWith('prolifica:')
+    const [kind, contentType] = KINDS[path.extname(file).toLowerCase()] ?? ['text', 'text/plain']
+    const declared = m.slots?.[slot]?.kind
+    bindings[slot] = {
+      id: local ? file : file.slice(10), path: file, kind: declared && declared !== 'any' ? declared : kind, contentType,
+      hash: local && fs.existsSync(path.join(dir, file)) ? String(Math.round(fs.statSync(path.join(dir, file)).mtimeMs)) : undefined,
+    }
+  }
+  const config = { isle: { id: name, title: m.title ?? name, version: 0 }, slots: m.slots ?? {}, bindings, app, origin: '' }
+  return inject(fs.readFileSync(path.join(dir, 'index.html'), 'utf8'), `${reporter(name)}<script>window.__PROLIFICA__=${esc(config)}</script><script src="/bridge.js"></script>`)
+}
+
+export function startHost(port: number, uiOrigins: () => string[]): Promise<number> {
+  const hosts = (p: number) => new Set([`127.0.0.1:${p}`, `localhost:${p}`])
+  let allowed = hosts(port)
+  const server = http.createServer(async (req, res) => {
+    // Only this machine's names: a web page can't reach it through a rebound DNS name.
+    if (!allowed.has(req.headers.host ?? '')) { res.writeHead(403).end(); return }
+    const url = new URL(req.url ?? '/', 'http://x')
+    const base = { 'x-content-type-options': 'nosniff', 'cache-control': 'no-store' }
+    const [, name, ...rest] = url.pathname.split('/').map((p) => { try { return decodeURIComponent(p) } catch { return '' } })
+    try {
+      if (url.pathname === '/bridge.js') { res.writeHead(200, { ...base, 'content-type': 'text/javascript' }).end(await bridge()); return }
+      if (name === '_report' && req.method === 'POST' && NAME_RE.test(rest[0] ?? '')) {
+        let s = ''
+        for await (const c of req) { s += c; if (s.length > 20_000) break }
+        const m = JSON.parse(s)
+        if (m.t === 'start') reports.set(rest[0], { at: Date.now(), lines: [], loaded: false })
+        const r = reports.get(rest[0])
+        if (r && m.t === 'load') r.loaded = true
+        else if (r && m.m && r.lines.length < 50) r.lines.push(`${m.t === 'console' ? 'console.error' : 'error'}: ${String(m.m).slice(0, 600)}${m.at ? ` (${m.at})` : ''}`)
+        res.writeHead(204).end()
+        return
+      }
+      if (!name || !NAME_RE.test(name) || !fs.existsSync(dirOf(name))) { res.writeHead(404, base).end('No such artifact'); return }
+      if (!rest.length) { res.writeHead(301, { location: `/${name}/${url.search}` }).end(); return }
+      if (rest.length === 1 && rest[0] === '') {
+        // The pane says which window holds it, so the bridge's messages go there and nowhere else.
+        const app = url.searchParams.get('app') ?? ''
+        res.writeHead(200, { ...base, 'content-type': 'text/html; charset=utf-8' }).end(page(name, uiOrigins().includes(app) ? app : uiOrigins()[0]))
+        return
+      }
+      const cors = { 'access-control-allow-origin': '*' }
+      // What prolifica.data(slot) fetches: the bound file, or the dataset on Prolifica it names.
+      if (rest[0] === 'data' && rest.length === 2) {
+        const file = manifest(name).bindings?.[rest[1]]
+        if (file?.startsWith('prolifica:')) {
+          const r = await call(`/api/data/${encodeURIComponent(file.slice(10))}/raw`).catch((e) => { throw Object.assign(e, { status: 502 }) })
+          res.writeHead(200, { ...base, ...cors, 'content-type': typeof r === 'string' ? 'text/plain; charset=utf-8' : 'application/json' }).end(typeof r === 'string' ? r : JSON.stringify(r))
+          return
+        }
+        if (file) return serveFile(path.join(dirOf(name), file), name, res, { ...base, ...cors })
+      }
+      serveFile(path.join(dirOf(name), ...rest), name, res, { ...base, ...cors })
+    } catch (e) {
+      if (!res.headersSent) res.writeHead((e as { status?: number }).status ?? 500, base).end((e as Error).message)
+    }
+  })
+  return new Promise((resolve) => {
+    server.once('error', () => server.listen(0, '127.0.0.1'))   // the port is taken: any free one
+    server.on('listening', () => { const p = (server.address() as { port: number }).port; allowed = hosts(p); resolve(p) })
+    server.listen(port, '127.0.0.1')
+  })
+}
+
+function serveFile(file: string, name: string, res: http.ServerResponse, headers: Record<string, string>) {
+  const dir = dirOf(name)
+  const real = path.resolve(file)
+  if (!real.startsWith(dir + path.sep) || !fs.existsSync(real) || fs.statSync(real).isDirectory()) { res.writeHead(404, headers).end('No such file'); return }
+  res.writeHead(200, { ...headers, 'content-type': typeOf(real) })
+  fs.createReadStream(real).pipe(res)
+}
+
+// Something about the artifacts changed: tell the listener once, a moment later.
+let listener = () => {}
+let timer: NodeJS.Timeout | null = null
+export function artifactsChanged() {
+  if (!timer) timer = setTimeout(() => { timer = null; listener() }, 200)
+}
+
+// Calls back when anything under the artifacts folder changes, or artifactsChanged() is called.
+export function watchArtifacts(changed: () => void) {
+  listener = changed
+  try { fs.watch(ARTIFACTS, { recursive: true }, artifactsChanged) } catch { /* no recursive watch here: the list updates on tool calls */ }
+}
+
+// ---- publishing -------------------------------------------------------------------
+
+const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex')
+
+// Send an artifact to Prolifica: each data file that changed since the last time, then
+// the page. The first publish makes a new page there; later ones make new versions of it.
+export async function publish(name: string, opts: { visibility?: Visibility; note?: string }): Promise<{ published: ArtifactPublished; madePublic: string[] }> {
+  if (checkArtifact(name)) throw new Error(checkArtifact(name)!)
+  const dir = dirOf(name)
+  const m = manifest(name)
+  const r = recOf(name)
+  const before = r.published
+  const data: ArtifactPublished['data'] = {}
+  const bindings: Record<string, string> = {}
+  for (const [slot, file] of Object.entries(m.bindings ?? {})) {
+    if (file.startsWith('prolifica:')) { bindings[slot] = file.slice(10); continue }
+    const bytes = fs.readFileSync(path.join(dir, file))
+    const hash = sha(bytes)
+    const prev = before?.data[file]
+    if (prev?.sha === hash) { bindings[slot] = prev.id; data[file] = prev; continue }
+    const q = new URLSearchParams({ path: `${name}/${path.basename(file)}` })
+    if (m.slots?.[slot]?.description) q.set('description', m.slots[slot].description!)
+    const ds = await call(`/api/data?${q}`, { method: 'POST', headers: { 'content-type': typeOf(file) }, body: bytes })
+    bindings[slot] = ds.id
+    data[file] = { sha: hash, id: ds.id }
+  }
+  const visibility = opts.visibility ?? before?.visibility ?? 'public'
+  const body = (id?: string) => JSON.stringify({
+    id, html: fs.readFileSync(path.join(dir, 'index.html'), 'utf8'), title: m.title ?? name, description: m.description,
+    shortTitle: m.short_title, viewName: m.view_name, slots: m.slots ?? {}, bindings, visibility, note: opts.note || undefined,
+  })
+  const post = (id?: string) => call('/api/isles', { method: 'POST', headers: { 'content-type': 'application/json' }, body: body(id) })
+  // Deleted on Prolifica since: publish it as a new page.
+  const out = await post(before?.id).catch((e) => { if (before?.id && e.status === 404) return post(); throw e })
+  r.published = { id: out.isle.id, url: `${ORIGIN}/i/${out.isle.id}`, version: out.isle.version, at: Date.now(), mtime: mtimeOf(dir), visibility, data }
+  saveRecord()
+  return { published: r.published, madePublic: (out.madePublic ?? []).map((d: { path?: string; id: string }) => d.path ?? d.id) }
+}

@@ -6,6 +6,7 @@ import type { Anchor, AuthState, Event, ImageRef, InboxItem, Part, ServerMsg, Se
 import { inboxParts } from '../../shared/inbox.ts'
 import { itemsOf } from '../../shared/blocks.ts'
 import { applyAppearance, holdingAppearance } from './appearance.ts'
+import type { Artifact, PreviewTarget, ProlificaState } from '../../shared/artifacts.ts'
 
 // reaction: an emoji alone, shown at the left of its passage, not as a card;
 // whole: on a whole paragraph or list item (the reaction button), so not highlighted.
@@ -46,6 +47,11 @@ type State = {
   stale: boolean                     // the server's code on disk is newer than the server
   restarting: boolean
   loaded: boolean                    // the server's hello came: sessions and settings are real
+  page: 'artifacts' | null           // a page in place of the selected session
+  artifacts: Artifact[]
+  artifactsPort: number              // where the server that runs artifacts listens
+  prolifica: ProlificaState
+  preview: Record<string, { target: PreviewTarget; at: number }>   // what each session's preview pane shows
 }
 
 const saved = <T,>(k: string, d: T): T => { try { return JSON.parse(localStorage.getItem(k) ?? '') ?? d } catch { return d } }
@@ -76,6 +82,11 @@ export const state: State = {
   fileTick: {},
   stale: false,
   restarting: false,
+  page: null,
+  artifacts: [],
+  artifactsPort: 0,
+  prolifica: null,
+  preview: saved('codinger.preview', {}),
 }
 
 let version = 0
@@ -91,6 +102,7 @@ export function changed() {
     localStorage.setItem('codinger.composer', JSON.stringify(state.composer))
     localStorage.setItem('codinger.selected', JSON.stringify(state.selected))
     localStorage.setItem('codinger.showSteps', JSON.stringify(state.showSteps))
+    localStorage.setItem('codinger.preview', JSON.stringify(state.preview))
   }, 300)
 }
 // Tell the server which sessions you are writing a reply in, so the lead's
@@ -164,6 +176,8 @@ function onServer(m: ServerMsg) {
       state.settings = m.settings; applyAppearance(m.settings.appearance); break
     case 'usage': state.usage = m.usage; break
     case 'tasks': state.tasks = m.tasks; break
+    case 'artifacts': state.artifacts = m.artifacts; state.artifactsPort = m.port; state.prolifica = m.prolifica; break
+    case 'preview': state.preview = { ...state.preview, [m.sessionId]: { target: m.target, at: m.at } }; break
     case 'auth': state.auth = m.auth; break
     case 'stale': state.stale = m.stale; break
     case 'file': state.fileTick = { ...state.fileTick, [m.path]: (state.fileTick[m.path] ?? 0) + 1 }; break
@@ -216,6 +230,7 @@ export async function loadEvents(id: string, force = false) {
 
 export function select(id: string) {
   state.selected = id
+  state.page = null
   changed()
   void loadEvents(id)
   const s = state.sessions.find((x) => x.id === id)

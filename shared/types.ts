@@ -3,6 +3,7 @@
 
 import type { Look } from './looks.ts'
 import type { Appearance } from './appearance.ts'
+import type { Artifact, PreviewTarget, ProlificaState } from './artifacts.ts'
 
 export type Status =
   | 'new'        // never sent anything
@@ -200,6 +201,10 @@ export type ServerMsg =
   | { type: 'usage'; usage: Usage }
   | { type: 'settings'; settings: Settings }
   | { type: 'tasks'; tasks: Task[] }
+  // Every artifact (server/artifacts.ts); port: where the server that runs them listens.
+  | { type: 'artifacts'; artifacts: Artifact[]; port: number; prolifica: ProlificaState }
+  // An agent showed something in its session's preview pane (show_artifact).
+  | { type: 'preview'; sessionId: string; target: PreviewTarget; at: number }
 
 // A long-running command an agent started with start_task (server/tasks.ts).
 // notify: how the agent hears that it ended: with its next message, in a turn of

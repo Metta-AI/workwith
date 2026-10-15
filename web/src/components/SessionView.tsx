@@ -7,6 +7,7 @@ import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { RichInput } from './Inputs.tsx'
 import { Transcript } from './Transcript.tsx'
 import { AttentionPanel } from './AttentionPanel.tsx'
+import { ArtifactIcon, ArtifactPane, hasPreview } from './Artifacts.tsx'
 import { revealItem, useItems } from '../items.ts'
 import { MailIcon, MoreIcon, PanelIcon, UndoIcon, XIcon } from './Icons.tsx'
 import { inboxLabel } from '../../../shared/inbox.ts'
@@ -393,12 +394,20 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
   const [panel, setPanel] = useState(() => localStorage.getItem('codinger.panel') !== '0')
   const togglePanel = () => { localStorage.setItem('codinger.panel', panel ? '0' : '1'); setPanel(!panel) }
   const [panelW, setPanelW] = useWidth('attention', 300)
+  // The preview pane (Artifacts.tsx): open while you leave it open, and whenever the agent shows something.
+  const [preview, setPreview] = useState(() => localStorage.getItem('codinger.previewPane') !== '0')
+  const togglePreview = () => { localStorage.setItem('codinger.previewPane', preview ? '0' : '1'); setPreview(!preview) }
+  const [previewW, setPreviewW] = useWidth('preview', 480)
+  const shownAt = st.preview[id]?.at
+  useEffect(() => { if (shownAt && Date.now() - shownAt < 5000) { localStorage.setItem('codinger.previewPane', '1'); setPreview(true) } }, [shownAt])
   if (!m) return <div className="empty">No such session.</div>
   const open = items.filter((i) => i.status === 'open').length
+  const canPreview = hasPreview(id)
   return (
     <div className="session">
       <SessionHeader m={m} extra={<>
         {extra}
+        {canPreview && <button className={`panel-toggle icon-tall${preview ? ' on' : ''}`} title="Preview" onClick={togglePreview}><ArtifactIcon size={15} /></button>}
         {items.length > 0 && <button className={`panel-toggle icon-tall${panel ? ' on' : ''}`} title="Questions and items" onClick={togglePanel}><PanelIcon size={15} />{open > 0 && <span className="count">{open}</span>}</button>}
       </>} />
       <div className="session-body">
@@ -406,6 +415,10 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
           <Transcript sid={id} />
           <Composer m={m} />
         </div>
+        {preview && canPreview && <>
+          <Splitter width={previewW} setWidth={setPreviewW} min={280} max={1400} initial={480} reverse />
+          <ArtifactPane sid={id} width={previewW} onHide={togglePreview} />
+        </>}
         {panel && items.length > 0 && <>
           <Splitter width={panelW} setWidth={setPanelW} min={220} max={640} initial={300} reverse />
           <AttentionPanel sid={id} width={panelW} onHide={togglePanel} />

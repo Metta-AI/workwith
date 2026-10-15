@@ -38,8 +38,10 @@ import { CLAUDE, authState, cancelLogin, childEnv, initAuth, needed as authNeede
 import {
   DATA, LEAD_DIR, LEAD_NOTES, OLD_LEAD_NOTES, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, leadRenamed, resolveModel, loadSessions, promptFile, loadSettings, saveImage, saveSessions, saveSettings,
 } from './store.ts'
+import { ARTIFACTS, artifactsChanged, artifactsPrompt, checkArtifact, listArtifacts, noteTool, publish, reportOf, showArtifact, startHost, watchArtifacts } from './artifacts.ts'
+import { connectCallback, connectUrl, disconnect as prolificaDisconnect, prolificaState } from './prolifica.ts'
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const ROOT =path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const PORT = Number(process.env.PORT ?? 4545)
 const DEV = process.argv.includes('--dev')
 // Kept across restarts: a claude process that outlives a server (server/proc.ts) still reaches Codinger's tools.
@@ -165,7 +167,11 @@ const hooks: Hooks = {
       for (let i = ev.length - 1; i >= 0 && i > ev.length - 400; i--) {
         const a = ev[i]
         const b = a.t === 'assistant' ? a.blocks.find((x) => x.type === 'tool_use' && x.id === event.toolUseId) : undefined
-        if (b?.type === 'tool_use') { noteEdit(b.name, b.input, { kind: 'session', sid: s.meta.id, title: s.meta.title, seq: a.seq }); break }
+        if (b?.type === 'tool_use') {
+          noteEdit(b.name, b.input, { kind: 'session', sid: s.meta.id, title: s.meta.title, seq: a.seq })
+          if (!event.isError && noteTool(b.name, b.input, { sid: s.meta.id, seq: a.seq, ts: event.ts })) artifactsChanged()
+          break
+        }
       }
     }
   },
@@ -191,9 +197,11 @@ function launchFor(meta: SessionMeta): () => Launch {
         '--mcp-config', JSON.stringify({ mcpServers: { codinger: { type: 'http', url: `http://127.0.0.1:${PORT}/mcp/${MCP_TOKEN}/look/${meta.id}` } } }),
         // Started with your MCP servers off: only Codinger's, until one is turned on (server/mcpservers.ts).
         ...(meta.mcp ? ['--strict-mcp-config'] : []),
-        '--allowedTools', `mcp__codinger__set_look,mcp__codinger__set_title,mcp__codinger__start_task,mcp__codinger__stop_task,mcp__codinger__list_tasks,${MAIL_TOOLS.map((t) => `mcp__codinger__${t}`).join(',')}${meta.mcp && settings.mcpClaude !== false ? ',mcp__codinger__use_mcp_server' : ''}`,
+        '--allowedTools', `mcp__codinger__set_look,mcp__codinger__set_title,mcp__codinger__start_task,mcp__codinger__stop_task,mcp__codinger__list_tasks,mcp__codinger__show_artifact,${MAIL_TOOLS.map((t) => `mcp__codinger__${t}`).join(',')}${meta.mcp && settings.mcpClaude !== false ? ',mcp__codinger__use_mcp_server' : ''}`,
+        // Artifacts live in one folder for every session (server/artifacts.ts).
+        '--add-dir', ARTIFACTS,
       ],
-      prompt: WORKER_PROMPT + lookPrompt(meta.look) + titlePrompt(meta) + mcpPrompt(meta) + (notes ? workerNotesPrompt(notesFile(meta.id)) : '') + agentsPrompt(),
+      prompt: WORKER_PROMPT + lookPrompt(meta.look) + titlePrompt(meta) + mcpPrompt(meta) + artifactsPrompt() + (notes ? workerNotesPrompt(notesFile(meta.id)) : '') + agentsPrompt(),
     }
   }
   return () => ({
@@ -614,6 +622,40 @@ function lookTool(id: string): Tool {
   }
 }
 
+// ---- artifacts (server/artifacts.ts) ----
+
+// The second server that runs artifacts: its own port, so never Codinger's origin.
+const UI_ORIGINS = [`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`]
+const artifactsPort = await startHost(Number(process.env.ARTIFACTS_PORT ?? PORT + 1), () => UI_ORIGINS)
+const artifactsMsg = (): ServerMsg => ({ type: 'artifacts', artifacts: listArtifacts(), port: artifactsPort, prolifica: prolificaState() })
+watchArtifacts(() => broadcast(artifactsMsg()))
+
+function artifactTool(id: string): Tool {
+  return {
+    name: 'show_artifact',
+    description: 'Show an artifact (a page in the artifacts folder) in the preview pane next to this session, and get the script errors of its load. Call it after you make or change one. Or give url to show a page that a dev server on this machine serves.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string', description: 'The artifact\'s folder name' }, url: { type: 'string', description: 'Instead: http://localhost:<port>/...' } } },
+    run: async (args) => {
+      const s = get(id)
+      if (args?.url) {
+        let u: URL
+        try { u = new URL(String(args.url)) } catch { return 'Give a full address, like http://localhost:5173/.' }
+        if (!/^https?:$/.test(u.protocol) || !['localhost', '127.0.0.1', '[::1]'].includes(u.hostname)) return 'Only pages on this machine (localhost) show in the pane.'
+        broadcast({ type: 'preview', sessionId: id, target: { url: u.href }, at: Date.now() })
+        return `Shown in the preview pane: ${u.href}`
+      }
+      const name = String(args?.name ?? '').trim()
+      const bad = checkArtifact(name)
+      if (bad) return bad
+      const seq = s.getEvents().findLast((e) => e.t === 'assistant')?.seq ?? 0
+      showArtifact(name, { sid: id, seq, ts: Date.now() })
+      artifactsChanged()
+      broadcast({ type: 'preview', sessionId: id, target: { artifact: name }, at: Date.now() })
+      return `Shown in the preview pane (http://127.0.0.1:${artifactsPort}/${name}/). ${await reportOf(name)}`
+    },
+  }
+}
+
 const tools: Tool[] = [
   {
     name: 'list_sessions',
@@ -826,6 +868,30 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     if (id && !b && method === 'DELETE') { removeTask(id); return send(res, 200, { ok: true }) }
   }
   if (a === 'images' && method === 'POST') return send(res, 200, saveImage(String((await json(req)).dataUrl ?? '')))
+  if (a === 'artifacts') {
+    if (!id && method === 'GET') return send(res, 200, artifactsMsg())
+    if (id && b === 'publish' && method === 'POST') {
+      const body = await json(req)
+      const vis = ['public', 'unlisted', 'private'].includes(body.visibility) ? body.visibility : undefined
+      try { return send(res, 200, await publish(id, { visibility: vis, note: typeof body.note === 'string' ? body.note : undefined })) }
+      catch (e) { throw new HttpError(400, (e as Error).message) }
+      finally { artifactsChanged() }
+    }
+  }
+  if (a === 'prolifica') {
+    // The browser comes back here from approving Codinger on Prolifica.
+    if (id === 'callback' && method === 'GET') {
+      let err = ''
+      try { await connectCallback(url) } catch (e) { err = (e as Error).message }
+      artifactsChanged()
+      const text = err ? `Codinger could not connect to Prolifica: ${err}` : 'Codinger is connected to Prolifica. You can close this tab.'
+      res.writeHead(err ? 400 : 200, { 'content-type': 'text/html; charset=utf-8' })
+        .end(`<!doctype html><meta charset="utf-8"><title>Prolifica</title><body style="font:15px system-ui;padding:40px">${text.replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`)}${err ? '' : '<script>setTimeout(()=>close(),1500)</script>'}`)
+      return
+    }
+    if (id === 'connect' && method === 'POST') return send(res, 200, { url: await connectUrl(`http://${req.headers.host}/api/prolifica/callback`) })
+    if (!id && method === 'DELETE') { prolificaDisconnect(); artifactsChanged(); return send(res, 200, { ok: true }) }
+  }
   if (a === 'restart' && method === 'POST') {
     send(res, 200, { ok: true })
     setTimeout(restart, 100)
@@ -1189,7 +1255,7 @@ const server = http.createServer(async (req, res) => {
       return await handleMcp(req, res, lead ? [...tools, lookTool(lead.meta.id)] : tools)
     }
     const look = url.pathname.startsWith(`/mcp/${MCP_TOKEN}/look/`) && url.pathname.split('/').pop()
-    if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look), mcpTool(look), ...taskTools(look), ...mailTools(look)])
+    if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look), mcpTool(look), artifactTool(look), ...taskTools(look), ...mailTools(look)])
     if (url.pathname.startsWith('/api/')) return await api(req, res, url)
     if (vite) return vite.middlewares(req, res)
     serveStatic(url.pathname, res)
@@ -1224,6 +1290,7 @@ server.on('upgrade', (req, socket, head) => {
     ws.on('close', () => sockets.delete(ws))
     ws.send(JSON.stringify({ type: 'hello', sessions: metas(), settings, usage, platform: process.platform, home: os.homedir(), auth: authState(), stale } satisfies ServerMsg))
     ws.send(JSON.stringify({ type: 'tasks', tasks: allTasks() } satisfies ServerMsg))
+    ws.send(JSON.stringify(artifactsMsg()))
   })
 })
 

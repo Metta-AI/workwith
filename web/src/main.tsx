@@ -7,6 +7,7 @@ import { SessionView } from './components/SessionView.tsx'
 import { LeadView } from './components/LeadView.tsx'
 import { Splitter, useWidth } from './components/Splitter.tsx'
 import { AppearanceDialog } from './components/AppearanceDialog.tsx'
+import { ArtifactCheck, ArtifactsView } from './components/Artifacts.tsx'
 import { useFavicon } from './favicon.tsx'
 import { initTooltips } from './tooltip.ts'
 import './styles.css'
@@ -34,10 +35,12 @@ function App() {
         <SignIn />
         <Restart />
         {!st.connected && !st.sessions.length ? <div className="empty">Connecting to the Codinger server…</div>
+          : st.page === 'artifacts' ? <ArtifactsView />
           : sel?.kind === 'lead' ? <LeadView id={sel.id} />
           : sel ? <SessionView key={sel.id} id={sel.id} />
           : <div className="empty">Pick a session.</div>}
       </main>
+      <ArtifactCheck />
       {welcome && <AppearanceDialog welcome onClose={() => setWelcome(false)} />}
       {st.lightbox && <div className="lightbox" onClick={() => { state.lightbox = null; changed() }}><img src={st.lightbox} alt="" /></div>}
       {st.error && <div className="toast" onClick={() => { state.error = null; changed() }}>{st.error}</div>}
