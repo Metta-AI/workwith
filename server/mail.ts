@@ -23,13 +23,17 @@ type Ctx = {
 }
 let ctx: Ctx
 
+// Call it before a handed-on session can send its first event.
 export function startMail(c: Ctx) {
   ctx = c
-  // Messages the last server left waiting.
-  for (const s of c.sessions.values()) {
-    for (const m of s.meta.mail ?? []) delete m.step
-    flushMail(s)
-  }
+  // Messages the last server left waiting go once the server is up (sending needs
+  // what index.ts sets up further down).
+  setImmediate(() => {
+    for (const s of c.sessions.values()) {
+      for (const m of s.meta.mail ?? []) delete m.step
+      flushMail(s)
+    }
+  })
 }
 
 export const MAIL_TOOLS = ['list_sessions', 'spawn_session', 'send_message', 'reply', 'set_inbox', 'read_session', 'stop_session']

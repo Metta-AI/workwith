@@ -288,7 +288,7 @@ function resumeCut(s: Session) {
 }
 startNotes({ sessions: () => sessions.values(), settings: () => settings, usage: () => usage, changed: metaChanged })
 startTasks({ changed: (tasks) => broadcast({ type: 'tasks', tasks }), ended: taskEnded })
-setImmediate(() => startMail({ sessions, create: createSession, hidden: hiddenFor, changed: metaChanged }))
+startMail({ sessions, create: createSession, hidden: hiddenFor, changed: metaChanged })
 // Autopilot goes on in sessions the last server left between turns (a handed-on busy one
 // gets there when its turn ends).
 setTimeout(() => { for (const s of sessions.values()) autopilotTurn(s, false, true) }, 3000)
