@@ -513,6 +513,17 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
   const [open, setOpen] = useState(false)
   const [showTasks, setShowTasks] = useState(false)
   const { tasks } = useStore()
+  // A long message folds to its first lines until you ask for the rest.
+  const [more, setMore] = useState(false)
+  const [long, setLong] = useState(false)
+  const body = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const box = body.current, inner = box?.firstElementChild
+    if (!box || !inner) return
+    const ro = new ResizeObserver(() => { if (!box.classList.contains('open')) setLong(inner.scrollHeight > box.clientHeight + 1) })
+    ro.observe(inner)
+    return () => ro.disconnect()
+  }, [editing])
   const run = async (f: () => Promise<void>) => {
     setBusy(true)
     try { await f() } finally { setBusy(false) }
@@ -539,6 +550,7 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
           <ChevronIcon size={11} className="chevron" /> {repliesSummary(replies)}
         </button>
       )}
+      <div ref={body} className={`user-body${long ? ' long' : ''}${more ? ' open' : ''}`}><div>
       {shown.map((p, i) => (
         <div
           key={i}
@@ -559,6 +571,8 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
           <Thumbs images={p.images} />
         </div>
       ))}
+      </div></div>
+      {long && <button className="link user-more" onClick={() => setMore(!more)}>{more ? 'Show less' : 'Show more'}</button>}
     </div>
       {!state.share && <div className="user-actions">
         <button className="icon-btn" title="Edit" disabled={busy} onClick={() => setEditing(true)}><PencilIcon size={13} /></button>

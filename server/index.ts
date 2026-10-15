@@ -1283,11 +1283,14 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   if (b === 'autopilot' && method === 'DELETE') { endAutopilot(s, 'you turned it off'); return send(res, 200, s.meta) }
   if (method !== 'POST') throw new HttpError(404, 'Not found')
   const body = await json(req)
+  // A message you send to an archived session takes it out of the archive.
+  const reopen = (s: Session) => { if (s.meta.archived) { s.meta.archived = false; metaChanged() } }
   switch (b) {
     case 'send': {
       const p: Part[] = Array.isArray(body.parts) ? body.parts : []
       // The lead's drafts that went with your reply.
       if (Array.isArray(body.inbox) && body.inbox.length) { s.meta.inbox = s.meta.inbox.filter((i) => !body.inbox.includes(i.id)); metaChanged() }
+      reopen(s)
       s.send(p, hiddenFor(s, p))
       userWrote(s)
       return send(res, 200, { ok: true })
@@ -1303,7 +1306,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       // Delete from a message on; with parts, send them in its place (an edit).
       try { s.rewind(Number(body.seq)) } catch (e) { throw new HttpError(400, (e as Error).message) }
       const p: Part[] = Array.isArray(body.parts) ? body.parts : []
-      if (p.length) s.send(p, hiddenFor(s, p))
+      if (p.length) { reopen(s); s.send(p, hiddenFor(s, p)) }
       return send(res, 200, { ok: true })
     }
     case 'run': {
