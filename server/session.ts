@@ -34,6 +34,9 @@ export type SlashCommand = { name: string; description: string; argumentHint: st
 
 export type Launch = { args: string[]; prompt: string }
 
+// A session's display name in Claude Code: "codinger-" and its Codinger id.
+export const claudeName = (id: string) => `codinger-${id}`
+
 const MAX_RESULT = 8000
 // How long a finished session keeps its claude process before it sleeps.
 // CODINGER_SLEEP_MS overrides it (for tests).
@@ -152,6 +155,8 @@ export class Session {
     const full = [
       '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
       '--include-partial-messages', '--permission-prompt-tool', 'stdio',
+      // Its name among Claude Code sessions (what agents message it by) carries its Codinger id.
+      '--name', claudeName(m.id),
       '--permission-mode', m.permissionMode,
       ...(m.model ? ['--model', m.model] : []),
       ...(m.resumeAt ? ['--resume', m.claudeSessionId, '--resume-session-at', m.resumeAt, '--fork-session']

@@ -116,6 +116,7 @@ export function Sidebar({ width }: { width: number }) {
   const away = offline()
   const custom = !!st.settings.groupOrder?.length || st.sessions.some((x) => x.order != null)
   const u = st.usage
+  const tab = st.web || !local ? 'remote' : st.sideTab
   // Machines move like folders: drag one by its head.
   const drag = useDragSort((_key, names) => { state.machineOrder = names; changed() })
   const tree = (machine: string) => <MachineTree machine={machine} onNew={(cwd) => setNewIn({ cwd, machine })} onMenu={openMenu} />
@@ -125,41 +126,41 @@ export function Sidebar({ width }: { width: number }) {
         <span>Codinger</span>
         <span className={`conn ${st.connected ? 'on' : 'off'}`} title={st.connected ? 'Connected' : 'Reconnecting…'} />
       </div>
+      {/* On a machine's own page: its sessions, and the other machines'. On the web, every machine is remote. */}
+      {!st.web && (others.length > 0 || away.length > 0 || !!local?.remote?.linked) && (
+        <div className="side-tabs">
+          {(['local', 'remote'] as const).map((t) => <button key={t} className={tab === t ? 'on' : ''} onClick={() => { state.sideTab = t; changed() }}>{t === 'local' ? 'Local' : <><GlobeIcon size={12} /> Remote</>}</button>)}
+        </div>
+      )}
       <div className="side-actions">
-        <button className="primary" onClick={() => setNewIn({ cwd: '' })}>+ New session</button>
+        <button className="primary" onClick={() => setNewIn({ cwd: '', ...(tab === 'remote' && others[0] ? { machine: others[0].name } : {}) })}>+ New session</button>
         <button onClick={() => setHistory(true)} title={`Continue any Claude Code conversation on ${st.web ? currentMachine() : 'this machine'}, including terminal ones`}>Resume…</button>
       </div>
       <nav className={`tree${st.showArchived ? ' archived' : ''}`}>
         {st.showArchived && <div className="archive-banner"><ArchiveIcon size={13} /> Archived sessions<button className="icon-btn" title="Back to active sessions" onClick={() => { state.showArchived = false; changed() }}><XIcon size={12} /></button></div>}
-        {local && tree(LOCAL)}
-        {/* On web.codinger.app every machine is here; on a machine, the others, under one head you can close. */}
-        {(others.length > 0 || away.length > 0) && (
-          <div className="remote-machines">
-            {!st.web && (
-              <button className={`remote-head${st.remoteOpen ? ' open' : ''}`} onClick={() => { state.remoteOpen = !state.remoteOpen; changed() }}>
-                <ChevronIcon size={12} /> <GlobeIcon size={13} /> Remote sessions
-              </button>
-            )}
-            {(st.web || st.remoteOpen) && <>
-              {others.map((m) => {
-                const d = drag.sortable('machines', m.name)
-                return (
-                  <div key={m.name} {...d} className={`machine${d.className}`}>
-                    <div className="machine-head" title={`${m.name}: ${m.connected ? 'connected through web.codinger.app' : 'reconnecting…'}\nDrag to move`} onPointerDown={(e) => drag.start(e, 'machines', m.name)}>
-                      <DeviceIcon m={m} />
-                      <span className="machine-name">{m.name}</span>
-                      {!m.connected && <span className="conn off" />}
-                      <button className="link" title={`New session on ${m.name}`} onClick={() => setNewIn({ cwd: '', machine: m.name })}>+</button>
-                    </div>
-                    {tree(m.name)}
-                  </div>
-                )
-              })}
-              {away.map((name) => <div key={name} className="machine off"><div className="machine-head" title={`${name} is not connected. Turn on remote access in its Codinger.`}><span className="machine-name">{name}</span><span className="muted">not connected</span></div></div>)}
-            </>}
-          </div>
-        )}
-        {!st.sessions.some((s) => s.kind === 'worker' && s.archived === st.showArchived) && <div className="muted pad">{st.showArchived ? 'No archived sessions.' : 'No sessions yet.'}</div>}
+        {tab === 'local' ? local && tree(LOCAL) : <>
+          {others.map((m) => {
+            const d = drag.sortable('machines', m.name)
+            const shut = st.collapsed.includes(m.name)
+            return (
+              <div key={m.name} {...d} className={`machine${shut ? ' shut' : ''}${d.className}`}>
+                <div className="machine-head" title={`${m.name}: ${m.connected ? 'connected through web.codinger.app' : 'reconnecting…'}\nClick to ${shut ? 'show' : 'hide'} its sessions; drag to move`}
+                  onPointerDown={(e) => drag.start(e, 'machines', m.name)}
+                  onClick={() => { state.collapsed = shut ? state.collapsed.filter((n) => n !== m.name) : [...state.collapsed, m.name]; changed() }}>
+                  <ChevronIcon size={11} className="machine-chevron" />
+                  <DeviceIcon m={m} />
+                  <span className="machine-name">{m.name}</span>
+                  {!m.connected && <span className="conn off" />}
+                  <button className="link" title={`New session on ${m.name}`} onClick={(e) => { e.stopPropagation(); setNewIn({ cwd: '', machine: m.name }) }}>+</button>
+                </div>
+                {!shut && tree(m.name)}
+              </div>
+            )
+          })}
+          {away.map((name) => <div key={name} className="machine off"><div className="machine-head" title={`${name} is not connected. Turn on remote access in its Codinger.`}><span className="machine-name">{name}</span><span className="muted">not connected</span></div></div>)}
+          {!others.length && !away.length && <div className="muted pad">No other machines. Connect one in Settings → Remote access on that machine.</div>}
+        </>}
+        {tab === 'local' && !local?.sessions.some((s) => s.kind === 'worker' && s.archived === st.showArchived) && <div className="muted pad">{st.showArchived ? 'No archived sessions.' : 'No sessions yet.'}</div>}
       </nav>
       <CostBanner open={() => setSettings('cost')} />
       <div className="side-foot">
@@ -196,7 +197,7 @@ export function Sidebar({ width }: { width: number }) {
 const OS: Record<string, string> = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }
 function DeviceIcon({ m }: { m: Machine }) {
   const title = `${m.device === 'laptop' ? 'Laptop' : m.device === 'desktop' ? 'Desktop' : 'Computer'}${OS[m.platform] ? `, ${OS[m.platform]}` : ''}`
-  return m.device === 'desktop' ? <DesktopIcon os={m.platform} size={16} className="device" title={title} /> : <LaptopIcon os={m.platform} size={16} className="device" title={title} />
+  return m.device === 'desktop' ? <DesktopIcon os={m.platform} size={18} className="device" title={title} /> : <LaptopIcon os={m.platform} size={18} className="device" title={title} />
 }
 
 // One machine's sessions, by folder. Its folder order and session order are its own.

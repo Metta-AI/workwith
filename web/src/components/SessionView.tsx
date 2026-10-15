@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Mail, PermissionMode, SessionMeta, SlashCommand } from '../../../shared/types.ts'
 import { MAX_RUN } from '../../../shared/mail.ts'
-import { api, closeSession, composerOf, draftsOf, hasContent, loadEvents, queuedParts, select, sendQueued, setComposer, state, undismissItem, useStore, selectFallback, globalId, machineOf } from '../store.ts'
+import { api, closeSession, composerOf, draftsOf, hasContent, loadEvents, queuedParts, select, sendQueued, setComposer, state, undismissItem, useStore, selectFallback, globalId, machineOf, localId } from '../store.ts'
 import { fatigue, kTokens } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { RichInput } from './Inputs.tsx'
@@ -80,6 +80,14 @@ const MODES: { v: PermissionMode; label: string }[] = [
   { v: 'bypassPermissions', label: 'Bypass permissions' },
 ]
 
+// The session's names: in Claude Code it is "codinger-<id>". A click copies that name.
+function IdChip({ m }: { m: SessionMeta }) {
+  const [copied, setCopied] = useState(false)
+  const name = `codinger-${localId(m.id)}`
+  const copy = () => { void navigator.clipboard.writeText(name); setCopied(true); setTimeout(() => setCopied(false), 1200) }
+  return <button className="link mono head-id" title={`Codinger session ${localId(m.id)}\nClaude Code: name ${name}, session ${m.claudeSessionId}\nClick to copy the name`} onClick={copy}>{copied ? 'copied' : name}</button>
+}
+
 export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.ReactNode }) {
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(m.title)
@@ -103,6 +111,7 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
           <span className={`status-pill st-${m.status}`}>{m.compacting ? 'compacting' : STATUS_LABEL[m.status]}</span>
           <span className="muted mono path" title={m.cwd}>{'\u200E' + shortPath(m.cwd) + '\u200E'}</span>
           {model && <span className="muted" title={m.model?.includes('-') ? undefined : 'Model used for this choice last time'}>{model}</span>}
+          <IdChip m={m} />
           {parent && <button className="link head-parent" title="Show the session that started this one" onClick={() => select(parent.id)}>from {parent.title}</button>}
         </div>
       </div>

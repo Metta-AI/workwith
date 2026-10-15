@@ -77,7 +77,8 @@ type State = {
   web: boolean                       // this page is web.codinger.app
   email: string | null               // signed in there as
   self: string                       // this machine's name on web.codinger.app, once connected
-  remoteOpen: boolean                // the Remote sessions section is open
+  sideTab: 'local' | 'remote'        // the sidebar's tab, on a machine's own page
+  collapsed: string[]                // machines whose sessions you hid in the sidebar
   machineOrder: string[]             // other machines, in the order you dragged them to
 }
 
@@ -108,7 +109,8 @@ export const state = {
   web: false,
   email: null,
   self: '',
-  remoteOpen: saved('codinger.remoteOpen', true),
+  sideTab: saved('codinger.sideTab', 'local'),
+  collapsed: saved('codinger.collapsed', []),
   machineOrder: saved('codinger.machineOrder', []),
 } as Partial<State> as State
 
@@ -182,7 +184,8 @@ export function changed() {
     localStorage.setItem('codinger.selected', JSON.stringify(state.selected))
     localStorage.setItem('codinger.showSteps', JSON.stringify(state.showSteps))
     localStorage.setItem('codinger.preview', JSON.stringify(state.preview))
-    localStorage.setItem('codinger.remoteOpen', JSON.stringify(state.remoteOpen))
+    localStorage.setItem('codinger.sideTab', JSON.stringify(state.sideTab))
+    localStorage.setItem('codinger.collapsed', JSON.stringify(state.collapsed))
     localStorage.setItem('codinger.machineOrder', JSON.stringify(state.machineOrder))
   }, 300)
 }
