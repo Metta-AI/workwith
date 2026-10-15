@@ -101,7 +101,7 @@ export const state = {
   composer: saved('codinger.composer', {}),
   focus: null,
   showArchived: false,
-  sideOpen: true,
+  sideOpen: false,
   error: null,
   lightbox: null,
   showSteps: saved('codinger.showSteps', false),
@@ -341,6 +341,7 @@ function onServer(m: ServerMsg, machine: string) {
       if (!machine) { state.restarting = false; onRemote(m.remote) }
       // A selected session that is gone, or a lead: the latest one instead.
       if (!state.sessions.some((s) => s.id === state.selected && s.kind === 'worker')) state.selected = fallback()
+      if (!state.selected) state.sideOpen = true  // nothing to show: on a phone, the sessions
       break
     case 'sessions': M.sessions = own(m.sessions); break
     case 'settings':
@@ -416,10 +417,11 @@ export async function loadEvents(id: string, force = false) {
   } finally { loading.delete(id) }
 }
 
-export function select(id: string) {
+// hideSide: on a phone, a session you pick covers the sidebar; a close or a fallback leaves it as it is.
+export function select(id: string, hideSide = true) {
   state.selected = id
   state.page = null
-  state.sideOpen = false
+  if (hideSide) state.sideOpen = false
   changed()
   if (!id) return
   void loadEvents(id)
@@ -446,7 +448,7 @@ export const selectFallback = () => select(fallback())
 
 export async function closeSession(id: string) {
   await api(`/api/sessions/${id}`, 'PATCH', { archived: true })
-  if (state.selected === id) select(fallback())
+  if (state.selected === id) select(fallback(), false)
 }
 
 // ---- drafts -------------------------------------------------------------------------

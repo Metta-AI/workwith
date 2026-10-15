@@ -18,7 +18,7 @@ function App() {
   const [side, setSide] = useWidth('sidebar', 260)
   // The lead agent is hidden for now: only workers show.
   const sel = st.sessions.find((s) => s.id === st.selected && s.kind === 'worker')
-  useEffect(() => { if (sel) select(sel.id) }, [sel?.id])
+  useEffect(() => { if (sel) select(sel.id, false) }, [sel?.id])
 
   // A tab title that says when something needs you.
   const needs = st.sessions.filter((s) => ['permission', 'asking', 'waiting'].includes(s.status)).length
@@ -149,20 +149,54 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && state.li
 for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false })
 document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault() }, { passive: false })
 
-// On a phone a swipe from the left edge opens the sessions instead of going back a page.
+// On a phone a swipe from the left edge pulls the sessions out under the finger, instead of going back a page.
+// They open if you let go past a third of the way or with a flick to the right; else they go back.
 const phone = matchMedia('(max-width: 720px)')
 const openSide = () => { if (!state.sideOpen) { state.sideOpen = true; changed() } }
-let edge: { x: number; y: number } | null = null
+const sideEl = () => document.querySelector<HTMLElement>('.sidebar')
+// Show the sidebar with its right edge at x, or (null) give it back to the stylesheet, which animates it to open or closed.
+function pull(x: number | null) {
+  const el = sideEl()
+  if (!el) return
+  if (x === null) { el.style.transform = el.style.transition = el.style.visibility = ''; return }
+  el.style.transition = 'none'
+  el.style.visibility = 'visible'
+  el.style.transform = `translateX(${Math.min(0, x - el.offsetWidth)}px)`
+}
+let edge: { x0: number; y0: number; x: number; t: number; v: number; drag: boolean } | null = null
 document.addEventListener('touchstart', (e) => {
   const t = e.touches[0]
-  edge = phone.matches && e.touches.length === 1 && t.clientX < 20 && !(e.target as Element).closest?.('button, a, input, textarea, select') ? { x: t.clientX, y: t.clientY } : null
+  edge = phone.matches && !state.sideOpen && e.touches.length === 1 && t.clientX < 20 && !(e.target as Element).closest?.('button, a, input, textarea, select')
+    ? { x0: t.clientX, y0: t.clientY, x: t.clientX, t: e.timeStamp, v: 0, drag: false } : null
   if (edge) e.preventDefault()  // so Safari does not start its own back swipe, where it lets a page stop it
 }, { passive: false })
 document.addEventListener('touchmove', (e) => {
   if (!edge) return
-  const dx = e.touches[0].clientX - edge.x, dy = e.touches[0].clientY - edge.y
-  if (dx > 40 && dx > Math.abs(dy) * 1.5) { edge = null; openSide() }
+  const t = e.touches[0], dx = t.clientX - edge.x0, dy = t.clientY - edge.y0
+  if (!edge.drag) {
+    if (Math.abs(dy) > 10 && Math.abs(dy) > dx) { edge = null; return }  // a move up or down, not a pull
+    if (dx < 10) return
+    edge.drag = true
+  }
+  // The speed in px/ms, smoothed over the last moves.
+  const dt = e.timeStamp - edge.t
+  if (dt > 0) edge.v = 0.6 * (t.clientX - edge.x) / dt + 0.4 * edge.v
+  edge.x = t.clientX
+  edge.t = e.timeStamp
+  pull(edge.x)
 }, { passive: true })
+const release = (e: TouchEvent) => {
+  const d = edge
+  edge = null
+  if (!d?.drag) return
+  const w = sideEl()?.offsetWidth ?? innerWidth
+  const v = e.timeStamp - d.t < 100 ? d.v : 0  // a finger that stopped before it let go has no flick
+  const open = e.type === 'touchend' && (v > 0.3 || (d.x > w / 3 && v > -0.3))
+  pull(null)
+  if (open) openSide()
+}
+document.addEventListener('touchend', release)
+document.addEventListener('touchcancel', release)
 // Where Safari's back swipe still happens, it goes back to an entry of our own: open the sessions and add it again.
 // The entry goes in at the first tap, as Safari can skip entries that a page adds before the user does anything.
 document.addEventListener('click', () => { if (phone.matches) history.pushState({ side: true }, '') }, { once: true })
