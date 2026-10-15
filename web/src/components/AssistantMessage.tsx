@@ -12,7 +12,7 @@ import DOMPurify from 'dompurify'
 import { parseAskBody, type Ask } from '../../../shared/asks.ts'
 import { askOf, commandOf, draftOf, isTask, segmentsOf, type Segment } from '../../../shared/blocks.ts'
 import type { Anchor } from '../../../shared/types.ts'
-import { marked, renderInline, renderText } from '../util.ts'
+import { marked, renderInline, renderText, served } from '../util.ts'
 import { anchorFromRange, rangesFor, setHighlights } from '../anchoring.ts'
 import { render as renderLive } from '../mdlive.ts'
 import { addDraft, api, changed, dismissItem, draftsOf, markDone, removeDraft, reviveItem, setDoneText, state, uid, undismissItem, updateDraft, useStore, type AnswerDraft, type DoneDraft, type NoteDraft } from '../store.ts'
@@ -83,7 +83,7 @@ function piecesOf(text: string): Piece[] {
         return
       }
       const list = Object.assign([t], { links: tokens.links })
-      out.push({ kind: 'html', block: base + i, html: DOMPurify.sanitize(marked.parser(list) as string) })
+      out.push({ kind: 'html', block: base + i, html: served(DOMPurify.sanitize(marked.parser(list) as string)) })
     })
     base += tokens.length
     return out

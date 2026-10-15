@@ -908,6 +908,19 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .session-body.preview-wide > .session-main { display: none; }
 .artifact-version { display: flex; align-items: center; gap: 8px; padding: 5px 10px; font-size: calc(12.5px * var(--fs, 1)); background: color-mix(in srgb, var(--warn) 14%, transparent); border-bottom: 1px solid var(--line); }
 .artifact-line .tool-sum .muted { color: inherit; opacity: .75; }
+.media-line a.tool-line { text-decoration: none; }
+.media-line a.tool-line:not([href]) { cursor: default; }
+.media-line .tool-sum .muted { color: inherit; opacity: .75; }
+.media-body { margin: 4px 0 8px 30px; }
+.media-img { display: block; max-width: 100%; max-height: 480px; border-radius: 6px; border: 1px solid var(--line); cursor: zoom-in; }
+.media-video { display: block; max-width: 100%; max-height: 480px; border-radius: 6px; background: #000; }
+.media-audio { display: block; width: min(100%, 440px); }
+.media-frame { display: block; width: 100%; height: 520px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.media-embed { height: auto; max-width: 640px; aspect-ratio: 16 / 9; background: #000; }
+/* Media in an agent's message (util.ts: mediaHtml) fits the column. */
+.md-block img { max-width: 100%; max-height: 480px; border-radius: 6px; }
+.md-block .media-video, .md-block .media-audio, .md-block .media-frame { margin: 6px 0; }
+.media-missing { color: var(--muted); font-style: italic; }
 .artifact-history li.on .version { font-weight: 600; }
 .artifact-history .version { padding: 0; margin-right: 4px; }
 .artifact-top .grow { flex: 1; }

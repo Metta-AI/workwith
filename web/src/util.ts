@@ -3,14 +3,48 @@ import { markedHighlight } from 'marked-highlight'
 import { highlight } from './highlight.ts'
 import DOMPurify from 'dompurify'
 import type { ImageRef } from '../../shared/types.ts'
+import { MEDIA_URL, embedOf, mediaKind } from '../../shared/media.ts'
 import { api, media } from './store.ts'
 
 export const marked = new Marked(
   markedHighlight({ emptyLangClass: 'hljs', langPrefix: 'hljs language-', highlight: (code, lang) => highlight(code, lang) }),
   { gfm: true, breaks: false },
-  // A web URL in inline code is a link too (the hook below opens it in a new tab).
-  { renderer: { codespan: ({ text }) => /^https?:\/\/\S+$/i.test(text) && `<a href="${escapeHtml(text).replace(/"/g, '&quot;')}"><code>${escapeHtml(text)}</code></a>` } },
+  {
+    renderer: {
+      // A web URL in inline code is a link too (the hook below opens it in a new tab).
+      codespan: ({ text }) => /^https?:\/\/\S+$/i.test(text) && `<a href="${escapeHtml(text).replace(/"/g, '&quot;')}"><code>${escapeHtml(text)}</code></a>`,
+      image: ({ href, text }) => mediaHtml(href, text),
+    },
+  },
 )
+
+// A markdown image that is not one: a video, audio, a PDF, a page or another file an agent
+// kept (server/media.ts), or a YouTube or Vimeo address. false: a plain image.
+function mediaHtml(href: string, alt: string): string | false {
+  const src = escapeHtml(href).replace(/"/g, '&quot;'), label = escapeHtml(alt).replace(/"/g, '&quot;')
+  const embed = embedOf(href)
+  if (embed) return `<iframe class="media-frame media-embed" src="${embed}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen aria-label="${label}"></iframe>`
+  // A local path not kept yet: while the message streams in, or no such file.
+  if (!/^(https?:|data:|\/api\/)/i.test(href)) return `<span class="media-missing">${escapeHtml(alt || href)}</span>`
+  switch (mediaKind(href)) {
+    case 'video': return `<video class="media-video" src="${src}" controls preload="metadata" playsinline></video>`
+    case 'audio': return `<audio class="media-audio" src="${src}" controls preload="metadata"></audio>`
+    case 'pdf': return `<iframe class="media-frame" src="${src}" aria-label="${label}"></iframe>`
+    case 'page': return `<iframe class="media-frame" src="${src}" sandbox="allow-scripts allow-popups" aria-label="${label}"></iframe>`
+    case 'file': return MEDIA_URL.test(href) ? `<a class="media-file" href="${src}" target="_blank">${escapeHtml(alt || 'Open the file')}</a>` : false
+    default: return false
+  }
+}
+
+// Frames only from mediaHtml: a kept PDF or page, or a YouTube or Vimeo player.
+const FRAME = /^(\/api\/media\/[0-9a-f]{24}\.(pdf|html?)|https:\/\/www\.youtube-nocookie\.com\/embed\/[\w-]+|https:\/\/player\.vimeo\.com\/video\/\d+)$/
+DOMPurify.addHook('uponSanitizeElement', (node, data) => {
+  // Set for each frame: the list stays the same for later calls.
+  if (data.tagName === 'iframe') data.allowedTags.iframe = FRAME.test((node as Element).getAttribute?.('src') ?? '')
+})
+DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
+  if (node.tagName === 'IFRAME' && ['allow', 'allowfullscreen', 'sandbox'].includes(data.attrName)) data.forceKeepAttr = true
+})
 
 // Web links open in a new tab, everywhere markdown is rendered (all of it goes through DOMPurify).
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
@@ -20,8 +54,8 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   }
 })
 
-// Images the server keeps (/api/images/…) come from the current session's machine.
-const served = (html: string) => html.replace(/(<img [^>]*src=")(\/api\/[^"]*)/g, (_, a: string, u: string) => a + media(u))
+// Images and files the server keeps (/api/images/…, /api/media/…) come from the current session's machine.
+export const served = (html: string) => html.replace(/(<(?:img|video|audio|iframe|a) [^>]*(?:src|href)=")(\/api\/(?:images|media)\/[^"]*)/g, (_, a: string, u: string) => a + media(u))
 
 export function renderMd(md: string): string {
   return served(DOMPurify.sanitize(marked.parse(md, { async: false }) as string))

@@ -168,6 +168,18 @@ you hear that it ended: "next" (the default) with the next message to you; "turn
 your own when you wait on it; "interrupt" only when its end changes what you are doing. Stop
 a task with stop_task when you no longer need it; list_tasks shows yours.
 
+## Show the user images and files
+To show the user an image, a screenshot, a video, audio, a PDF or another file, put it in
+your message as a markdown image: \`![caption](path)\`. Use an absolute path, a path relative
+to your working directory, or an http(s) address. Put text before and after it as you need.
+Videos, audio, PDFs and HTML pages play or show in place; other files show as a link; a
+YouTube or Vimeo address plays in place. Codinger copies a local file when your message
+arrives, so it still shows after you change or delete the file. To show something in the
+middle of your work, before your message, call show_file. Show a screenshot each time it
+helps the user see a result. For a web page, use a headless browser, for example Chrome with
+\`--headless=new --user-data-dir=<a temp folder> --screenshot=shot.png --window-size=1280,800
+<url>\`. For the screen, use \`screencapture -x shot.png\` on macOS.
+
 ## Other sessions
 Other Codinger sessions run beside you, each a full Claude Code session with a name. To
 delegate a large, separate piece of work, start a child with spawn_session; for a quick search,

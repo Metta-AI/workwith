@@ -31,12 +31,13 @@ function homeData(): string {
 }
 const EVENTS = path.join(DATA, 'events')
 export const IMAGES = path.join(DATA, 'images')
+export const MEDIA = path.join(DATA, 'media')
 export const LEAD_DIR = path.join(DATA, 'lead')
 const PROMPTS = path.join(DATA, 'prompts')
 // The lead agent was called the master until October 2026. Move its directory once.
 const OLD_LEAD_DIR = path.join(DATA, 'master')
 if (fs.existsSync(OLD_LEAD_DIR) && !fs.existsSync(LEAD_DIR)) fs.renameSync(OLD_LEAD_DIR, LEAD_DIR)
-for (const d of [DATA, EVENTS, IMAGES, LEAD_DIR, PROMPTS]) fs.mkdirSync(d, { recursive: true })
+for (const d of [DATA, EVENTS, IMAGES, MEDIA, LEAD_DIR, PROMPTS]) fs.mkdirSync(d, { recursive: true })
 export const LEAD_NOTES = path.join(LEAD_DIR, 'LEAD_NOTES.md')
 // The lead's notes were NOTES.md until October 2026. Move them once (their history moves in index.ts).
 export const OLD_LEAD_NOTES = path.join(LEAD_DIR, 'NOTES.md')

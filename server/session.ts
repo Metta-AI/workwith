@@ -18,6 +18,7 @@ import type { Block, Event, Part, PermissionMode, SessionMeta, Status, Usage } f
 import { AUTH_ERROR, CLAUDE, childEnv } from './auth.ts'
 import { entryBefore } from './history.ts'
 import { Proc } from './proc.ts'
+import { keepMediaIn } from './media.ts'
 import { addSpend, costOf } from '../shared/prices.ts'
 import { appendEvent, imageFile, knownWindow, learnModel, learnWindow, promptFile, readEvents, writeEvents } from './store.ts'
 
@@ -501,7 +502,8 @@ export class Session {
         const a = msg.message ?? {}
         const blocks: Block[] = []
         for (const b of a.content ?? []) {
-          if (b.type === 'text') blocks.push({ type: 'text', text: b.text })
+          // Images of local files in the text point at kept copies (server/media.ts).
+          if (b.type === 'text') blocks.push({ type: 'text', text: keepMediaIn(b.text, m.cwd) })
           else if (b.type === 'thinking' && b.thinking) blocks.push({ type: 'thinking', text: b.thinking })
           else if (b.type === 'tool_use') blocks.push({ type: 'tool_use', id: b.id, name: b.name, input: b.input })
         }

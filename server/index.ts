@@ -42,6 +42,8 @@ import { startUpdates, updateNow, updatePrompt, updateStatus } from './update.ts
 import {
   DATA, LEAD_DIR, LEAD_NOTES, OLD_LEAD_NOTES, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, leadRenamed, resolveModel, loadSessions, promptFile, loadSettings, saveImage, saveSessions, saveSettings,
 } from './store.ts'
+import { embedOf, mediaKind, mediaType } from '../shared/media.ts'
+import { MEDIA_MAX, MEDIA_PART, keepMedia, mediaFile } from './media.ts'
 import { ARTIFACTS, artifactsChanged, artifactsPrompt, checkArtifact, listArtifacts, noteTool, publish, reportOf, showArtifact, startHost, typeOf, watchArtifacts } from './artifacts.ts'
 import { connectCallback, connectUrl, disconnect as prolificaDisconnect, prolificaState } from './prolifica.ts'
 
@@ -201,7 +203,7 @@ function launchFor(meta: SessionMeta): () => Launch {
         '--mcp-config', JSON.stringify({ mcpServers: { codinger: { type: 'http', url: `http://127.0.0.1:${PORT}/mcp/${MCP_TOKEN}/look/${meta.id}` } } }),
         // Started with your MCP servers off: only Codinger's, until one is turned on (server/mcpservers.ts).
         ...(meta.mcp ? ['--strict-mcp-config'] : []),
-        '--allowedTools', `mcp__codinger__set_look,mcp__codinger__set_title,mcp__codinger__start_task,mcp__codinger__stop_task,mcp__codinger__list_tasks,mcp__codinger__show_artifact,${MAIL_TOOLS.map((t) => `mcp__codinger__${t}`).join(',')}${meta.mcp && settings.mcpClaude !== false ? ',mcp__codinger__use_mcp_server' : ''}`,
+        '--allowedTools', `mcp__codinger__set_look,mcp__codinger__set_title,mcp__codinger__start_task,mcp__codinger__stop_task,mcp__codinger__list_tasks,mcp__codinger__show_artifact,mcp__codinger__show_file,${MAIL_TOOLS.map((t) => `mcp__codinger__${t}`).join(',')}${meta.mcp && settings.mcpClaude !== false ? ',mcp__codinger__use_mcp_server' : ''}`,
         // Artifacts live in one folder for every session (server/artifacts.ts).
         '--add-dir', ARTIFACTS,
       ],
@@ -665,6 +667,43 @@ function artifactTool(id: string): Tool {
   }
 }
 
+// ---- files an agent shows the user (shared/media.ts) ----
+
+function fileTool(id: string): Tool {
+  return {
+    name: 'show_file',
+    description: 'Show the user a file or a web address in the conversation: an image (a screenshot), a video, audio, a PDF, a web page, or any other file to open or download. A file on this machine is copied when you call this, so it still shows after you change or delete it.',
+    inputSchema: {
+      type: 'object', required: ['path'],
+      properties: {
+        path: { type: 'string', description: 'A file path (absolute, or relative to your working directory) or an http(s) address' },
+        caption: { type: 'string', description: 'A short line shown with it' },
+      },
+    },
+    run: async (args) => {
+      const s = get(id)
+      const p = String(args?.path ?? '').trim()
+      if (!p) return 'Give the path of a file, or an http(s) address.'
+      if (/^[a-z][\w+.-]*:/i.test(p) && !/^[a-z]:[\\/]/i.test(p)) {
+        let u: URL
+        try { u = new URL(p) } catch { return 'That is not a full address.' }
+        if (!/^https?:$/.test(u.protocol)) return 'Only http(s) addresses and files on this machine can be shown.'
+        const kind = embedOf(u.href) ? 'video' : mediaKind(u.pathname)
+        return `Shown to the user in the conversation: ${u.href} (${kind === 'file' ? 'as a link' : kind}).`
+      }
+      const file = path.resolve(s.meta.cwd, expandHome(p))
+      let st: fs.Stats
+      try { st = await fs.promises.stat(file) } catch { return `There is no file ${file}.` }
+      if (!st.isFile()) return `${file} is not a file.`
+      if (st.size > MEDIA_MAX) return `${file} is ${Math.round(st.size / 1048576)} MB: the limit is ${MEDIA_MAX / 1048576} MB. Make a smaller copy and show that.`
+      const url = keepMedia(file, st)
+      await mediaFile(url)
+      const size = st.size < 1048576 ? `${Math.max(1, Math.round(st.size / 1024))} KB` : `${(st.size / 1048576).toFixed(1)} MB`
+      return `Shown to the user in the conversation: ${file} (${mediaKind(file)}, ${size}).\nurl: ${url}`
+    },
+  }
+}
+
 const tools: Tool[] = [
   {
     name: 'list_sessions',
@@ -877,6 +916,32 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     const file = imageFile(url.pathname)
     if (!file || !fs.existsSync(file)) throw new HttpError(404, 'No such image')
     res.writeHead(200, { 'content-type': `image/${path.extname(file).slice(1).replace('jpg', 'jpeg')}`, 'cache-control': 'max-age=31536000, immutable' })
+    fs.createReadStream(file).pipe(res)
+    return
+  }
+  if (a === 'media' && method === 'GET') {
+    // Kept by content, so never changes. A page or an SVG is sandboxed: it does not run as Codinger.
+    const file = await mediaFile(url.pathname)
+    if (!file || !fs.existsSync(file)) throw new HttpError(404, 'No such file')
+    const kind = mediaKind(file)
+    const size = fs.statSync(file).size
+    const head = {
+      'content-type': mediaType(file), 'x-content-type-options': 'nosniff', 'cache-control': 'max-age=31536000, immutable', 'accept-ranges': 'bytes',
+      ...(kind === 'page' ? { 'content-security-policy': 'sandbox allow-scripts allow-popups' } : kind === 'image' || kind === 'file' ? { 'content-security-policy': 'sandbox' } : {}),
+      ...(kind === 'file' && mediaType(file) === 'application/octet-stream' ? { 'content-disposition': 'attachment' } : {}),
+    }
+    // Video and audio ask for parts (Safari plays nothing without them). An open-ended part is
+    // at most MEDIA_PART: through web.codinger.app, a whole answer is one WebSocket message.
+    const r = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ''))
+    if (r && (r[1] || r[2])) {
+      const start = r[1] ? Number(r[1]) : Math.max(0, size - Number(r[2]))
+      const end = Math.min(r[1] && r[2] ? Number(r[2]) : size - 1, size - 1, start + MEDIA_PART - 1)
+      if (start > end || start >= size) { res.writeHead(416, { 'content-range': `bytes */${size}` }); res.end(); return }
+      res.writeHead(206, { ...head, 'content-range': `bytes ${start}-${end}/${size}`, 'content-length': end - start + 1 })
+      fs.createReadStream(file, { start, end }).pipe(res)
+      return
+    }
+    res.writeHead(200, { ...head, 'content-length': size })
     fs.createReadStream(file).pipe(res)
     return
   }
@@ -1314,7 +1379,7 @@ const server = http.createServer(async (req, res) => {
       return await handleMcp(req, res, lead ? [...tools, lookTool(lead.meta.id)] : tools)
     }
     const look = url.pathname.startsWith(`/mcp/${MCP_TOKEN}/look/`) && url.pathname.split('/').pop()
-    if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look), mcpTool(look), artifactTool(look), ...taskTools(look), ...mailTools(look)])
+    if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look), mcpTool(look), artifactTool(look), fileTool(look), ...taskTools(look), ...mailTools(look)])
     // The web UI asks this first; here it is a machine's own page.
     if (url.pathname === '/_remote/whoami') return send(res, 200, { web: false })
     if (url.pathname.startsWith('/api/remote/m/') || url.pathname.startsWith('/api/remote/machines')) return await remoteProxy(req, res, url)

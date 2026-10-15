@@ -187,6 +187,9 @@ function disconnect() {
   ws?.close(1000, 'Turned off')
 }
 
+// base64 makes it a third bigger.
+const MAX_BODY = 20 * 1024 * 1024
+
 // One HTTP request, replayed here.
 function request(local: string, m: Extract<HubMsg, { t: 'req' }>): Promise<MachineMsg> {
   return new Promise((resolve) => {
@@ -199,7 +202,10 @@ function request(local: string, m: Extract<HubMsg, { t: 'req' }>): Promise<Machi
       res.on('end', () => {
         const headers: Record<string, string> = {}
         for (const h of RES_HEADERS) { const v = res.headers[h]; if (v) headers[h] = String(v) }
-        resolve({ t: 'res', id: m.id, status: res.statusCode ?? 502, headers, body: Buffer.concat(parts).toString('base64') })
+        const body = Buffer.concat(parts)
+        // The answer goes as one WebSocket message, and the hub closes the socket on one over 32 MiB.
+        if (body.length > MAX_BODY) return resolve({ t: 'res', id: m.id, status: 413, headers: { 'content-type': 'text/plain' }, body: Buffer.from(`Too big to send through web.codinger.app (${Math.round(body.length / 1048576)} MB; the limit is ${MAX_BODY / 1048576} MB). Open it on the machine.`).toString('base64') })
+        resolve({ t: 'res', id: m.id, status: res.statusCode ?? 502, headers, body: body.toString('base64') })
       })
     })
     r.on('error', (e) => resolve({ t: 'res', id: m.id, status: 502, headers: { 'content-type': 'text/plain' }, body: Buffer.from(e.message).toString('base64') }))

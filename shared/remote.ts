@@ -23,7 +23,8 @@ export type MachineMsg =
 
 // Request headers that go through to the machine, and response headers that come back.
 export const REQ_HEADERS = ['content-type', 'accept', 'if-none-match', 'range']
-export const RES_HEADERS = ['content-type', 'cache-control', 'etag', 'content-disposition', 'content-range', 'accept-ranges', 'last-modified']
+// The sandbox of a page an agent shows (server/index.ts: /api/media, /file) must come through too.
+export const RES_HEADERS = ['content-type', 'cache-control', 'etag', 'content-disposition', 'content-range', 'accept-ranges', 'last-modified', 'content-security-policy', 'x-content-type-options']
 
 // A machine you connected, as web.codinger.app/_remote/machines lists it.
 // name: fixed, it goes in /m/<name>/; label: the name the sidebar shows, if you gave one.

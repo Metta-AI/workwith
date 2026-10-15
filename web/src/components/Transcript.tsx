@@ -16,6 +16,7 @@ import { minutes } from '../cache.ts'
 import { AgentsIcon, MailIcon, BlockIcon, CheckIcon, ChevronIcon, DashIcon, XIcon, FileIcon, GlobeIcon, ListIcon, PencilIcon, SearchIcon, OpenIcon, TerminalIcon, TimerIcon, ToolIcon, TrashIcon } from './Icons.tsx'
 import { shortPath } from './DirPicker.tsx'
 import { ArtifactLine, SHOW_ARTIFACT } from './Artifacts.tsx'
+import { MediaLine, SHOW_FILE } from './MediaLine.tsx'
 
 type PermEvent = Extract<Event, { t: 'permission' }>
 type Folded = {
@@ -245,7 +246,7 @@ function items(events: Event[], f: Folded, steps: Set<string>): Item[] {
     switch (e.t) {
       case 'assistant':
         // Messages to other sessions stay in view, out of the folded activity.
-        e.blocks.forEach((b, i) => out.push({ key: `${e.seq}.${i}`, e, block: b, i, activity: b.type === 'tool_use' ? !MAIL_TOOL[b.name] && b.name !== SHOW_ARTIFACT : b.type !== 'text' || steps.has(`${e.seq}.${i}`) }))
+        e.blocks.forEach((b, i) => out.push({ key: `${e.seq}.${i}`, e, block: b, i, activity: b.type === 'tool_use' ? !MAIL_TOOL[b.name] && b.name !== SHOW_ARTIFACT && b.name !== SHOW_FILE : b.type !== 'text' || steps.has(`${e.seq}.${i}`) }))
         break
       case 'permission': {
         const resolved = f.resolved.has(e.requestId)
@@ -405,6 +406,8 @@ function BlockView({ sid, b, msg, f, synthetic }: { sid: string; b: Block; msg: 
   const perm = f.permOf.get(b.id)
   // Where an artifact was shown: a line of its own, which shows that version again.
   if (b.name === SHOW_ARTIFACT && !perm) return <ArtifactLine sid={sid} b={b} result={f.results.get(b.id)} />
+  // What an agent shows you (an image, a video, a file): in view, under its line.
+  if (b.name === SHOW_FILE && !perm) return <MediaLine sid={sid} b={b} result={f.results.get(b.id)} />
   return <ToolCall b={b} result={f.results.get(b.id)} resolution={perm ? f.resolved.get(perm.requestId) : undefined} />
 }
 
