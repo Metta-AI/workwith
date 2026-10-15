@@ -551,6 +551,17 @@ function RunCard({ c, card, block, title, command, ready }: { c: Ctx; card: stri
   const [done, setDone] = useState('')
   const flash = (s: string) => { setDone(s); setTimeout(() => setDone(''), 2000) }
   const run = Object.values(st.runs).findLast((r) => r.sid === c.sid && r.card === card)
+  // One run at a time: off while it starts and runs, and after it succeeds; a failure offers it again.
+  const [starting, setStarting] = useState(false)
+  const failed = run?.code != null && run.code !== 0
+  const off = starting || (!!run && !failed)
+  const start = () => {
+    setStarting(true)
+    api<{ token: string }>(`/api/sessions/${c.sid}/run`, 'POST', { command }).then(({ token }) => {
+      state.runs[token] = { sid: c.sid, card, command, ...(c.within ? { item: { key: c.within.key, label: c.within.label } } : {}) }
+      changed()
+    }).finally(() => setStarting(false))
+  }
   return (
     <div className="run-card">
       {/* Its title and command are one passage, to comment on or react to like a paragraph. */}
@@ -561,11 +572,8 @@ function RunCard({ c, card, block, title, command, ready }: { c: Ctx; card: stri
       {ready && command && (
         <div className="run-actions" onMouseUp={(e) => e.stopPropagation()}>
           {(st.platform === 'darwin' || st.platform === 'win32') && (
-            <button className="primary" onClick={() => api<{ token: string }>(`/api/sessions/${c.sid}/run`, 'POST', { command }).then(({ token }) => {
-              state.runs[token] = { sid: c.sid, card, command, ...(c.within ? { item: { key: c.within.key, label: c.within.label } } : {}) }
-              changed()
-            })}>
-              <TerminalIcon size={13} /> Run in Terminal
+            <button className="primary" disabled={off} onClick={start}>
+              <TerminalIcon size={13} /> {failed ? 'Run again' : 'Run in Terminal'}
             </button>
           )}
           <button onClick={() => navigator.clipboard.writeText(command).then(() => flash('Copied'))}>Copy</button>
