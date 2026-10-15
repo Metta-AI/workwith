@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import { useEffect } from 'react'
-import { api, changed, globalId, select, start, state, useStore, currentMachine, labelOf, machineOf } from './store.ts'
+import { api, changed, globalId, select, start, state, useStore, currentMachine, labelOf, localId, machineOf } from './store.ts'
 import type { SessionMeta } from '../../shared/types.ts'
 import { useState } from 'react'
 import { Sidebar } from './components/Sidebar.tsx'
@@ -160,6 +160,18 @@ document.addEventListener('click', (e) => {
   e.preventDefault()
   state.lightbox = img.src
   changed()
+})
+// A link to another session in a message (util.ts) shows it: the id is on the machine of the
+// message's session, and may be cut short.
+document.addEventListener('click', (e) => {
+  const a = (e.target as Element | null)?.closest?.<HTMLElement>('a.session-link')
+  if (!a) return
+  e.preventDefault()
+  const id = a.dataset.session!, from = a.closest<HTMLElement>('[data-sid]')?.dataset.sid
+  const machine = from ? machineOf(from) : currentMachine()
+  const s = state.sessions.find((x) => x.id === globalId(machine, id))
+    ?? state.sessions.find((x) => machineOf(x.id) === machine && localId(x.id).startsWith(id) && id.length >= 6)
+  if (s) select(s.id)
 })
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && state.lightbox) { state.lightbox = null; changed() } })
 // No zoom on a phone: iOS Safari ignores user-scalable=no in the viewport tag, so stop the pinch here.

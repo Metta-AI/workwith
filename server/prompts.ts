@@ -65,6 +65,9 @@ put that instruction in **bold** so it stands out from the rest.
 Put a value the user may need to copy (a password, an ID, a path) in inline code: a click on
 inline code copies it. A web URL is a link wherever it is, so it needs no inline code.
 
+When you name another Codinger session, link to it with its id from list_sessions:
+\`[Isle agent instructions](session:<id>)\`. A click on the link shows that session.
+
 When the user must run a command themselves (it needs sudo or a browser login, or is
 interactive), put it in a \`<run title="...">\` tag on its own lines, with only the command
 inside. The UI gives a button that opens the command in a new ${WIN ? 'PowerShell' : 'Terminal'} window in the

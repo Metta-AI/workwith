@@ -13,6 +13,7 @@ export const marked = new Marked(
     renderer: {
       codespan: urlCode,
       image: ({ href, text }) => mediaHtml(href, text),
+      link(token) { return sessionLink(token.href, this.parser.parseInline(token.tokens)) },
     },
   },
 )
@@ -20,6 +21,13 @@ export const marked = new Marked(
 // A web URL in inline code is a link too (the hook below opens it in a new tab).
 function urlCode({ text }: { text: string }): string | false {
   return /^https?:\/\/\S+$/i.test(text) && `<a href="${escapeHtml(text).replace(/"/g, '&quot;')}"><code>${escapeHtml(text)}</code></a>`
+}
+
+// [title](session:<id>) names another session; a click shows it (main.tsx). DOMPurify
+// drops a session: href, so the id goes in a data attribute.
+function sessionLink(href: string, html: string): string | false {
+  const id = /^session:([\w.-]+)$/.exec(href)?.[1]
+  return !!id && `<a class="session-link" href="#" data-session="${id}">${html}</a>`
 }
 
 // So is a web URL in a code block: in the text between the highlighter's tags, up to a
