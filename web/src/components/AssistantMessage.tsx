@@ -322,7 +322,7 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     let held = false
     const y0 = e.clientY
     const open = () => { if (!held) { held = true; setRow(p.id) } }
-    const timer = setTimeout(open, 300)
+    const timer = setTimeout(open, 100)
     const move = (m: PointerEvent) => { if (y0 - m.clientY > 4) open() }
     const up = (u: PointerEvent) => {
       document.removeEventListener('pointerup', up)
@@ -357,11 +357,11 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
       {row === p.id && (
         <div className="ack-pop" ref={pop}>
         {/* Takes your reactions off this passage: outside the row, so it can't be mistaken for an emoji. */}
-        {on.size > 0 && <button className="ack-clear" data-emoji="remove" title="Remove your reactions" onClick={() => toggle('remove', p)}><XIcon size={14} /></button>}
+        {on.size > 0 && <button className="ack-clear" data-emoji="remove" onClick={() => toggle('remove', p)}><XIcon size={14} /></button>}
         <div className="ack-row">
-          {[...new Set([...on, ...topEmoji(8)])].slice(0, Math.max(8, on.size)).map((e) => <button key={e} data-emoji={e} className={on.has(e) ? 'on' : ''} title={on.has(e) ? `Remove ${e}` : `Add ${e}`} onClick={() => toggle(e, p)}>{e}</button>)}
-          <button className="more-emoji" data-emoji="+" title="Search emoji" onClick={() => toggle('+', p)}>+</button>
-          <button className="more-emoji" data-emoji="comment" title="Comment" onClick={() => toggle('comment', p)}><CommentIcon size={14} /></button>
+          {[...new Set([...on, ...topEmoji(8)])].slice(0, Math.max(8, on.size)).map((e) => <button key={e} data-emoji={e} className={on.has(e) ? 'on' : ''} onClick={() => toggle(e, p)}>{e}</button>)}
+          <button className="more-emoji" data-emoji="+" onClick={() => toggle('+', p)}>+</button>
+          <button className="more-emoji" data-emoji="comment" onClick={() => toggle('comment', p)}><CommentIcon size={14} /></button>
         </div>
         </div>
       )}

@@ -242,7 +242,7 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
         />
       ) : n.kind === 'badge' ? (
         <button
-          key={n.id} data-id={n.id} className={`react-badge${n.draft ? ' draft' : ''}`} title={n.draft ? 'Remove' : undefined}
+          key={n.id} data-id={n.id} className={`react-badge${n.draft ? ' draft' : ''}`}
           onMouseEnter={() => focusPassage(sid, n)} onMouseLeave={() => focusPassage(sid, null)}
           onClick={() => { if (n.draft) { focusPassage(sid, null); removeDraft(sid, n.id) } }}
         >{n.text.trim()}</button>
@@ -312,7 +312,7 @@ function NoteCard({ sid, note, onFocus, onBlur }: { sid: string; note: NoteDraft
         {[...new Set([...reactions.map((d) => d.text.trim()), ...topEmoji(10)])].slice(0, Math.max(10, reactions.length)).map((r) => (
           <button key={r} className={note.text.includes(r) || reactions.some((d) => d.text.trim() === r) ? 'on' : ''} onClick={() => react(r)}>{r}</button>
         ))}
-        <button className="more-emoji" title="Search emoji" onClick={() => setPicking(true)}>+</button>
+        <button className="more-emoji" onClick={() => setPicking(true)}>+</button>
         {picking && <EmojiPicker onPick={(r) => { react(r); setPicking(false) }} onClose={() => setPicking(false)} />}
       </div>
     </div>

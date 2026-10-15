@@ -11,6 +11,7 @@ import { ArtifactCheck, ArtifactsView } from './components/Artifacts.tsx'
 import { useFavicon } from './favicon.tsx'
 import { MenuIcon, XIcon } from './components/Icons.tsx'
 import { initTooltips } from './tooltip.ts'
+import { initPeek } from './peek.ts'
 import './styles.css'
 
 function App() {
@@ -204,4 +205,5 @@ addEventListener('popstate', () => { if (phone.matches) { openSide(); history.pu
 
 void start()
 initTooltips()
+initPeek()
 createRoot(document.getElementById('root')!).render(<App />)

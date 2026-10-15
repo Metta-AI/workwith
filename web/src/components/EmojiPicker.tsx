@@ -40,7 +40,7 @@ export function EmojiPicker({ onPick, onClose }: { onPick(e: string): void; onCl
   const flat = [...shown, ...groups.flatMap(([, es]) => es.map((e) => e.emoji))]
   const COLS = 8
   const btn = (e: string, i: number) => (
-    <button key={`${i}${e}`} className={i === at ? 'on' : ''} title={list.find((x) => x.emoji === e)?.name ?? ''} onClick={() => onPick(e)}
+    <button key={`${i}${e}`} className={i === at ? 'on' : ''} onClick={() => onPick(e)}
       ref={i === at ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>{e}</button>
   )
   return (
