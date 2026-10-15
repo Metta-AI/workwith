@@ -109,6 +109,14 @@ export function SettingsDialog({ onClose, page: first }: { onClose(): void; page
               <input type="checkbox" checked={st.showSteps} onChange={(e) => { state.showSteps = e.target.checked; changed() }} />
               Show Claude's in-between messages
             </label>
+            <label className="settings-check">
+              Updates from GitHub
+              <select value={st.settings.autoUpdate ?? 'ask'} onChange={(e) => void api('/api/settings', 'PUT', { autoUpdate: e.target.value })}>
+                <option value="ask">Ask first</option>
+                <option value="always">Install automatically</option>
+                <option value="never">Never</option>
+              </select>
+            </label>
             <label className="settings-check" title="For work on Codinger itself: a banner offers a server restart">
               <input type="checkbox" checked={!!st.settings.selfRestart} onChange={(e) => void api('/api/settings', 'PUT', { selfRestart: e.target.checked })} />
               Offer to restart when Codinger's code changes

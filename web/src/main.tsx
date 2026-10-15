@@ -57,11 +57,28 @@ function App() {
 function Update() {
   const { update: u } = useStore()
   const [closed, setClosed] = useState(() => localStorage.getItem('codinger.updateClosed'))
+  // The first time it asks: your answer can stand for next time too (Settings → Updates from GitHub).
+  const [remember, setRemember] = useState(true)
   if (!u || u.state === 'current' || (closed === u.head && u.state !== 'updating')) return null
   const subject = u.subject.length > 90 ? u.subject.slice(0, 88) + '…' : u.subject
   const what = `A Codinger update is ready (${u.behind === 1 ? '1 new commit' : `${u.behind} new commits`}, latest: “${subject}”).`
   const close = () => { localStorage.setItem('codinger.updateClosed', u.head); setClosed(u.head) }
   const agent = () => { const m = currentMachine(); void api<SessionMeta>('/api/update/agent', 'POST', undefined, m).then((s) => select(globalId(m, s.id))) }
+  if (u.state === 'offer') {
+    const answer = (yes: boolean) => {
+      if (remember) void api('/api/settings', 'PUT', { autoUpdate: yes ? 'always' : 'never' })
+      else if (yes) void api('/api/update/now', 'POST')
+      else close()
+    }
+    return (
+      <div className="signin restart">
+        <span>Codinger on GitHub has an update ({u.behind === 1 ? '1 new commit' : `${u.behind} new commits`}, latest: “{subject}”). Install it and restart?</span>
+        <button className="primary" onClick={() => answer(true)}>Update</button>
+        <button onClick={() => answer(false)}>Not now</button>
+        <label className="update-remember"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> Remember my choice</label>
+      </div>
+    )
+  }
   return (
     <div className="signin restart">
       {u.state === 'updating' ? <span>Updating Codinger to “{subject}”…</span>

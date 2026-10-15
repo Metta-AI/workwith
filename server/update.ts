@@ -1,17 +1,18 @@
 // Updates from origin/main (shared/update.ts). Every 10 minutes, and at start, the
-// server fetches origin/main. When this checkout is behind, on main, with no commits
+// server fetches origin/main. When this checkout is behind, the page asks first,
+// unless the setting says always or never. On yes: when it is on main, with no commits
 // of its own and no uncommitted changes, it fast-forwards as soon as no session is
 // working, runs npm install when the packages changed, and restarts (the restart
 // builds the page). Anything else stops it with a reason: the page offers an agent
 // that does the update by hand.
 
 import { execFile } from 'node:child_process'
-import type { UpdateStatus } from '../shared/update.ts'
+import type { UpdateMode, UpdateStatus } from '../shared/update.ts'
 
 const EVERY = 10 * 60_000
 const WIN = process.platform === 'win32'
 
-type Opts = { root: string; busy: () => boolean; restart: () => void; onChange: (u: UpdateStatus) => void }
+type Opts = { root: string; mode: () => UpdateMode; busy: () => boolean; restart: () => void; onChange: (u: UpdateStatus) => void }
 let o: Opts | null = null
 let status: UpdateStatus = { state: 'current' }
 let checking = false
@@ -45,6 +46,8 @@ export function startUpdates(opts: Opts) {
 
 async function check(fetch: boolean) {
   if (!o || checking || status.state === 'updating') return
+  const mode = o.mode()
+  if (mode === 'never') return set({ state: 'current' })
   checking = true
   try {
     if (fetch) await git('fetch', '-q', 'origin', 'main')
@@ -55,6 +58,7 @@ async function check(fetch: boolean) {
       head: remote.slice(0, 7),
       subject: await git('log', '-1', '--format=%s', 'origin/main'),
     }
+    if (mode === 'ask') return set({ state: 'offer', ...info })
     const why = await blocker()
     if (why) return set({ state: 'blocked', ...info, why })
     if (o.busy()) return set({ state: 'waiting', ...info })
@@ -86,7 +90,10 @@ async function apply(info: { behind: number; head: string; subject: string }) {
   }
 }
 
-// "Update now" on the page: the same checks, without the wait for sessions
+// The setting changed: ask, install or forget the update that is there.
+export function updateModeChanged() { if (status.state !== 'updating') void check(false) }
+
+// "Update" or "Update now" on the page: the same checks, without the wait for sessions
 // (a restart keeps working sessions running).
 export async function updateNow(): Promise<UpdateStatus> {
   if (status.state === 'current' || status.state === 'updating') return status

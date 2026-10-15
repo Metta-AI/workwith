@@ -577,6 +577,7 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .title-before { font-size: calc(12px * var(--fs, 1)); } .title-before .link { padding: 0 2px; text-decoration: underline; }
 h1.rename { cursor: text; border-radius: 5px; } h1.rename:hover { background: rgba(127, 127, 127, .12); }
 .signin.restart { background: var(--accent-soft); border-bottom-color: var(--accent); }
+.update-remember { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
 .signin.st-failed { background: rgba(229, 83, 75, .1); border-bottom-color: var(--bad); }
 .signin input { width: 220px; font-size: calc(12.5px * var(--fs, 1)); }
 .rich-input .attach { position: absolute; right: 7px; top: 7px; cursor: pointer; opacity: .55; line-height: 0; }

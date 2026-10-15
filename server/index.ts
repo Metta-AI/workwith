@@ -38,7 +38,7 @@ import { blame, initFileHistory, moveHistory, noteEdit, record as recordVersion,
 import { CLAUDE, authState, cancelLogin, childEnv, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
 import { deviceType, findDevice } from './device.ts'
 import { remoteCancelLink, remoteForget, remoteHub, remoteLink, remoteOn, remoteProxy, remoteStatus, remoteUpgrade, startRemote } from './remote.ts'
-import { startUpdates, updateNow, updatePrompt, updateStatus } from './update.ts'
+import { startUpdates, updateModeChanged, updateNow, updatePrompt, updateStatus } from './update.ts'
 import {
   DATA, LEAD_DIR, LEAD_NOTES, OLD_LEAD_NOTES, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, leadRenamed, resolveModel, loadSessions, promptFile, loadSettings, saveImage, saveSessions, saveSettings,
 } from './store.ts'
@@ -1034,6 +1034,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       ...(typeof body.leadAutoSend === 'boolean' ? { leadAutoSend: body.leadAutoSend } : {}),
       ...(typeof body.selfRestart === 'boolean' ? { selfRestart: body.selfRestart } : {}),
       ...(typeof body.resumeCut === 'boolean' ? { resumeCut: body.resumeCut } : {}),
+      ...(['ask', 'always', 'never'].includes(body.autoUpdate) ? { autoUpdate: body.autoUpdate } : {}),
       ...(body.appearance ? { appearance: cleanAppearance(body.appearance) } : {}),
       ...(Array.isArray(body.groupOrder) ? { groupOrder: body.groupOrder.map(String) } : {}),
       ...(Number.isFinite(body.cacheGuard) && body.cacheGuard >= 0 ? { cacheGuard: Math.round(body.cacheGuard) } : {}),
@@ -1049,6 +1050,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     }
     saveSettings(settings)
     broadcast({ type: 'settings', settings })
+    if (body.autoUpdate) updateModeChanged()
     return send(res, 200, settings)
   }
   // What the usage meter has measured, to see how steady its estimate is.
@@ -1457,7 +1459,7 @@ initAuth({
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Codinger on http://localhost:${PORT}${DEV ? ' (dev)' : ''}`)
   startRemote(PORT, (remote) => broadcast({ type: 'remote', remote }))
-  startUpdates({ root: ROOT, busy: () => [...sessions.values()].some(busy), restart, onChange: (update) => broadcast({ type: 'update', update }) })
+  startUpdates({ root: ROOT, mode: () => settings.autoUpdate ?? 'ask', busy: () => [...sessions.values()].some(busy), restart, onChange: (update) => broadcast({ type: 'update', update }) })
   findDevice((device) => broadcast({ type: 'device', device }))
 })
 

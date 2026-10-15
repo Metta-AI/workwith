@@ -4,7 +4,7 @@
 import type { Look } from './looks.ts'
 import type { Appearance } from './appearance.ts'
 import type { Artifact, PreviewTarget, ProlificaState } from './artifacts.ts'
-import type { UpdateStatus } from './update.ts'
+import type { UpdateMode, UpdateStatus } from './update.ts'
 
 export type Status =
   | 'new'        // never sent anything
@@ -187,6 +187,7 @@ export type Settings = {
   // Claude may turn one on itself (default) or must ask you.
   mcpStartOff?: boolean; mcpAlways?: string[]; mcpClaude?: boolean
   plan?: { tier: string; usd: number; yearly?: boolean }; reviewSeen?: { week?: string; month?: string }
+  autoUpdate?: UpdateMode   // updates from origin/main (server/update.ts); unset: ask
 }
 
 export type ServerMsg =
