@@ -972,6 +972,8 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
   .app.side-open .sidebar { transform: none; visibility: visible; transition: transform .2s ease-out; }
   .brand { justify-content: flex-start; gap: 8px; }
   .side-hide { display: inline-flex; margin-left: auto; padding: 6px; }
+  /* A finger holds a row to move it (Sidebar.tsx): no text selection or callout then. */
+  .sidebar nav { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   /* Its middle (19px down) lines up with the first line of a banner, or of the title. */
   .side-show { display: inline-flex; position: fixed; top: calc(2px + env(safe-area-inset-top)); left: calc(6px + env(safe-area-inset-left)); z-index: 6; padding: 8px; color: var(--text); }
   .row { padding-top: 9px; padding-bottom: 9px; }

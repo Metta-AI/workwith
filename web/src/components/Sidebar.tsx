@@ -39,7 +39,8 @@ export function treeOf(list: SessionMeta[]): { s: SessionMeta; depth: number; pa
 
 // Press and drag a session (with any nested under it) or a folder's name up or
 // down among its siblings, which share a data-sort-key. The others slide aside
-// to make room; letting go puts it there.
+// to make room; letting go puts it there. A finger holds still a moment first,
+// so that a swipe scrolls the list.
 type Drag = { key: string; id: string; dy: number; shift: Record<string, number> }
 function useDragSort(onDrop: (key: string, ids: string[]) => void) {
   const [drag, setDrag] = useState<Drag | null>(null)
@@ -62,8 +63,18 @@ function useDragSort(onDrop: (key: string, ids: string[]) => void) {
       const top = rects[i].top + dy, bottom = rects[i].bottom + dy
       return rects.filter((r, k) => k < i ? top > r.bottom - 0.6 * r.height : k > i && bottom > r.top + 0.6 * r.height).length
     }
+    const x0 = e.clientX
+    let held = e.pointerType !== 'touch'
+    const hold = held ? 0 : window.setTimeout(() => {
+      held = moved.current = true
+      document.body.classList.add('sorting')
+      setDrag({ key, id, dy: 0, shift: {} })
+    }, 400)
+    // Once it holds, the finger moves the row, not the list.
+    const noScroll = (ev: TouchEvent) => { if (held) ev.preventDefault() }
     const move = (ev: PointerEvent) => {
       const dy = ev.clientY - y0
+      if (!held) { if (Math.hypot(ev.clientX - x0, dy) > 8) end(); return }
       if (!moved.current && Math.abs(dy) < 5) return
       if (!moved.current) { moved.current = true; document.body.classList.add('sorting') }
       const to = slot(dy)
@@ -71,11 +82,18 @@ function useDragSort(onDrop: (key: string, ids: string[]) => void) {
       others.forEach((x, j) => { if (j < i && j >= to) shift[x] = size; else if (j >= i && j < to) shift[x] = -size })
       setDrag({ key, id, dy, shift })
     }
-    const up = (ev: PointerEvent) => {
+    const end = () => {
+      clearTimeout(hold)
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('touchmove', noScroll)
       document.body.classList.remove('sorting')
       setDrag(null)
+    }
+    const cancel = () => { end(); setTimeout(() => { moved.current = false }) }
+    const up = (ev: PointerEvent) => {
+      end()
       if (!moved.current) return
       // The click that ends a drag selects nothing.
       setTimeout(() => { moved.current = false })
@@ -85,6 +103,8 @@ function useDragSort(onDrop: (key: string, ids: string[]) => void) {
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', cancel)
+    window.addEventListener('touchmove', noScroll, { passive: false })
   }
   // Props for one sortable element.
   const sortable = (key: string, id: string) => {
