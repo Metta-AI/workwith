@@ -142,9 +142,8 @@ export function Sidebar({ width }: { width: number }) {
   const tree = (machine: string) => <MachineTree machine={machine} onNew={(cwd) => setNewIn({ cwd, machine })} onMenu={openMenu} />
   return (
     <aside className="sidebar" style={{ width }}>
+      {/* Only on a phone, where the sidebar covers the page: its close button. A lost connection shows as a banner (main.tsx: Offline). */}
       <div className="brand">
-        <span>Codinger</span>
-        <span className={`conn ${st.connected ? 'on' : 'off'}`} title={st.connected ? 'Connected' : 'Reconnecting…'} />
         <button className="icon-btn side-hide" aria-label="Hide sessions" onClick={() => { state.sideOpen = false; changed() }}><XIcon size={18} /></button>
       </div>
       <div className="side-actions">

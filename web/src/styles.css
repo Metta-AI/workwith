@@ -90,10 +90,10 @@ body.resizing { cursor: col-resize; user-select: none; }
 
 /* ---- sidebar ---- */
 .sidebar { flex: none; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
-.brand { display: flex; align-items: center; justify-content: space-between; padding: 14px 14px 8px; font-weight: 700; letter-spacing: .02em; }
+.brand { display: none; align-items: center; padding: 8px 10px 0; }
 .conn { width: 8px; height: 8px; border-radius: 50%; }
 .conn.on { background: var(--ok); } .conn.off { background: var(--bad); }
-.side-actions { padding: 6px 10px 10px; display: flex; gap: 6px; }
+.side-actions { padding: 10px; display: flex; gap: 6px; }
 .side-actions button.primary { flex: 1; }
 .tree { flex: 1; overflow-y: auto; }
 .group { margin-bottom: 8px; }
@@ -731,6 +731,9 @@ h1.rename { cursor: text; border-radius: 5px; } h1.rename:hover { background: rg
 .hist-when { width: 80px; flex: none; font-size: calc(12px * var(--fs, 1)); }
 .hist-size .add { color: var(--ok); } .hist-size .del { color: var(--bad); }
 .who-link { padding: 0; color: var(--blue); text-decoration: underline; text-underline-offset: 2px; }
+/* Above the sidebar's bottom row, so its buttons stay free. */
+.offline-toast { position: fixed; left: 10px; bottom: calc(48px + env(safe-area-inset-bottom)); z-index: 40; display: flex; align-items: center; gap: 8px; max-width: calc(100vw - 20px); padding: 8px 12px; border-radius: 8px; background: var(--card); border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(0, 0, 0, .18); font-size: calc(12.5px * var(--fs, 1)); }
+.offline-toast .conn { flex: none; }
 .toast { position: fixed; top: 14px; left: 50%; box-shadow: 0 6px 24px rgba(0, 0, 0, .3); transform: translateX(-50%); background: var(--bad); color: #fff; padding: 8px 14px; border-radius: 8px; cursor: pointer; z-index: 40; max-width: 80vw; }
 
 /* ---- appearance ---- */
@@ -982,7 +985,7 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
   .app > .splitter { display: none; }
   .sidebar { position: fixed; inset: 0; z-index: 25; width: auto !important; border-right: none; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); transform: translateX(-100%); visibility: hidden; transition: transform .2s ease-out, visibility 0s .2s; }
   .app.side-open .sidebar { transform: none; visibility: visible; transition: transform .2s ease-out; }
-  .brand { justify-content: flex-start; gap: 8px; }
+  .brand { display: flex; }
   .side-hide { display: inline-flex; margin-left: auto; padding: 6px; }
   /* Its middle (19px down) lines up with the first line of a banner, or of the title. */
   .side-show { display: inline-flex; position: fixed; top: calc(2px + env(safe-area-inset-top)); left: calc(6px + env(safe-area-inset-left)); z-index: 6; padding: 8px; color: var(--text); }

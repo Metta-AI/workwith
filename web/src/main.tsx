@@ -34,6 +34,7 @@ function App() {
       <main>
         {/* On a phone the sidebar covers the page; this shows it again. */}
         <button className="icon-btn side-show" aria-label="Sessions" onClick={() => { state.sideOpen = true; changed() }}><MenuIcon size={18} /></button>
+        <Offline />
         <SignIn />
         <Update />
         <Restart />
@@ -110,6 +111,21 @@ function Restart() {
       </>}
     </div>
   )
+}
+
+// The page lost its connection to the server and reconnects by itself: a toast in the
+// bottom left corner. A drop shorter than a second shows nothing; a restart has its own banner (Restart, below).
+function Offline() {
+  const st = useStore()
+  const down = !st.connected && st.sessions.length > 0 && !st.restarting
+  const [shown, setShown] = useState(false)
+  useEffect(() => {
+    if (!down) { setShown(false); return }
+    const t = setTimeout(() => setShown(true), 1000)
+    return () => clearTimeout(t)
+  }, [down])
+  if (!down || !shown) return null
+  return <div className="offline-toast"><span className="conn off" />Not connected{st.web ? ` to ${labelOf(currentMachine())}` : ''}. Reconnecting…</div>
 }
 
 // Claude Code's login is missing or expired: sign in from here.
