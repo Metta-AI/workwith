@@ -138,6 +138,9 @@ body.resizing { cursor: col-resize; user-select: none; }
 .machine.sliding { transition: transform .18s ease; }
 .remote-panel p { margin: 0 0 10px; }
 .remote-panel label { display: block; margin-bottom: 12px; }
+.remote-machine { padding: 10px 0; border-top: 1px solid var(--line); }
+.remote-machine:last-of-type { border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+.remote-machine .remote-names { margin: 0; }
 .remote-code { font: 600 calc(22px * var(--fs, 1)) var(--mono, monospace); letter-spacing: .15em; }
 .head-id { font-size: calc(11.5px * var(--fs, 1)); color: var(--muted); }
 .row-remote { vertical-align: -1px; margin-right: 4px; color: var(--muted); }

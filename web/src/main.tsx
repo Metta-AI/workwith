@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import { useEffect } from 'react'
-import { api, changed, select, start, state, useStore } from './store.ts'
+import { api, changed, select, start, state, useStore, currentMachine, labelOf, machineOf } from './store.ts'
 import { useState } from 'react'
 import { Sidebar } from './components/Sidebar.tsx'
 import { SessionView } from './components/SessionView.tsx'
@@ -56,7 +56,7 @@ function Restart() {
   return (
     <div className="signin restart">
       {st.restarting ? <span>Restarting Codinger…</span> : <>
-        <span>Codinger's server code has changed. Restart to use it.{busy ? ` ${busy} ${busy === 1 ? 'session is' : 'sessions are'} working and will keep working.` : ''}</span>
+        <span>The Codinger server on {st.web || machineOf(st.selected) ? labelOf(currentMachine()) : 'this machine'} has new code on disk (an update, or a change an agent made). Restart that server to use it.{busy ? ` ${busy} ${busy === 1 ? 'session is' : 'sessions are'} working and will keep working.` : ''}</span>
         <button className="primary" onClick={() => { state.restarting = true; changed(); void api('/api/restart').catch(() => {}) }}>Restart</button>
       </>}
     </div>

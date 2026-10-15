@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SessionMeta, Usage } from '../../../shared/types.ts'
-import { api, changed, closeSession, currentMachine, LOCAL, localId, machineList, machineOf, offline, select, state, useStore, type Machine } from '../store.ts'
+import { api, changed, closeSession, currentMachine, LOCAL, localId, machineList, machineOf, offline, select, state, useStore, type Machine, labelOf } from '../store.ts'
 import { HistoryDialog } from './HistoryDialog.tsx'
 import { fatigue, timeAgo } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
@@ -149,7 +149,7 @@ export function Sidebar({ width }: { width: number }) {
                   onClick={() => { state.collapsed = shut ? state.collapsed.filter((n) => n !== m.name) : [...state.collapsed, m.name]; changed() }}>
                   <ChevronIcon size={11} className="machine-chevron" />
                   <DeviceIcon m={m} />
-                  <span className="machine-name">{m.name}</span>
+                  <span className="machine-name">{labelOf(m.name)}</span>
                   {!m.connected && <span className="conn off" />}
                   <button className="link" title={`New session on ${m.name}`} onClick={(e) => { e.stopPropagation(); setNewIn({ cwd: '', machine: m.name }) }}>+</button>
                 </div>
@@ -157,7 +157,7 @@ export function Sidebar({ width }: { width: number }) {
               </div>
             )
           })}
-          {away.map((name) => <div key={name} className="machine off"><div className="machine-head"><span className="machine-name">{name}</span><span className="muted">not connected</span></div></div>)}
+          {away.map((name) => <div key={name} className="machine off"><div className="machine-head"><span className="machine-name">{labelOf(name)}</span><span className="muted">not connected</span></div></div>)}
           {!others.length && !away.length && <div className="muted pad">No other machines. Connect one in Settings → Remote access on that machine.</div>}
         </>}
         {tab === 'local' && !local?.sessions.some((s) => s.kind === 'worker' && s.archived === st.showArchived) && <div className="muted pad">{st.showArchived ? 'No archived sessions.' : 'No sessions yet.'}</div>}
@@ -197,7 +197,7 @@ export function Sidebar({ width }: { width: number }) {
 const OS: Record<string, string> = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }
 function DeviceIcon({ m, tip = true }: { m: Machine; tip?: boolean }) {
   // The only tooltip on a machine's head: on its icon, not on the head you click and drag.
-  const title = `${m.name}: ${m.device === 'laptop' ? 'laptop' : m.device === 'desktop' ? 'desktop' : 'computer'}${OS[m.platform] ? `, ${OS[m.platform]}` : ''}, ${m.connected ? 'connected through web.codinger.app' : 'reconnecting…'}`
+  const title = `${labelOf(m.name)}${labelOf(m.name) !== m.name ? ` (${m.name})` : ''}: ${m.device === 'laptop' ? 'laptop' : m.device === 'desktop' ? 'desktop' : 'computer'}${OS[m.platform] ? `, ${OS[m.platform]}` : ''}, ${m.connected ? 'connected through web.codinger.app' : 'reconnecting…'}`
   const Icon = m.device === 'desktop' ? DesktopIcon : LaptopIcon
   return <span className="device" data-tip={tip ? title : undefined}><Icon os={m.platform} size={tip ? 18 : 15} /></span>
 }

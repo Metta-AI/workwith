@@ -3,7 +3,7 @@
 // On web.codinger.app: who is signed in, and signing out.
 
 import { useState } from 'react'
-import { api, LOCAL, machineList, offline, useStore } from '../store.ts'
+import { api, knownMachines, LOCAL, refreshMachines, useStore } from '../store.ts'
 
 // The hub's second address, for networks where web.codinger.app does not resolve.
 const WORKERS_DEV = 'https://codinger-web.huttj.workers.dev'
@@ -13,7 +13,12 @@ export function RemotePanel() {
   if (st.web) return (
     <div className="remote-panel">
       <p>Signed in to web.codinger.app as <b>{st.email}</b>.</p>
-      <p>Machines: {[...machineList().map((m) => m.name), ...offline().map((n) => `${n} (not connected)`)].join(', ') || 'none yet'}.</p>
+      {knownMachines().map((m) => (
+        <div key={m.name} className="remote-machine">
+          <Names name={m.name} label={m.label} connected={m.connected} />
+        </div>
+      ))}
+      {!knownMachines().length && <p>No machines yet.</p>}
       <p className="muted">To add a machine, open Settings → Remote access in the Codinger on that machine.</p>
       <form method="post" action="/_remote/logout"><button>Sign out</button></form>
     </div>
@@ -64,13 +69,14 @@ function MachinePanel() {
     <div className="remote-panel">
       <label className="toggle"><input type="checkbox" checked={r.on} onChange={(e) => void call('on', { on: e.target.checked })} /> Remote access</label>
       <p>
-        <b>{r.name}</b>{' '}
+        This machine{' '}
         {!r.on ? <span className="muted">is off: nobody can use it from the web or your other machines.</span>
           : r.connected ? <span>is connected to {r.hub.replace(/^https?:\/\//, '')}.</span>
           : <span className="muted">is connecting…</span>}
       </p>
+      <Names name={r.name} label={r.label} connected={r.connected} />
       <HubAddress hub={r.hub} onSave={(h) => void call('hub', { hub: h })} />
-      <p><button onClick={() => { if (confirm(`Disconnect ${r.name} from web.codinger.app? To connect it again, you approve it again.`)) void call('forget') }}>Disconnect this machine</button></p>
+      <p><button onClick={() => { if (confirm(`Disconnect ${r.label ?? r.name} from web.codinger.app? To connect it again, you approve it again.`)) void call('forget') }}>Disconnect this machine</button></p>
     </div>
   )
 }
@@ -87,5 +93,40 @@ function HubAddress({ hub, onSave }: { hub: string; onSave(h: string): void }) {
       </p>
       <p><button type="submit" className="primary">Save</button> <button type="button" onClick={() => setEdit(null)}>Cancel</button></p>
     </form>
+  )
+}
+
+// A machine's display name (what the sidebar shows) and its name (its id in addresses), each with a Rename.
+function Names({ name, label, connected }: { name: string; label?: string; connected: boolean }) {
+  const st = useStore()
+  const [edit, setEdit] = useState<'label' | 'rename' | null>(null)
+  const [value, setValue] = useState('')
+  const [err, setErr] = useState<string | null>(null)
+  const open = (what: 'label' | 'rename') => { setEdit(what); setValue(what === 'label' ? label ?? name : name); setErr(null) }
+  const save = async () => {
+    const body = edit === 'label' ? { label: value } : { name: value.trim().toLowerCase() }
+    const path = `/machines/${name}/${edit}`
+    try {
+      if (st.web) {
+        const r = await fetch(`/_remote${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`)
+      } else await api(`/api/remote${path}`, 'POST', body, LOCAL)
+      setEdit(null)
+      void refreshMachines()
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)) }
+  }
+  if (edit) return (
+    <form className="remote-names" onSubmit={(e) => { e.preventDefault(); void save() }}>
+      <label>{edit === 'label' ? 'Display name' : 'Machine name (lower-case letters, digits and dashes)'} <input value={value} autoFocus onChange={(e) => setValue(e.target.value)} /></label>
+      {edit === 'rename' && <p className="muted">The name is in the addresses of its sessions. Browsers lose unsent drafts in that machine's sessions.</p>}
+      {err && <p className="notice error">{err}</p>}
+      <p><button type="submit" className="primary">Save</button> <button type="button" onClick={() => setEdit(null)}>Cancel</button></p>
+    </form>
+  )
+  return (
+    <p className="remote-names">
+      <b>{label ?? name}</b>{!connected && <span className="muted"> · not connected</span>}
+      <br /><span className="muted">Name <code>{name}</code> · <button className="link" onClick={() => open('label')}>Change display name</button> · <button className="link" onClick={() => open('rename')}>Rename</button></span>
+    </p>
   )
 }

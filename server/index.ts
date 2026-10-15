@@ -1275,7 +1275,7 @@ const server = http.createServer(async (req, res) => {
     if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look), mcpTool(look), artifactTool(look), ...taskTools(look), ...mailTools(look)])
     // The web UI asks this first; here it is a machine's own page.
     if (url.pathname === '/_remote/whoami') return send(res, 200, { web: false })
-    if (url.pathname.startsWith('/api/remote/m/') || url.pathname === '/api/remote/machines') return await remoteProxy(req, res, url)
+    if (url.pathname.startsWith('/api/remote/m/') || url.pathname.startsWith('/api/remote/machines')) return await remoteProxy(req, res, url)
     if (url.pathname.startsWith('/api/')) return await api(req, res, url)
     if (vite) return vite.middlewares(req, res)
     serveStatic(url.pathname, res)

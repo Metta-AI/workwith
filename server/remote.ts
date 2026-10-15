@@ -33,7 +33,7 @@ const BATCH_MS = Number(process.env.CODINGER_REMOTE_BATCH_MS) || 1000
 const DEFAULT_HUB = (process.env.CODINGER_REMOTE_HUB ?? 'https://web.codinger.app').replace(/\/$/, '')
 const FILE = path.join(DATA, 'remote.json')
 
-type Saved = { on: boolean; name: string; token?: string; hub?: string }
+type Saved = { on: boolean; name: string; token?: string; hub?: string; label?: string }
 let saved: Saved = { on: false, name: machineName(os.hostname().replace(/\.local$/, '')) }
 try { saved = { ...saved, ...JSON.parse(fs.readFileSync(FILE, 'utf8')) } } catch { /* not set up */ }
 const hubUrl = () => saved.hub ?? DEFAULT_HUB
@@ -49,7 +49,7 @@ let linking: { code: string; url: string } | null = null
 let retry: NodeJS.Timeout | null = null
 
 export function remoteStatus(): RemoteStatus {
-  return { hub: hubUrl(), name: saved.name, on: saved.on, linked: !!saved.token, connected, ...(linking ? { linking } : {}) }
+  return { hub: hubUrl(), name: saved.name, ...(saved.label ? { label: saved.label } : {}), on: saved.on, linked: !!saved.token, connected, ...(linking ? { linking } : {}) }
 }
 const tell = () => changed(remoteStatus())
 
@@ -148,6 +148,13 @@ function connect() {
   ws.on('message', (raw) => {
     let m: HubMsg
     try { m = JSON.parse(String(raw)) } catch { return }
+    // The hub says who this machine is there (a rename or a new display name, from anywhere).
+    if (m.t === 'hello') { saved.name = m.name; if (m.label) saved.label = m.label; else delete saved.label; save(); tell(); return }
+    if (m.t === 'bye') {
+      if (m.why === 'forgotten') { unlink(); save(); disconnect(); tell() }
+      else { disconnect(); wait = 1000; connect() }
+      return
+    }
     if (m.t === 'req') request(local, m).then(send)
     else if (m.t === 'open') chans.set(m.chan, new Chan(local, m, send, () => chans.delete(m.chan)))
     else if (m.t === 'msg') chans.get(m.chan)?.in(m.data)
@@ -156,11 +163,14 @@ function connect() {
   ws.on('close', (code) => {
     for (const c of chans.values()) c.end()
     chans.clear()
-    if (hub === ws) hub = null
+    // A socket let go of on purpose (off, renamed, replaced) changes nothing more.
+    if (hub !== ws) return
+    hub = null
     connected = false
     if (code === 4001) { unlink(); save() } // disconnected on the web
     tell()
     if (!saved.on || !saved.token || code === 1012) return
+    if (code === 4002) wait = 200 // renamed: back at once, under the new name
     retry = setTimeout(connect, wait)
     retry.unref()
     wait = Math.min(wait * 2, 60_000)
@@ -245,10 +255,10 @@ class Chan {
 
 // ---- reaching your other machines -----------------------------------------------
 
-// GET /api/remote/machines, and /api/remote/m/<name>/… : on to the hub, with this machine's token.
+// /api/remote/machines[/<name>/label|rename], and /api/remote/m/<name>/…: on to the hub, with this machine's token.
 export async function remoteProxy(req: http.IncomingMessage, res: http.ServerResponse, url: URL) {
   if (!saved.token) { res.writeHead(409, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'This machine is not connected to web.codinger.app' })); return }
-  const target = url.pathname === '/api/remote/machines' ? '/_remote/machines' : url.pathname.replace(/^\/api\/remote/, '')
+  const target = url.pathname.startsWith('/api/remote/machines') ? url.pathname.replace(/^\/api\/remote/, '/_remote') : url.pathname.replace(/^\/api\/remote/, '')
   const body = req.method === 'GET' || req.method === 'HEAD' ? undefined : await new Promise<Buffer>((resolve) => { const b: Buffer[] = []; req.on('data', (d) => b.push(d)); req.on('end', () => resolve(Buffer.concat(b))) })
   const r = await fetch(hubUrl() + target + url.search, {
     method: req.method,

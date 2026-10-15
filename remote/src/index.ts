@@ -29,7 +29,7 @@ const LINK_MS = 10 * 60_000
 type Login = { email: string; exp: number; next?: string }
 type Session = { email: string; exp: number }
 type Link = { name: string; poll: string; exp: number; token?: string }
-type Machine = { name: string; created: number; tokenHash: string }
+type Machine = { name: string; created: number; tokenHash: string; label?: string }
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -65,6 +65,13 @@ export class Hub extends DurableObject<Env> {
           return json(await this.machines())
         }
         case 'GET /_remote/connect': return await this.attach(req)
+      }
+      // A machine's display name, or its name: from the web, or from one of your machines.
+      const change = /^\/_remote\/machines\/([a-z0-9-]{1,40})\/(label|rename)$/.exec(p)
+      if (change && req.method === 'POST') {
+        if (!await this.machineOf(req) && (!await this.session(req) || !sameOrigin(req, url))) return json({ error: 'Not signed in' }, 401)
+        const body = await req.json<{ label?: string; name?: string }>()
+        return change[2] === 'label' ? await this.label(change[1], String(body.label ?? '')) : await this.rename(change[1], String(body.name ?? ''))
       }
       const forget = /^\/_remote\/machines\/([a-z0-9-]{1,40})$/.exec(p)
       if (forget && req.method === 'DELETE') {
@@ -199,13 +206,42 @@ ${again ? `<p>A machine with this name is connected already. It will be disconne
   private async forget(name: string) {
     const m = await this.ctx.storage.get<Machine>(`machine:${name}`)
     if (m) await this.ctx.storage.delete([`machine:${name}`, `token:${m.tokenHash}`])
-    for (const ws of this.ctx.getWebSockets(`m:${name}`)) ws.close(4001, 'Disconnected from web.codinger.app')
+    for (const ws of this.ctx.getWebSockets(`m:${name}`)) { send(ws, { t: 'bye', why: 'forgotten' }); ws.close(4001, 'Disconnected from web.codinger.app') }
     this.dropMachine(name)
   }
 
   private async machines(): Promise<RemoteMachine[]> {
     const known = await this.ctx.storage.list<Machine>({ prefix: 'machine:' })
-    return [...known.values()].map((m) => ({ name: m.name, connected: !!this.socket(m.name) })).sort((a, b) => a.name.localeCompare(b.name))
+    return [...known.values()].map((m) => ({ name: m.name, ...(m.label ? { label: m.label } : {}), connected: !!this.socket(m.name) })).sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  private async label(name: string, label: string): Promise<Response> {
+    const m = await this.ctx.storage.get<Machine>(`machine:${name}`)
+    if (!m) return json({ error: `No machine ${name}` }, 404)
+    const l = label.trim().slice(0, 60)
+    const next: Machine = { ...m }
+    if (l && l !== name) next.label = l
+    else delete next.label
+    await this.ctx.storage.put(`machine:${name}`, next)
+    const ws = this.socket(name)
+    if (ws) send(ws, { t: 'hello', name, ...(next.label ? { label: next.label } : {}) })
+    return json({ name, label: next.label ?? null })
+  }
+
+  // A new name moves the machine: its token stays, and it connects again under the new name.
+  private async rename(name: string, to: string): Promise<Response> {
+    if (!/^[a-z0-9-]{1,40}$/.test(to)) return json({ error: 'A name has lower-case letters, digits and dashes only' }, 400)
+    const m = await this.ctx.storage.get<Machine>(`machine:${name}`)
+    if (!m) return json({ error: `No machine ${name}` }, 404)
+    if (to === name) return json({ name })
+    if (await this.ctx.storage.get(`machine:${to}`)) return json({ error: `There is a machine ${to} already` }, 409)
+    await this.ctx.storage.put(`machine:${to}`, { ...m, name: to })
+    await this.ctx.storage.put(`token:${m.tokenHash}`, to)
+    await this.ctx.storage.delete(`machine:${name}`)
+    // The machine connects again itself when it hears this; the close is only a backup.
+    for (const ws of this.ctx.getWebSockets(`m:${name}`)) { send(ws, { t: 'bye', why: 'renamed' }); ws.close(4002, 'Renamed') }
+    this.dropMachine(name)
+    return json({ name: to })
   }
 
   // The machine's own socket, kept open.
@@ -217,6 +253,7 @@ ${again ? `<p>A machine with this name is connected already. It will be disconne
     for (const old of this.ctx.getWebSockets(`m:${m.name}`)) { this.dropMachine(m.name); old.close(1012, 'Connected again') }
     const [client, server] = Object.values(new WebSocketPair())
     this.ctx.acceptWebSocket(server, ['m', `m:${m.name}`])
+    send(server, { t: 'hello', name: m.name, ...(m.label ? { label: m.label } : {}) })
     return new Response(null, { status: 101, webSocket: client })
   }
 

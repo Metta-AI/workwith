@@ -164,7 +164,7 @@ export type Event =
 export type AuthState = { state: 'ok' | 'needed' | 'pending' | 'failed'; url?: string; error?: string }
 // Remote access through web.codinger.app (server/remote.ts). linked: it has its token;
 // linking: waiting for you to approve the code on the web.
-export type RemoteStatus = { hub: string; name: string; on: boolean; linked: boolean; connected: boolean; linking?: { code: string; url: string } }
+export type RemoteStatus = { hub: string; name: string; label?: string; on: boolean; linked: boolean; connected: boolean; linking?: { code: string; url: string } }
 
 // rate: how much of each window a dollar of spend (at API prices) uses, as server/meter.ts estimates it.
 // overage: extra usage paid for the call that sent this report.

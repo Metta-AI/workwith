@@ -299,6 +299,10 @@ export async function refreshMachines() {
 }
 // Machines you connected that are not on line now.
 export const offline = () => known.filter((m) => !m.connected && m.name !== state.self).map((m) => m.name)
+// Every machine you connected, this one too, with its display name.
+export const knownMachines = () => known
+// What the sidebar calls a machine: its display name, else its name.
+export const labelOf = (name: string) => known.find((m) => m.name === name)?.label ?? name
 
 function onServer(m: ServerMsg, machine: string) {
   const M = state.machines[machine]
