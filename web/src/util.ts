@@ -129,3 +129,18 @@ export async function uploadImage(file: Blob, machine?: string): Promise<ImageRe
 export function imagesFrom(dt: DataTransfer | null): File[] {
   return [...(dt?.files ?? [])].filter((f) => f.type.startsWith('image/'))
 }
+
+// iOS brings up the keyboard only for a focus inside a touch handler, and a comment card's
+// field mounts after it. A hidden field takes the focus now; the card's field takes it over.
+// Call it from the touch or click that opens the card. Only on a touch screen.
+export function holdKeyboard() {
+  if (!matchMedia('(pointer: coarse)').matches) return
+  const f = document.createElement('input')
+  f.setAttribute('aria-hidden', 'true')
+  f.tabIndex = -1
+  f.style.cssText = 'position: fixed; top: 30%; left: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; font-size: 16px'
+  document.body.appendChild(f)
+  f.addEventListener('blur', () => f.remove(), { once: true })
+  f.focus({ preventScroll: true })
+  setTimeout(() => { if (document.activeElement === f) f.blur() }, 1000)
+}

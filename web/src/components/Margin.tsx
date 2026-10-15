@@ -11,7 +11,7 @@ import { rangesFor, setHighlights } from '../anchoring.ts'
 import { addDraft, draftsOf, removeDraft, state, uid, updateDraft, useStore, type NoteDraft } from '../store.ts'
 import type { Anchor, Event, ImageRef } from '../../../shared/types.ts'
 import { isReaction, topEmoji, usedEmoji } from '../emoji.ts'
-import { renderMd } from '../util.ts'
+import { holdKeyboard, renderMd } from '../util.ts'
 import { EmojiPicker } from './EmojiPicker.tsx'
 import { RichInput, Thumbs } from './Inputs.tsx'
 import { XIcon } from './Icons.tsx'
@@ -169,6 +169,7 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
       if (!getSelection()?.isCollapsed || (e.target as Element).closest?.('.note-card')) return
       const hit = notesRef.current.find((n) => n.kind === 'draft' && onPassage(rangesOfNote(sid, n), e.clientX, e.clientY))
       if (!hit) return
+      holdKeyboard()
       setOpen(hit.id)
       requestAnimationFrame(() => layer.current?.querySelector<HTMLElement>(`.note-card[data-id="${hit.id}"] .ri-edit`)?.focus())
     }

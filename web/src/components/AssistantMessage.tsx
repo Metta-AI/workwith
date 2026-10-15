@@ -12,7 +12,7 @@ import DOMPurify from 'dompurify'
 import { parseAskBody, type Ask } from '../../../shared/asks.ts'
 import { askOf, commandOf, draftOf, isTask, segmentsOf, type Segment } from '../../../shared/blocks.ts'
 import type { Anchor } from '../../../shared/types.ts'
-import { marked, renderInline, renderText, served } from '../util.ts'
+import { holdKeyboard, marked, renderInline, renderText, served } from '../util.ts'
 import { anchorFromRange, rangesFor, setHighlights } from '../anchoring.ts'
 import { render as renderLive } from '../mdlive.ts'
 import { addDraft, api, changed, dismissItem, draftsOf, markDone, removeDraft, reviveItem, setDoneText, state, uid, undismissItem, updateDraft, useStore, type AnswerDraft, type DoneDraft, type NoteDraft } from '../store.ts'
@@ -292,6 +292,7 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
   }
   const commentOn = (anchor: Anchor, quote: string, whole: boolean) => {
     focusPassage(sid, null)
+    holdKeyboard()
     const k = keyOf(anchor)
     const open = draftsOf(sid).find((d): d is NoteDraft => d.kind === 'note' && !d.reaction && keyOf(d.anchor) === k)
     // Without a gutter the card shows only after the render that state.focus causes, so focus it on the next frame.
@@ -495,6 +496,7 @@ function ConsiderCard({ c, p }: { c: Ctx; p: SectionPiece }) {
   const comment = (e: React.MouseEvent) => {
     // A reply takes back a dismissal that has not gone yet.
     if (status === 'dismissing') undismissItem(c.sid, key)
+    holdKeyboard()
     // A reaction in the item has no card to go to.
     const existing = draftsOf(c.sid).find((d): d is NoteDraft => d.kind === 'note' && d.itemKey === key && !d.reaction)
     if (existing) { document.querySelector<HTMLElement>(`.note-card[data-id="${existing.id}"] .ri-edit`)?.focus(); return }

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Anchor, Block, Event, ImageRef, Part, Task } from '../../../shared/types.ts'
 import { addDraft, api, draftsOf, removeDraft, rewind, select, state, uid, useStore, here } from '../store.ts'
 import { anchorFromRange } from '../anchoring.ts'
-import { renderInline, renderMd, renderText } from '../util.ts'
+import { holdKeyboard, renderInline, renderMd, renderText } from '../util.ts'
 import { AssistantMessage, type Reaction } from './AssistantMessage.tsx'
 import { RichInput, Thumbs } from './Inputs.tsx'
 import { foldItems, revealItem, trackItems, type TrackedItem } from '../items.ts'
@@ -186,19 +186,6 @@ export function Transcript({ sid }: { sid: string }) {
     {!st.share && <OpenToast scroller={scroller} keys={[...folded.items.values()].filter((t) => t.status === 'open').map((t) => t.key)} />}
     </div>
   )
-}
-
-// iOS brings up the keyboard only for a focus inside a touch handler, and the comment card's
-// field mounts after it. A hidden field takes the focus now; the card's field takes it over.
-function holdKeyboard() {
-  const f = document.createElement('input')
-  f.setAttribute('aria-hidden', 'true')
-  f.tabIndex = -1
-  f.style.cssText = 'position: fixed; top: 30%; left: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; font-size: 16px'
-  document.body.appendChild(f)
-  f.addEventListener('blur', () => f.remove(), { once: true })
-  f.focus({ preventScroll: true })
-  setTimeout(() => { if (document.activeElement === f) f.blur() }, 1000)
 }
 
 // While open questions or items are out of view, a toast at the bottom of the
