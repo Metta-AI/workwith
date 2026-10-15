@@ -200,11 +200,13 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .attention-top { display: flex; justify-content: space-between; align-items: center; position: sticky; top: -6px; background: var(--panel); z-index: 1; padding-top: 4px; }
 .attention-head { font-size: calc(11.5px * var(--fs, 1)); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 8px 0 6px; display: flex; gap: 6px; align-items: center; }
 .attention-empty { font-size: calc(12.5px * var(--fs, 1)); padding: 4px 2px 8px; }
-.file-row { display: flex; align-items: center; gap: 4px; padding: 3px 2px; }
-.file-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; color: var(--text); text-decoration: none; }
-.file-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-name:hover span { text-decoration: underline; }
-.file-name .icon { flex: none; opacity: .6; }
+/* Scoped: the files dialog has its own .file-row and .file-name (one name over its folder). */
+.files-panel .file-row { flex-direction: row; align-items: center; gap: 4px; padding: 3px 2px; }
+.files-panel .file-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; color: var(--text); text-decoration: none; font-size: calc(12.5px * var(--fs, 1)); font-weight: 400; }
+.files-panel .file-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files-panel .file-name:hover span { text-decoration: underline; }
+.files-panel .file-name .icon { flex: none; opacity: .6; }
+.files-panel .file-row .icon-btn { flex: none; }
 /* Open items are cards; completed ones are a quiet, folded list below a rule. */
 .attention-done-head { width: 100%; border: none; border-top: 1px solid var(--line); border-radius: 0; background: none; padding: 12px 2px 4px; margin-top: 10px; }
 .attention-done-head:hover { color: var(--text); }
@@ -350,6 +352,10 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 ::highlight(cd-draft) { background-color: var(--hl-draft); }
 ::highlight(cd-sent) { background-color: var(--hl-sent); }
 ::highlight(cd-focus) { background-color: var(--hl-focus); }
+/* Highlights paint text only: an image, a video or a player in a passage gets an outline (anchoring.ts). */
+.md .hl-sent { box-shadow: 0 0 0 3px var(--hl-sent); }
+.md .hl-draft { box-shadow: 0 0 0 3px var(--hl-draft); }
+.md .hl-focus { box-shadow: 0 0 0 3px var(--hl-focus); }
 
 .user-turn { margin: 18px 0 14px auto; max-width: 88%; background: var(--accent-soft); border-radius: 12px; padding: 8px 14px; overflow-wrap: anywhere; }
 /* A long message shows its first lines, fading out, until "Show more". */
@@ -435,6 +441,7 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .sent-quote { color: var(--muted); font-size: calc(12.5px * var(--fs, 1)); white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 2px; }
 .user-part.note:hover .sent-quote { color: var(--text); }
 .sent-quote.open { -webkit-line-clamp: unset; }
+.sent-quote .quote-media { height: 24px; max-width: 64px; object-fit: cover; vertical-align: middle; margin: -4px 4px -2px 0; border-radius: 4px; border: 1px solid var(--line); }
 .quote-rest { opacity: 0.55; }
 .quote-more { border: none; background: none; padding: 0 3px; margin-left: 2px; border-radius: 4px; color: inherit; font: inherit; cursor: pointer; }
 .quote-more:hover { background: var(--line); }
@@ -953,6 +960,7 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .media-embed { height: auto; max-width: 640px; aspect-ratio: 16 / 9; background: #000; }
 /* Media in an agent's message (util.ts: mediaHtml) fits the column. */
 .md-block img { max-width: 100%; max-height: 480px; border-radius: 6px; }
+.assistant-text img:not(a img) { cursor: zoom-in; }
 .md-block .media-video, .md-block .media-audio, .md-block .media-frame { margin: 6px 0; }
 .media-missing { color: var(--muted); font-style: italic; }
 .artifact-history li.on .version { font-weight: 600; }

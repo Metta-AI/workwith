@@ -13,7 +13,7 @@ import { parseAskBody, type Ask } from '../../../shared/asks.ts'
 import { askOf, commandOf, draftOf, isTask, segmentsOf, type Segment } from '../../../shared/blocks.ts'
 import type { Anchor } from '../../../shared/types.ts'
 import { holdKeyboard, marked, renderInline, renderText, served } from '../util.ts'
-import { anchorFromRange, rangesFor, setHighlights } from '../anchoring.ts'
+import { anchorFromRange, mediaIn, passageQuote, rangesFor, setHighlights } from '../anchoring.ts'
 import { render as renderLive } from '../mdlive.ts'
 import { addDraft, api, changed, dismissItem, draftsOf, markDone, removeDraft, reviveItem, setDoneText, state, uid, undismissItem, updateDraft, useStore, type AnswerDraft, type DoneDraft, type NoteDraft } from '../store.ts'
 import type { TrackedItem } from '../items.ts'
@@ -131,10 +131,12 @@ export const AssistantMessage = memo(function AssistantMessage({ sid, msg, text,
 })
 
 // The middle of an element's first line of text, from the top of the message:
-// reactions and the reaction button sit centred on it.
+// reactions and the reaction button sit centred on it. On an image or a video,
+// level with its top, where a first line would be.
 function lineMid(r: Range | null, root: HTMLElement): number | null {
   const box = r?.getClientRects()[0]
-  return box ? Math.round(box.top + box.height / 2 - root.getBoundingClientRect().top) : null
+  const h = box && (mediaIn(r!) ? Math.min(box.height, 24) : box.height)
+  return box ? Math.round(box.top + h! / 2 - root.getBoundingClientRect().top) : null
 }
 const contentsOf = (el: HTMLElement) => { const r = document.createRange(); r.selectNodeContents(el); return r }
 // The outermost closed <details> that hides a passage, if any (its summary shows).
@@ -387,7 +389,7 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
   return <>{all.map((r) => {
     const here = target?.top === r.top
     const own = here ? r.items.find((it) => it.whole && it.key === target!.key) : undefined
-    const tp = here ? pickOf(target!.anchor, target!.el.innerText.trim(), true) : null
+    const tp = here ? pickOf(target!.anchor, passageQuote(target!.el), true) : null
     const ack = tp && (
       <div key="ack" className="rail-ack">
         <button className={`ack-btn${onOf(tp).size ? ' on' : ''}${own ? ' over' : ''}`} aria-label={own ? 'Comment or change reactions' : 'React with last emoji'}

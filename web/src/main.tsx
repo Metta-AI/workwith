@@ -153,9 +153,10 @@ function SignIn() {
   )
 }
 
-// Images in replies and sent messages are small; a click shows one full size.
+// Images in replies and sent messages are small; a click shows one full size. So it does
+// for an image an agent shows, in a message (not one in a link) or from show_file.
 document.addEventListener('click', (e) => {
-  const img = (e.target as Element | null)?.closest?.('img.ri-img, .user-part .md img, .note-card.sent .md img') as HTMLImageElement | null
+  const img = (e.target as Element | null)?.closest?.('img.ri-img, .user-part .md img, .note-card.sent .md img, .assistant-text img:not(a img), img.media-img') as HTMLImageElement | null
   if (!img || img.classList.contains('loading')) return
   e.preventDefault()
   state.lightbox = img.src

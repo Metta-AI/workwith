@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Anchor, Block, Event, ImageRef, Part, Task } from '../../../shared/types.ts'
-import { addDraft, api, draftsOf, removeDraft, rewind, select, state, uid, useStore, here } from '../store.ts'
-import { anchorFromRange } from '../anchoring.ts'
+import { addDraft, api, draftsOf, media, removeDraft, rewind, select, state, uid, useStore, here } from '../store.ts'
+import { mediaKind } from '../../../shared/media.ts'
+import { anchorFromRange, passageQuote } from '../anchoring.ts'
 import { holdKeyboard, renderInline, renderMd, renderText } from '../util.ts'
 import { AssistantMessage, type Reaction } from './AssistantMessage.tsx'
 import { RichInput, Thumbs } from './Inputs.tsx'
@@ -133,7 +134,7 @@ export function Transcript({ sid }: { sid: string }) {
       if (whole) all.selectNodeContents(whole)
       const anchor = anchorFromRange(whole ? all : r, el)
       if (!anchor) return
-      const quote = whole ? whole.innerText.trim() : sel.toString().trim().replace(/\n{3,}/g, '\n\n')
+      const quote = whole ? passageQuote(whole) : sel.toString().trim().replace(/\n{3,}/g, '\n\n')
       // A comment inside an item to consider or a question counts as the reply to it.
       const itemKey = at(r.commonAncestorContainer)?.closest<HTMLElement>('[data-item]')?.dataset.item
       // Only now: the hidden field's focus clears the selection.
@@ -586,13 +587,23 @@ function repliesSummary(parts: Part[]): string {
   return out.join(', ')
 }
 
+// An image or a video in a quote (passageQuote) shows as a small picture of it.
+const QUOTED = /!\[\]\((\/api\/(?:images|media)\/[^)\s]+)\)/
+const withMedia = (text: string) => text.split(QUOTED).map((s, i) => {
+  if (i % 2 === 0) return s
+  const kind = mediaKind(s)
+  return kind === 'image' ? <img key={i} className="quote-media" src={media(s)} alt="" />
+    : kind === 'video' ? <video key={i} className="quote-media" src={media(s)} preload="metadata" muted />
+    : <span key={i}>{s.split('/').pop()}</span>
+})
+
 // Claude gets only the first words of a long quote; the "…" shows the rest, dimmed.
 function SentQuote({ quote }: { quote: string }) {
   const [open, setOpen] = useState(false)
   const { head, rest } = splitQuote(quote)
   return (
     <div className={`sent-quote${open ? ' open' : ''}`}>
-      {head}
+      {withMedia(head)}
       {rest && (open
         ? <span className="quote-rest" title="Not sent to the agent">{rest}</span>
         : <button className="quote-more" title="Show the rest (not sent to the agent)" onClick={(ev) => { ev.stopPropagation(); setOpen(true) }}>…</button>)}
