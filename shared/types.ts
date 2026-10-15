@@ -34,6 +34,7 @@ export type SessionMeta = {
   parentId: string | null
   model: string | null
   permissionMode: PermissionMode
+  flags?: string[]        // extra Claude Code flags it starts with (shared/flags.ts)
   claudeSessionId: string
   started: boolean        // the claude session exists on disk, so we --resume it
   createdAt: number

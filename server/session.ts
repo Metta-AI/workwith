@@ -8,9 +8,11 @@
 
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
+import os from 'node:os'
 import { formatAnswer, formatNote } from '../shared/asks.ts'
 import { formatDismissed, formatDone, itemsOf } from '../shared/blocks.ts'
 import { formatMail } from '../shared/mail.ts'
+import { flagArgs } from '../shared/flags.ts'
 import { mediaTypeOf, splitImages, withoutImages } from '../shared/images.ts'
 import type { Block, Event, Part, PermissionMode, SessionMeta, Status, Usage } from '../shared/types.ts'
 import { AUTH_ERROR, CLAUDE, childEnv } from './auth.ts'
@@ -159,6 +161,7 @@ export class Session {
       '--name', claudeName(m.id),
       '--permission-mode', m.permissionMode,
       ...(m.model ? ['--model', m.model] : []),
+      ...flagArgs(m.flags, os.homedir()),
       ...(m.resumeAt ? ['--resume', m.claudeSessionId, '--resume-session-at', m.resumeAt, '--fork-session']
         : m.started ? ['--resume', m.claudeSessionId] : ['--session-id', m.claudeSessionId]),
       '--append-system-prompt-file', promptFile(m.id, prompt),
@@ -257,6 +260,8 @@ export class Session {
       args: [
         '-p', '--output-format', 'json', '--permission-mode', m.permissionMode,
         ...(m.model ? ['--model', m.model] : []),
+        // Its flags too: the same tools, so the same prompt cache.
+        ...flagArgs(m.flags, os.homedir()),
         '--resume', m.claudeSessionId, '--fork-session', '--no-session-persistence', '--max-turns', '1',
         '--append-system-prompt-file', promptFile(m.id, prompt),
         ...args,

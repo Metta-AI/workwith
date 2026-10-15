@@ -3,6 +3,7 @@ import { useEscape } from '../escape.ts'
 import type { ImageRef, PermissionMode, SessionMeta } from '../../../shared/types.ts'
 import { api, currentMachine, globalId, localId, LOCAL, machineList, machineOf, select, setComposer, state } from '../store.ts'
 import { DirPicker } from './DirPicker.tsx'
+import { FlagPicker } from './FlagPicker.tsx'
 import { RichInput } from './Inputs.tsx'
 
 // machine: where it runs; the current session's by default.
@@ -13,6 +14,7 @@ export function NewSession({ cwd: initial, machine: start = currentMachine(), on
   const [title, setTitle] = useState('')
   const [model, setModel] = useState('')
   const [mode, setMode] = useState<PermissionMode>('auto')
+  const [flags, setFlags] = useState<string[]>([])
   const [parentId, setParentId] = useState('')
   const [prompt, setPrompt] = useState('')
   const [images, setImages] = useState<ImageRef[]>([])
@@ -34,7 +36,7 @@ export function NewSession({ cwd: initial, machine: start = currentMachine(), on
   const create = async () => {
     setBusy(true); setErr(null)
     try {
-      const meta = await api<SessionMeta>('/api/sessions', 'POST', { cwd, title, model: model || null, permissionMode: mode, parentId: parentId ? localId(parentId) : null, mkdir: missing }, machine)
+      const meta = await api<SessionMeta>('/api/sessions', 'POST', { cwd, title, model: model || null, permissionMode: mode, flags, parentId: parentId ? localId(parentId) : null, mkdir: missing }, machine)
       const id = globalId(machine, meta.id)
       if (prompt.trim() || images.length) await api(`/api/sessions/${id}/send`, 'POST', { parts: [{ kind: 'text', text: prompt, images }] })
       else setComposer(id, { text: '' })
@@ -72,6 +74,9 @@ export function NewSession({ cwd: initial, machine: start = currentMachine(), on
               <option value="auto">Auto mode</option><option value="default">Ask before tools</option><option value="acceptEdits">Auto-accept edits</option><option value="plan">Plan only</option><option value="bypassPermissions">Bypass permissions</option>
             </select>
           </label>
+        </div>
+        <div className="field">Claude Code flags
+          <FlagPicker value={flags} onChange={setFlags} />
         </div>
         <label>Sub-task of
           <select value={parentId} onChange={(e) => setParentId(e.target.value)}>

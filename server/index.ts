@@ -25,6 +25,7 @@ import * as meter from './meter.ts'
 import * as costs from './costs.ts'
 import { notesDir, notesNow, notesPath, readNotes, resumeKeepWarm, startNotes } from './notes.ts'
 import { notesFile } from '../shared/notes.ts'
+import { flagProblem } from '../shared/flags.ts'
 import { allTasks, endText, logPath, markTold, readLog, removeTask, searchLog, startTask, startTasks, statusLine, stopTask, taskOf } from './tasks.ts'
 import type { Task, TaskNotify } from '../shared/types.ts'
 import { configsFor, probe, serversFor } from './mcpservers.ts'
@@ -293,7 +294,9 @@ function get(id: string): Session {
   return s
 }
 
-function createSession(o: { cwd: string; title?: string; model?: string | null; permissionMode?: PermissionMode; parentId?: string | null; mkdir?: boolean }): Session {
+function createSession(o: { cwd: string; title?: string; model?: string | null; permissionMode?: PermissionMode; flags?: string[]; parentId?: string | null; mkdir?: boolean }): Session {
+  const flags = Array.isArray(o.flags) ? o.flags.map((f) => String(f).trim()).filter(Boolean) : []
+  for (const f of flags) { const p = flagProblem(f); if (p) throw new HttpError(400, p) }
   const cwd = path.resolve(expandHome(String(o.cwd ?? '').trim()))
   if (o.mkdir && !fs.existsSync(cwd)) {
     try { fs.mkdirSync(cwd, { recursive: true }) } catch (e) { throw new HttpError(400, `Can't create ${cwd}: ${(e as Error).message}`) }
@@ -302,6 +305,7 @@ function createSession(o: { cwd: string; title?: string; model?: string | null; 
   const mode = MODES.includes(o.permissionMode as PermissionMode) ? o.permissionMode! : 'auto'
   const s = adopt(newMeta({
     cwd, title: o.title?.trim() || path.basename(cwd), model: o.model || null, permissionMode: mode,
+    ...(flags.length ? { flags } : {}),
     parentId: o.parentId && sessions.has(o.parentId) ? o.parentId : null,
     // Your MCP servers start off, except the ones you keep always on.
     ...(settings.mcpStartOff !== false ? { mcp: { strict: true as const, on: [...(settings.mcpAlways ?? [])] } } : {}),
@@ -1222,7 +1226,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       if (c === 'keep-warm') { resumeKeepWarm(s.meta); return send(res, 200, { ok: true }) }
       if (c === 'continue') {
         if (!readNotes(s.meta)) throw new HttpError(400, 'This session has no notes yet')
-        const n = createSession({ cwd: s.meta.cwd, title: `${s.meta.title} (continued)`, model: s.meta.model, permissionMode: s.meta.permissionMode, parentId: s.meta.parentId })
+        const n = createSession({ cwd: s.meta.cwd, title: `${s.meta.title} (continued)`, model: s.meta.model, permissionMode: s.meta.permissionMode, flags: s.meta.flags, parentId: s.meta.parentId })
         return send(res, 200, { meta: n.meta, text: `Read \`${notesFile(s.meta.id)}\`: notes from an earlier session. Continue the work from there.` })
       }
       const err = notesNow(s, !!body.force)

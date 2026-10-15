@@ -627,6 +627,14 @@ h1.rename { cursor: text; border-radius: 5px; } h1.rename:hover { background: rg
 .dir-menu button { justify-content: space-between; font-size: calc(13px * var(--fs, 1)); }
 .dir-menu button .muted { font-size: calc(11.5px * var(--fs, 1)); white-space: nowrap; }
 .dir-menu-head { font-size: calc(11px * var(--fs, 1)); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 4px 8px; }
+/* The extra Claude Code flags of a new session (FlagPicker.tsx): chips and a search field in one box. */
+.flag-picker { position: relative; color: var(--text); font-size: calc(14px * var(--fs, 1)); }
+.flag-box { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 7px; padding: 3px 4px; cursor: text; }
+.flag-box input { flex: 1; min-width: 140px; border: none; background: none; padding: 2px 4px; outline: none; }
+.flag-box:focus-within { border-color: var(--muted); }
+.flag-chip { display: inline-flex; align-items: center; gap: 2px; background: var(--accent-soft); border-radius: 5px; padding: 1px 2px 1px 7px; }
+.flag-chip button.link { padding: 2px 3px; display: inline-flex; }
+.flag-err { color: var(--bad); font-size: calc(12px * var(--fs, 1)); margin-top: 3px; }
 .dir-browser { margin-top: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
 .crumbs { padding: 6px 8px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: calc(12.5px * var(--fs, 1)); display: flex; flex-wrap: wrap; }
 .crumbs button { padding: 0 1px; color: var(--text); }
