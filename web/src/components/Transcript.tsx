@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Anchor, Block, Event, ImageRef, Part, Task } from '../../../shared/types.ts'
-import { addDraft, api, draftsOf, removeDraft, rewind, select, uid, useStore } from '../store.ts'
+import { addDraft, api, draftsOf, removeDraft, rewind, select, uid, useStore, here } from '../store.ts'
 import { anchorFromRange } from '../anchoring.ts'
 import { renderInline, renderMd, renderText } from '../util.ts'
 import { AssistantMessage, type Reaction } from './AssistantMessage.tsx'
@@ -552,8 +552,8 @@ function SentQuote({ quote }: { quote: string }) {
 // Who sent a message from another session; a click shows that session.
 function MailHead({ p }: { p: Extract<Part, { kind: 'mail' }> }) {
   const { sessions } = useStore()
-  const title = sessions.find((s) => s.id === p.from)?.title ?? p.title
-  const who = <button className="link mail-who" title="Show that session" onClick={() => select(p.from)}>{title}</button>
+  const title = sessions.find((s) => s.id === here(p.from))?.title ?? p.title
+  const who = <button className="link mail-who" title="Show that session" onClick={() => select(here(p.from))}>{title}</button>
   return (
     <div className="mail-head">
       <MailIcon size={12} />
@@ -646,7 +646,7 @@ function MailTool({ b, result }: { b: Extract<Block, { type: 'tool_use' }>; resu
   // A reply goes to whoever sent the message it answers.
   const to = i.to ?? i.id ?? (b.name === 'mcp__codinger__reply' ? replyTarget(events, String(i.message_id ?? '')) : undefined)
   const spawned = result?.text.match(/^Started `([^`]+)`/)?.[1]
-  const target = sessions.find((s) => s.id === (spawned ?? to))
+  const target = sessions.find((s) => s.id === here(String(spawned ?? to)))
   const name = target?.title ?? i.title ?? to ?? ''
   const text = String(i.message ?? i.prompt ?? '')
   return (

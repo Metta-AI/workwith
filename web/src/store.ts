@@ -120,6 +120,8 @@ const SEP = '~'
 export const machineOf = (id: string) => id.includes(SEP) ? id.slice(0, id.indexOf(SEP)) : LOCAL
 export const localId = (id: string) => id.includes(SEP) ? id.slice(id.indexOf(SEP) + 1) : id
 export const globalId = (machine: string, id: string) => machine ? `${machine}${SEP}${id}` : id
+// A session id that a server sent (in a message, a task, a tool call): on the current machine.
+export const here = (id: string) => globalId(currentMachine(), id)
 
 const blank = (name: string): Machine => ({ name, connected: false, loaded: false, sessions: [], settings: { leadAutoSend: false }, usage: {}, tasks: [], platform: '', home: '', auth: { state: 'ok' }, stale: false })
 

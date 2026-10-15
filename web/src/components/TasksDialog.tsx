@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useEscape } from '../escape.ts'
 import type { Task } from '../../../shared/types.ts'
-import { api, select, useStore } from '../store.ts'
+import { api, select, useStore, here } from '../store.ts'
 import { fatigue } from '../util.ts'
 import { Mascot } from './Mascot.tsx'
 import { CheckIcon, DashIcon, SearchIcon, TrashIcon, XIcon } from './Icons.tsx'
@@ -62,7 +62,7 @@ export function TasksDialog({ onClose, first }: { onClose(): void; first?: strin
                   <div className="tasks-group-head">{name}</div>
                   {!list.length && <div className="tasks-none">No running tasks</div>}
                   {list.map((x) => {
-                    const s = st.sessions.find((m) => m.id === x.sid)
+                    const s = st.sessions.find((m) => m.id === here(x.sid))
                     return (
                       <button key={x.id} className={`task-row${x.id === t?.id ? ' on' : ''}`} onClick={() => setPick(x.id)}>
                         {s ? <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={22} child={!!s.parentId} /> : <span className="task-nobody" />}
@@ -94,7 +94,7 @@ function TaskView({ t, onClose }: { t: Task; onClose(): void }) {
   const [q, setQ] = useState('')
   const [hits, setHits] = useState<{ n: number; line: string }[] | null>(null)
   const [confirm, setConfirm] = useState(false)
-  const s = st.sessions.find((m) => m.id === t.sid)
+  const s = st.sessions.find((m) => m.id === here(t.sid))
   const shown = useMemo(() => log.split('\n').map(lastDraw).join('\n'), [log])
 
   // The log's end at first, then what is added, every second while it runs (and once more after).

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Mail, PermissionMode, SessionMeta, SlashCommand } from '../../../shared/types.ts'
 import { MAX_RUN } from '../../../shared/mail.ts'
-import { api, closeSession, composerOf, draftsOf, hasContent, loadEvents, queuedParts, select, sendQueued, setComposer, state, undismissItem, useStore, selectFallback } from '../store.ts'
+import { api, closeSession, composerOf, draftsOf, hasContent, loadEvents, queuedParts, select, sendQueued, setComposer, state, undismissItem, useStore, selectFallback, globalId, machineOf } from '../store.ts'
 import { fatigue, kTokens } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { RichInput } from './Inputs.tsx'
@@ -222,7 +222,7 @@ function Inbox({ m }: { m: SessionMeta }) {
 function Mailbox({ m }: { m: SessionMeta }) {
   const { sessions } = useStore()
   if (!m.mail?.length) return null
-  const name = (x: Mail) => sessions.find((s) => s.id === x.from)?.title ?? x.title
+  const name = (x: Mail) => sessions.find((s) => s.id === globalId(machineOf(m.id), x.from))?.title ?? x.title
   const act = (id: string, send: boolean) => api(`/api/sessions/${m.id}/mail/${id}`, 'POST', { send })
   return (
     <div className="inbox">
