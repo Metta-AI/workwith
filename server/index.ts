@@ -1218,7 +1218,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     metaChanged()
     return send(res, 200, { ok: true })
   }
-  // Back to the default order: folders by latest activity, sessions by age.
+  // Back to the default order: folders and sessions by latest activity.
   if (id === 'order' && method === 'DELETE') {
     for (const x of sessions.values()) delete x.meta.order
     settings = { ...settings, groupOrder: [] }

@@ -15,13 +15,13 @@ import type { Page } from './SettingsDialog.tsx'
 import { shortPath } from './DirPicker.tsx'
 
 // Sessions grouped by directory; sessions spawned for another one nest under it.
-// You can drag both into place; until you do, folders go by latest activity and
-// sessions by age. Folders you have not placed yet come first.
+// You can drag both into place; until you do, both go by latest activity, newest
+// on top. Folders and sessions you have not placed yet come first.
 export function groupSessions(sessions: SessionMeta[], archived: boolean, groupOrder: string[] = []) {
   const workers = sessions.filter((s) => s.kind === 'worker' && s.archived === archived)
   const groups = new Map<string, SessionMeta[]>()
-  const place = (s: SessionMeta) => s.order ?? Infinity
-  for (const s of workers.sort((a, b) => place(a) - place(b) || a.createdAt - b.createdAt)) groups.set(s.cwd, [...(groups.get(s.cwd) ?? []), s])
+  const place = (s: SessionMeta) => s.order ?? -1
+  for (const s of workers.sort((a, b) => place(a) - place(b) || b.lastActivity - a.lastActivity)) groups.set(s.cwd, [...(groups.get(s.cwd) ?? []), s])
   const rank = (cwd: string) => { const i = groupOrder.indexOf(cwd); return i < 0 ? -1 : i }
   const recent = (list: SessionMeta[]) => Math.max(...list.map((s) => s.lastActivity))
   return [...groups.entries()].sort((a, b) => rank(a[0]) - rank(b[0]) || recent(b[1]) - recent(a[1]))
@@ -186,7 +186,7 @@ export function Sidebar({ width }: { width: number }) {
       <CostBanner open={() => setSettings('cost')} />
       <div className="side-foot">
         {/* Floats above the line, so it takes no room from the footer. */}
-        {custom && <button className="reset-order" title="Sort folders by latest activity, sessions oldest first" onClick={() => void api('/api/sessions/order', 'DELETE')}>Reset order</button>}
+        {custom && <button className="reset-order" title="Sort folders and sessions by latest activity" onClick={() => void api('/api/sessions/order', 'DELETE')}>Reset order</button>}
         <button className="link" title={st.web ? `Settings of ${currentMachine()}` : 'Settings'} onClick={() => setSettings(true)}><GearIcon size={14} /></button>
         <div className="side-foot-mid">
           {(u.fiveHour != null || u.sevenDay != null) && (

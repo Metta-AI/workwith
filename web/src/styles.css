@@ -359,6 +359,8 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
    text; the reaction button shares the marks' box, so hovering only adds a border. */
 .rail-row { position: absolute; right: calc(100% + 6px); z-index: 3; transform: translateY(-50%); display: flex; flex-direction: row-reverse; gap: 2px; align-items: center; }
 .rail-ack { position: relative; }
+/* Each row is its own layer, so the row with an open popup or picker must rise over the rows below it. */
+.rail-row:has(.ack-pop, .emoji-picker) { z-index: 4; }
 .ack-btn, .react-mark { display: block; border: 1px solid transparent; padding: 0 3px; font-size: calc(14px * var(--fs, 1)); line-height: 20px; border-radius: 6px; white-space: nowrap; user-select: none; }
 .react-mark { background: none; cursor: pointer; touch-action: none; }
 .rail-row .em { display: inline-block; transition: transform .12s; }
@@ -521,7 +523,7 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 @keyframes draft-orig-in { from { opacity: 0; } }
 .ask-options { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 8px; }
 .chip { border-radius: 14px; padding: 2px 10px; font-size: calc(13px * var(--fs, 1)); text-align: left; }
-.chip.on { background: var(--blue); border-color: var(--blue); color: #fff; }
+.chip.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .chip.static { cursor: default; background: var(--panel); font-size: calc(12px * var(--fs, 1)); }
 .chip.open-chip { font-size: calc(12px * var(--fs, 1)); background: var(--panel); }
 .chip.open-chip.warn { background: rgba(212, 167, 44, .2); border-color: var(--warn); }
