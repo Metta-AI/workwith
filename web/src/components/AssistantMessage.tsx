@@ -247,7 +247,7 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
         let best: HTMLElement | null = null, h = Infinity
         for (const c of el.querySelectorAll<HTMLElement>('li, [data-block]')) {
           // A passage in a closed <details> is laid out on top of what follows it.
-          if (c.closest('.run-card, details:not([open])') || (c.closest('.ask-card') && !c.closest('.ask-q'))) continue
+          if (c.closest('details:not([open])') || (c.closest('.ask-card') && !c.closest('.ask-q'))) continue
           const b = c.getBoundingClientRect()
           if (e.clientY >= b.top - 2 && e.clientY <= b.bottom + 2 && b.height < h) { best = c; h = b.height }
         }
@@ -478,7 +478,7 @@ function Pieces({ c, pieces }: { c: Ctx; pieces: Piece[] }) {
         </details>
       )
       case 'consider': return <ConsiderCard key={p.block} c={c} p={p} />
-      case 'run': return <RunCard key={p.block} c={c} card={`${c.msg}:${p.block}`} title={p.title} command={p.command} ready={p.closed && !c.live} />
+      case 'run': return <RunCard key={p.block} c={c} card={`${c.msg}:${p.block}`} block={p.block} title={p.title} command={p.command} ready={p.closed && !c.live} />
     }
   })}</>
 }
@@ -543,17 +543,20 @@ function DoneProblem({ sid, itemKey }: { sid: string; itemKey: string }) {
 
 // A command Claude wants you to run: open it in a new Terminal window in the
 // session's directory, or copy it.
-function RunCard({ c, card, title, command, ready }: { c: Ctx; card: string; title: string; command: string; ready: boolean }) {
+function RunCard({ c, card, block, title, command, ready }: { c: Ctx; card: string; block: number; title: string; command: string; ready: boolean }) {
   const st = useStore()
   const [done, setDone] = useState('')
   const flash = (s: string) => { setDone(s); setTimeout(() => setDone(''), 2000) }
   const run = Object.values(st.runs).findLast((r) => r.sid === c.sid && r.card === card)
   return (
-    <div className="run-card" onMouseUp={(e) => e.stopPropagation()}>
-      {title && <div className="run-title" dangerouslySetInnerHTML={{ __html: renderInline(title) }} />}
-      <pre className="hljs" dangerouslySetInnerHTML={{ __html: highlight(command, st.platform === 'win32' ? 'powershell' : 'bash') }} />
+    <div className="run-card">
+      {/* Its title and command are one passage, to comment on or react to like a paragraph. */}
+      <div data-block={block}>
+        {title && <div className="run-title" dangerouslySetInnerHTML={{ __html: renderInline(title) }} />}
+        <pre className="hljs" dangerouslySetInnerHTML={{ __html: highlight(command, st.platform === 'win32' ? 'powershell' : 'bash') }} />
+      </div>
       {ready && command && (
-        <div className="run-actions">
+        <div className="run-actions" onMouseUp={(e) => e.stopPropagation()}>
           {(st.platform === 'darwin' || st.platform === 'win32') && (
             <button className="primary" onClick={() => api<{ token: string }>(`/api/sessions/${c.sid}/run`, 'POST', { command }).then(({ token }) => {
               state.runs[token] = { sid: c.sid, card, command, ...(c.within ? { item: { key: c.within.key, label: c.within.label } } : {}) }
@@ -568,7 +571,7 @@ function RunCard({ c, card, title, command, ready }: { c: Ctx; card: string; tit
             : <span className={run.code === 0 ? 'run-ok' : 'run-bad'}>{run.code === 0 ? <CheckIcon size={12} /> : <XIcon size={12} />} Exit code {run.code}</span>)}
         </div>
       )}
-      {run?.tail && <details className="run-out"><summary>Output</summary><pre>{run.tail}</pre></details>}
+      {run?.tail && <details className="run-out" onMouseUp={(e) => e.stopPropagation()}><summary>Output</summary><pre>{run.tail}</pre></details>}
     </div>
   )
 }

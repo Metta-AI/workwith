@@ -41,7 +41,7 @@ import { remoteCancelLink, remoteForget, remoteHub, remoteLink, remoteOn, remote
 import {
   DATA, LEAD_DIR, LEAD_NOTES, OLD_LEAD_NOTES, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, leadRenamed, resolveModel, loadSessions, promptFile, loadSettings, saveImage, saveSessions, saveSettings,
 } from './store.ts'
-import { ARTIFACTS, artifactsChanged, artifactsPrompt, checkArtifact, listArtifacts, noteTool, publish, reportOf, showArtifact, startHost, watchArtifacts } from './artifacts.ts'
+import { ARTIFACTS, artifactsChanged, artifactsPrompt, checkArtifact, listArtifacts, noteTool, publish, reportOf, showArtifact, startHost, typeOf, watchArtifacts } from './artifacts.ts'
 import { connectCallback, connectUrl, disconnect as prolificaDisconnect, prolificaState } from './prolifica.ts'
 
 const ROOT =path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -1043,6 +1043,28 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     }
     return send(res, 200, out)
   }
+  if (a === 'fs' && id === 'upload' && method === 'POST') {
+    // A file you attached to a message, put in the session's directory as it is (the raw
+    // body); a name already there gets " (2)". The message then names the file (shared/files.ts).
+    const dir = path.resolve(expandHome(url.searchParams.get('dir') ?? ''))
+    const want = path.basename(url.searchParams.get('name') ?? '').replace(/[\x00-\x1f/\\:`]/g, '_').trim() || 'file'
+    fs.mkdirSync(dir, { recursive: true })
+    const ext = path.extname(want), stem = want.slice(0, want.length - ext.length) || want
+    let name = want
+    for (let n = 2; fs.existsSync(path.join(dir, name)); n++) name = `${stem} (${n})${ext}`
+    const file = path.join(dir, name)
+    const out = fs.createWriteStream(file, { flags: 'wx' })
+    let size = 0
+    try {
+      for await (const c of req) {
+        size += c.length
+        if (size > 2_000_000_000) throw new HttpError(413, 'Files over 2 GB do not upload')
+        if (!out.write(c)) await new Promise((r) => out.once('drain', r))
+      }
+      await new Promise<void>((r, j) => out.end((e?: Error | null) => e ? j(e) : r()))
+    } catch (e) { out.destroy(); fs.rmSync(file, { force: true }); throw e }
+    return send(res, 200, { name, size })
+  }
   if (a === 'fs' && id === 'reveal' && method === 'POST') {
     // A folder opens in Finder; a file is shown selected in its folder.
     const p = path.resolve(expandHome(String((await json(req)).path ?? '')))
@@ -1149,6 +1171,16 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   if (b === 'commands' && method === 'GET') return send(res, 200, commands.get(id) ?? lastCommands)
   if (b === 'mcp' && method === 'GET') {
     return send(res, 200, { servers: serversFor(s.meta.cwd), on: s.meta.mcp?.on ?? null })
+  }
+  if (b === 'file' && method === 'GET') {
+    // A file in the session's directory (one you attached), to open in the browser. Sandboxed,
+    // so a page among them does not run as Codinger.
+    const file = path.resolve(s.meta.cwd, url.searchParams.get('name') ?? '')
+    if (!file.startsWith(path.resolve(s.meta.cwd) + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) throw new HttpError(404, 'No such file')
+    const type = typeOf(file)
+    res.writeHead(200, { 'content-type': type.startsWith('text/') && !type.includes('charset') ? `${type}; charset=utf-8` : type, 'content-security-policy': 'sandbox', 'x-content-type-options': 'nosniff', 'cache-control': 'no-store' })
+    fs.createReadStream(file).pipe(res)
+    return
   }
   if (b === 'notes' && !c && method === 'GET') return send(res, 200, { path: notesPath(s.meta), text: readNotes(s.meta) })
   if (b === 'autopilot' && method === 'DELETE') { endAutopilot(s, 'you turned it off'); return send(res, 200, s.meta) }

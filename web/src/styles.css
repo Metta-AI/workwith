@@ -183,13 +183,25 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 /* ---- session ---- */
 .session { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .session-body { flex: 1; min-height: 0; display: flex; }
-.session-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.session-main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
+/* Shown while files are dragged over the chat; drops pass through it to what is under it. */
+.drop-zone { position: absolute; inset: 6px; z-index: 20; pointer-events: none; display: flex; align-items: center; justify-content: center; border: 2px dashed var(--blue); border-radius: 12px; background: color-mix(in srgb, var(--blue) 8%, color-mix(in srgb, var(--bg) 70%, transparent)); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
+.drop-card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 18px 26px; border-radius: 12px; background: var(--card); box-shadow: 0 4px 24px rgba(0, 0, 0, .18); text-align: center; max-width: 80%; }
+.drop-card .icon { color: var(--blue); }
 .panel-toggle { display: inline-flex; align-items: center; gap: 5px; }
 .panel-toggle.on { background: var(--accent-soft); }
 .attention { flex: none; overflow-y: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 6px 12px 20px; font-size: calc(13px * var(--fs, 1)); }
 .attention-top { display: flex; justify-content: space-between; align-items: center; position: sticky; top: -6px; background: var(--panel); z-index: 1; padding-top: 4px; }
 .attention-head { font-size: calc(11.5px * var(--fs, 1)); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 8px 0 6px; display: flex; gap: 6px; align-items: center; }
 .attention-empty { font-size: calc(12.5px * var(--fs, 1)); padding: 4px 2px 8px; }
+.file-row { display: flex; align-items: center; gap: 4px; padding: 3px 2px; }
+.file-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; color: var(--text); text-decoration: none; }
+.file-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-name:hover span { text-decoration: underline; }
+.file-name .icon { flex: none; opacity: .6; }
+.file-row { position: relative; display: flex; flex-direction: column; padding: 6px 8px; border-radius: 7px; cursor: pointer; }
+.file-row:hover { background: rgba(127, 127, 127, .1); } .file-row.on { background: var(--accent-soft); }
+.file-name { font-size: calc(13.5px * var(--fs, 1)); font-weight: 600; } .file-dir, .file-meta { font-size: calc(11.5px * var(--fs, 1)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Open items are cards; completed ones are a quiet, folded list below a rule. */
 .attention-done-head { width: 100%; border: none; border-top: 1px solid var(--line); border-radius: 0; background: none; padding: 12px 2px 4px; margin-top: 10px; }
 .attention-done-head:hover { color: var(--text); }
@@ -520,6 +532,7 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .rich-input { width: 100%; }
 .modal .field .rich-input { color: var(--text); font-size: calc(14px * var(--fs, 1)); }
 .ri-field { position: relative; }
+.ri-uploads { font-size: calc(12px * var(--fs, 1)); padding: 3px 8px 0; }
 .ri-edit { display: block; box-sizing: border-box; width: 100%; max-height: 420px; overflow-y: auto; background: var(--card); border: 1px solid var(--line); border-radius: 7px; padding: 5px 30px 5px 8px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 20px; cursor: text; }
 /* Live markdown in the fields (mdlive.ts): markers show only in the span or line you are in. */
 .ri-edit .md-mark { color: var(--muted); }
@@ -547,6 +560,11 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .ri-edit[data-empty]::before { content: attr(data-placeholder); color: var(--muted); pointer-events: none; position: absolute; }
 .ri-img { height: 24px; max-width: 96px; object-fit: cover; vertical-align: middle; margin: -6px 0 -4px; border-radius: 4px; border: 1px solid var(--line); cursor: zoom-in; }
 .ri-img.loading { opacity: .45; }
+.ri-file { display: inline-flex; align-items: center; gap: 4px; vertical-align: middle; margin: -4px 1px -2px; padding: 1px 4px 1px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); font-size: .9em; line-height: 1.4; cursor: grab; user-select: none; -webkit-user-select: none; white-space: nowrap; max-width: 260px; }
+.ri-file .icon { flex: none; opacity: .6; }
+.ri-file-name { overflow: hidden; text-overflow: ellipsis; }
+.ri-file-x { flex: none; width: 16px; text-align: center; border-radius: 4px; color: var(--muted); cursor: pointer; }
+.ri-file-x:hover { background: color-mix(in srgb, var(--text) 12%, transparent); color: var(--text); }
 /* No position or transform on .ri-img: either one paints the image over the caret. The margins lift it 1px. */
 .ri-edit.ri-hide-caret { caret-color: transparent; }
 .ri-caret { position: absolute; width: 1px; background: var(--text); pointer-events: none; animation: ri-blink 1s step-end infinite; }

@@ -1,15 +1,17 @@
 // A text field that grows with its text and takes pasted or dropped images,
 // which sit in the text where they were put (as image links, shared/images.ts).
+// Other files go into the session's directory, and the text names them (shared/files.ts).
 // The text is markdown, drawn live (mdlive.ts): the field rebuilds itself from
 // the text after each change, so it keeps its own undo history.
 
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ImageRef } from '../../../shared/types.ts'
 import { htmlToMarkdown } from '../htmlmd.ts'
-import { activate, enterKey, fromDom, imageCaret, imgNode, rangeAt, render, select, selectionOffsets, snapCaret, wrapKey } from '../mdlive.ts'
+import { activate, enterKey, fromDom, imageCaret, imgNode, nodeOffset, rangeAt, rangeOffset, render, select, selectionOffsets, snapCaret, wrapKey } from '../mdlive.ts'
 import { imagesFrom, uploadImage } from '../util.ts'
-import { media } from '../store.ts'
-import { ImageIcon, XIcon } from './Icons.tsx'
+import { media, uploadFile } from '../store.ts'
+import { fileToken } from '../../../shared/files.ts'
+import { ClipIcon, ImageIcon, XIcon } from './Icons.tsx'
 
 type Props = {
   machine?: string   // the machine its images go to; the current one by default
@@ -18,6 +20,11 @@ type Props = {
   // Images attached the older way, beside the text rather than in it.
   images: ImageRef[]
   onImages(imgs: ImageRef[]): void
+  // Where attached files go: the session's directory. Without it, the field takes images only;
+  // with '', it asks for a directory first.
+  uploadDir?: string
+  // Set to a function that attaches files, for drops elsewhere (the whole chat is a drop zone).
+  attachRef?: React.RefObject<((files: File[]) => void) | null>
   placeholder?: string
   autoFocus?: boolean
   onSubmit?(): void
@@ -41,7 +48,7 @@ function caretAt(x: number, y: number): Range | null {
 
 type Snap = { v: string; s: number; e: number; t: number }
 
-export function RichInput({ value, onChange, images, onImages, placeholder, autoFocus, onSubmit, onEscape, minRows = 2, onKey, machine }: Props) {
+export function RichInput({ value, onChange, images, onImages, placeholder, autoFocus, onSubmit, onEscape, minRows = 2, onKey, machine, uploadDir, attachRef }: Props) {
   const ed = useRef<HTMLDivElement>(null)
   const fake = useRef<HTMLSpanElement>(null)       // the caret beside an image (mdlive.ts imageCaret)
   const last = useRef<string | null>(null)        // what this field last reported
@@ -51,6 +58,8 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
   const future = useRef<Snap[]>([])
   const change = useRef(onChange)
   change.current = onChange
+  const [uploading, setUploading] = useState<string[]>([])  // names of files on their way
+  const [noDir, setNoDir] = useState(false)
 
   const emit = (v: string) => {
     const el = ed.current!
@@ -154,6 +163,53 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
     }
   }
 
+  // Images go in the text as images; other files into uploadDir, named in the text where they
+  // were dropped once each is there.
+  function attach(files: File[], at: Range | null) {
+    const imgs = files.filter((f) => f.type.startsWith('image/'))
+    const rest = uploadDir == null ? [] : files.filter((f) => !f.type.startsWith('image/'))
+    if (imgs.length) void add(imgs, at)
+    if (!rest.length) return
+    if (!uploadDir?.trim()) { setNoDir(true); return }
+    setNoDir(false)
+    const el = ed.current!
+    let pos = at && el.contains(at.startContainer) ? rangeOffset(el, at) : caret.current?.[1] ?? fromDom(el).length
+    void (async () => {
+      for (const f of rest) {
+        setUploading((u) => [...u, f.name])
+        try {
+          const name = await uploadFile(f, uploadDir, machine)
+          const v = fromDom(el)
+          const t = (pos && !/\s/.test(v[pos - 1]) ? ' ' : '') + fileToken(name) + (/^\S/.test(v.slice(pos)) ? ' ' : '')
+          edit(v.slice(0, pos) + t + v.slice(pos), pos + t.length)
+          pos += t.length
+        } catch { /* the store shows the error */ }
+        setUploading((u) => { const i = u.indexOf(f.name); return u.filter((_, j) => j !== i) })
+      }
+    })()
+  }
+
+  if (attachRef) attachRef.current = (files) => attach(files, null)
+
+  // A file pill moves where it is dropped; its × removes it.
+  const dragged = useRef<HTMLElement | null>(null)
+  const PILL = 'application/x-codinger-file'
+  const movePill = (e: React.DragEvent) => {
+    const el = ed.current!, pill = dragged.current, at = caretAt(e.clientX, e.clientY)
+    dragged.current = null
+    if (!pill || !el.contains(pill) || !at || !el.contains(at.startContainer)) return
+    const v = fromDom(el), from = nodeOffset(el, pill), len = fileToken(pill.dataset.file!).length
+    let to = rangeOffset(el, at)
+    if (to >= from && to <= from + len) return
+    if (to > from) to -= len
+    const rest = v.slice(0, from) + v.slice(from + len)
+    edit(rest.slice(0, to) + v.slice(from, from + len) + rest.slice(to), to + len)
+  }
+  const removePill = (pill: HTMLElement) => {
+    const el = ed.current!, v = fromDom(el), from = nodeOffset(el, pill)
+    edit(v.slice(0, from) + v.slice(from + fileToken(pill.dataset.file!).length), from)
+  }
+
   // Markdown keys and Enter change the text here, not in the DOM.
   const keyEdit = (e: React.KeyboardEvent) => {
     const el = ed.current!
@@ -184,8 +240,8 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
   }
   // Paste keeps the formatting of rich text, as markdown.
   const paste = (e: React.ClipboardEvent) => {
-    const f = imagesFrom(e.clipboardData)
-    if (f.length) { e.preventDefault(); void add(f, null); return }
+    const f = uploadDir == null ? imagesFrom(e.clipboardData) : [...e.clipboardData.files]
+    if (f.length) { e.preventDefault(); attach(f, null); return }
     const el = ed.current!
     const sel = selectionOffsets(el)
     const html = e.clipboardData.getData('text/html')
@@ -199,8 +255,12 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
   return (
     <div
       className="rich-input"
-      onDragOver={(e) => { if (imagesFrom(e.dataTransfer).length || e.dataTransfer.types.includes('Files')) e.preventDefault() }}
-      onDrop={(e) => { const f = imagesFrom(e.dataTransfer); if (f.length) { e.preventDefault(); void add(f, caretAt(e.clientX, e.clientY)) } }}
+      onDragOver={(e) => { if (imagesFrom(e.dataTransfer).length || e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes(PILL)) e.preventDefault() }}
+      onDrop={(e) => {
+        if (e.dataTransfer.types.includes(PILL)) { e.preventDefault(); movePill(e); return }
+        const f = uploadDir == null ? imagesFrom(e.dataTransfer) : [...e.dataTransfer.files]
+        if (f.length) { e.preventDefault(); attach(f, caretAt(e.clientX, e.clientY)) }
+      }}
     >
       {images.length > 0 && (
         <div className="thumbs">
@@ -231,6 +291,18 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
             if (t === 'historyRedo') { e.preventDefault(); redo() }
           }}
           onScroll={() => imageCaret(ed.current!, fake.current!)}
+          onMouseDown={(e) => {
+            const x = (e.target as Element).closest('.ri-file-x')
+            if (x) { e.preventDefault(); removePill(x.closest<HTMLElement>('.ri-file')!) }
+          }}
+          onDragStart={(e) => {
+            const pill = (e.target as Element).closest?.<HTMLElement>('.ri-file')
+            if (!pill) return
+            dragged.current = pill
+            e.dataTransfer.setData(PILL, pill.dataset.file!)
+            e.dataTransfer.effectAllowed = 'move'
+          }}
+          onDragEnd={() => { dragged.current = null }}
           onBlur={() => imageCaret(ed.current!, fake.current!)}
           onPaste={paste}
           onCopy={(e) => copy(e, false)}
@@ -245,11 +317,14 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
           }}
         />
         <span ref={fake} className="ri-caret" hidden />
-        <label className="attach" title="Attach images" onMouseDown={(e) => e.preventDefault()}>
-          <input type="file" accept="image/*" multiple hidden onChange={(e) => { void add([...(e.target.files ?? [])], null); e.target.value = '' }} />
-          <ImageIcon />
+        <label className="attach" title={uploadDir == null ? 'Attach images' : 'Attach images or files'} onMouseDown={(e) => e.preventDefault()}>
+          <input type="file" accept={uploadDir == null ? 'image/*' : undefined} multiple hidden onChange={(e) => { attach([...(e.target.files ?? [])], null); e.target.value = '' }} />
+          {uploadDir == null ? <ImageIcon /> : <ClipIcon />}
         </label>
       </div>
+      {(uploading.length > 0 || noDir) && (
+        <div className="ri-uploads muted">{noDir ? 'Choose a directory first: attached files go there.' : `Uploading ${uploading.join(', ')}…`}</div>
+      )}
     </div>
   )
 }

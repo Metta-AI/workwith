@@ -8,8 +8,9 @@ import { RichInput } from './Inputs.tsx'
 import { Transcript } from './Transcript.tsx'
 import { AttentionPanel } from './AttentionPanel.tsx'
 import { ArtifactIcon, ArtifactPane, hasPreview } from './Artifacts.tsx'
+import { FilesPanel, filesOf } from './FilesPanel.tsx'
 import { revealItem, useItems } from '../items.ts'
-import { MailIcon, MoreIcon, PanelIcon, UndoIcon, XIcon } from './Icons.tsx'
+import { ClipIcon, MailIcon, MoreIcon, PanelIcon, UndoIcon, XIcon } from './Icons.tsx'
 import { inboxLabel } from '../../../shared/inbox.ts'
 import { renderInline } from '../util.ts'
 import { isReaction } from '../emoji.ts'
@@ -312,7 +313,7 @@ function DismissedChip({ sid }: { sid: string }) {
   )
 }
 
-export function Composer({ m }: { m: SessionMeta }) {
+export function Composer({ m, attachRef }: { m: SessionMeta; attachRef?: React.RefObject<((files: File[]) => void) | null> }) {
   useStore()
   const c = composerOf(m.id)
   const drafts = draftsOf(m.id).filter(hasContent)
@@ -386,11 +387,51 @@ export function Composer({ m }: { m: SessionMeta }) {
           onSubmit={() => send()}
           onKey={slash.onKey}
           minRows={1}
+          machine={machineOf(m.id)}
+          uploadDir={m.cwd}
+          attachRef={attachRef}
         />
         <button className="primary send" disabled={!n || sending} onClick={() => send()} title={costly ? 'Prompt cache expired: use Send anyway above' : undefined}>
           {sending ? 'Sending…' : isCommand ? 'Run' : warned && open.length ? 'Send anyway' : n > 1 ? `Send ${n}` : 'Send'}
         </button>
       </div>
+    </div>
+  )
+}
+
+// Files dropped anywhere in the chat go to the message box: images into the text,
+// other files into the session's directory (Inputs.tsx).
+function DropZone({ m, children }: { m: SessionMeta; children(attachRef: React.RefObject<((files: File[]) => void) | null>): React.ReactNode }) {
+  const attachRef = useRef<((files: File[]) => void) | null>(null)
+  const [over, setOver] = useState(false)
+  const depth = useRef(0)   // dragenter and dragleave come for each child the pointer crosses
+  const files = (e: React.DragEvent) => e.dataTransfer.types.includes('Files')
+  const reset = () => { depth.current = 0; setOver(false) }
+  return (
+    <div
+      className="session-main"
+      onDragEnter={(e) => { if (files(e)) { depth.current++; setOver(true) } }}
+      onDragLeave={(e) => { if (files(e) && --depth.current <= 0) reset() }}
+      onDragOver={(e) => { if (files(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' } }}
+      onDrop={(e) => {
+        if (!files(e)) return
+        reset()
+        // A drop on the message box itself already went in where it fell.
+        if (e.defaultPrevented) return
+        e.preventDefault()
+        attachRef.current?.([...e.dataTransfer.files])
+      }}
+    >
+      {children(attachRef)}
+      {over && (
+        <div className="drop-zone">
+          <div className="drop-card">
+            <ClipIcon size={22} />
+            <b>Drop to add to the chat</b>
+            <span className="muted">Files go into <span className="mono">{shortPath(m.cwd, machineOf(m.id))}</span>; images go into the message.</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -407,26 +448,38 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
   const [preview, setPreview] = useState(() => localStorage.getItem('codinger.previewPane') !== '0')
   const togglePreview = () => { localStorage.setItem('codinger.previewPane', preview ? '0' : '1'); setPreview(!preview) }
   const [previewW, setPreviewW] = useWidth('preview', 480)
+  // The files attached to its messages (FilesPanel.tsx).
+  const [filesOn, setFilesOn] = useState(() => localStorage.getItem('codinger.filesPane') === '1')
+  const toggleFiles = () => { localStorage.setItem('codinger.filesPane', filesOn ? '0' : '1'); setFilesOn(!filesOn) }
+  const [filesW, setFilesW] = useWidth('files', 260)
   const shownAt = st.preview[id]?.at
   useEffect(() => { if (shownAt && Date.now() - shownAt < 5000) { localStorage.setItem('codinger.previewPane', '1'); setPreview(true) } }, [shownAt])
   if (!m) return <div className="empty">No such session.</div>
   const open = items.filter((i) => i.status === 'open').length
   const canPreview = hasPreview(id)
+  const files = filesOf(id).length
   return (
     <div className="session">
       <SessionHeader m={m} extra={<>
         {extra}
         {canPreview && <button className={`panel-toggle icon-tall${preview ? ' on' : ''}`} title="Preview" onClick={togglePreview}><ArtifactIcon size={15} /></button>}
+        {files > 0 && <button className={`panel-toggle icon-tall${filesOn ? ' on' : ''}`} title="Attached files" onClick={toggleFiles}><ClipIcon size={15} /></button>}
         {items.length > 0 && <button className={`panel-toggle icon-tall${panel ? ' on' : ''}`} title="Questions and items" onClick={togglePanel}><PanelIcon size={15} />{open > 0 && <span className="count">{open}</span>}</button>}
       </>} />
       <div className="session-body">
-        <div className="session-main">
-          <Transcript sid={id} />
-          <Composer m={m} />
-        </div>
+        <DropZone m={m}>
+          {(attachRef) => <>
+            <Transcript sid={id} />
+            <Composer m={m} attachRef={attachRef} />
+          </>}
+        </DropZone>
         {preview && canPreview && <>
           <Splitter width={previewW} setWidth={setPreviewW} min={280} max={1400} initial={480} reverse />
           <ArtifactPane sid={id} width={previewW} onHide={togglePreview} />
+        </>}
+        {filesOn && files > 0 && <>
+          <Splitter width={filesW} setWidth={setFilesW} min={200} max={560} initial={260} reverse />
+          <FilesPanel m={m} width={filesW} onHide={toggleFiles} />
         </>}
         {panel && items.length > 0 && <>
           <Splitter width={panelW} setWidth={setPanelW} min={220} max={640} initial={300} reverse />

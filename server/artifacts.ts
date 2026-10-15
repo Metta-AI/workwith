@@ -148,7 +148,7 @@ const KINDS: Record<string, [string, string]> = {
   '.webp': ['image', 'image/webp'], '.svg': ['image', 'image/svg+xml'],
 }
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', ...Object.fromEntries(Object.entries(KINDS).map(([k, [, t]]) => [k, t])) }
-const typeOf = (f: string) => TYPES[path.extname(f).toLowerCase()] ?? 'application/octet-stream'
+export const typeOf = (f: string) => TYPES[path.extname(f).toLowerCase()] ?? 'application/octet-stream'
 
 // Prolifica's bridge, kept in ~/.codinger/bridge.js. Asked for again at most once an
 // hour (a conditional request, so an unchanged one costs nothing); the kept copy

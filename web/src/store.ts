@@ -227,15 +227,25 @@ export async function api<T = any>(path: string, method = 'POST', body?: unknown
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   const j = await r.json().catch(() => ({}))
-  if (!r.ok) {
-    state.error = j.error ?? `${r.status} ${r.statusText}`
-    // An error shows for a while, then goes (a click closes it sooner).
-    const shown = state.error
-    setTimeout(() => { if (state.error === shown) { state.error = null; changed() } }, 8000)
-    changed()
-    throw new Error(state.error!)
-  }
+  if (!r.ok) showError(j.error ?? `${r.status} ${r.statusText}`)
   return j
+}
+
+// An error shows for a while, then goes (a click closes it sooner).
+export function showError(msg: string): never {
+  state.error = msg
+  setTimeout(() => { if (state.error === msg) { state.error = null; changed() } }, 8000)
+  changed()
+  throw new Error(msg)
+}
+
+// A file you attach to a message goes into dir, the session's directory, under its own
+// name (or "name (2)"); returns the name it got.
+export async function uploadFile(file: File, dir: string, machine?: string): Promise<string> {
+  const r = await fetch(urlOf(`/api/fs/upload?dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(file.name)}`, machine ?? currentMachine()), { method: 'POST', body: file })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) showError(j.error ?? `${file.name} did not upload: ${r.status} ${r.statusText}`)
+  return j.name
 }
 
 // Start: on web.codinger.app, sign in and find your machines; on a machine, its own server

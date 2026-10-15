@@ -3,9 +3,11 @@
 // big) and the markers (**, _, `, #…) show only while the caret is in that
 // span or on that line. The field rebuilds its DOM from the text after each
 // change and puts the caret back at the same character, so positions here are
-// offsets into the text, where an image counts as its whole image link.
+// offsets into the text, where an image counts as its whole image link. A file
+// (shared/files.ts) is one pill the same way: it cannot be edited, only removed or moved.
 
 import { imageToken, splitImages } from '../../shared/images.ts'
+import { fileToken, splitFiles } from '../../shared/files.ts'
 import { media } from './store.ts'
 
 // ---- text ↔ DOM ---------------------------------------------------------------
@@ -19,10 +21,35 @@ export function imgNode(src: string, url?: string): HTMLImageElement {
   return img
 }
 
+const CLIP = '<svg class="icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 7.5l-5.3 5.3a3.2 3.2 0 01-4.5-4.5L8.6 2.9a2.1 2.1 0 013 3L6.3 11.2a1 1 0 01-1.5-1.5L9.5 5" /></svg>'
+
+export function fileNode(name: string): HTMLElement {
+  const s = document.createElement('span')
+  s.className = 'ri-file'
+  s.contentEditable = 'false'
+  s.draggable = true
+  s.dataset.file = name
+  s.innerHTML = CLIP
+  const t = document.createElement('span')
+  t.className = 'ri-file-name'
+  t.textContent = name
+  const x = document.createElement('span')
+  x.className = 'ri-file-x'
+  x.setAttribute('role', 'button')
+  x.setAttribute('aria-label', `Remove ${name}`)
+  x.textContent = '\u00d7'
+  s.append(t, x)
+  return s
+}
+
+// An image or a file pill: one unit of the text.
+const isAtom = (n: Node): n is HTMLElement => n instanceof HTMLImageElement || (n instanceof HTMLElement && n.dataset.file != null)
+
 // The text a node stands for.
 function textOf(n: Node, last: boolean): string {
   if (n.nodeType === Node.TEXT_NODE) return n.textContent ?? ''
   if (n instanceof HTMLImageElement) return n.dataset.url ? imageToken(n.dataset.url) : ''
+  if (n instanceof HTMLElement && n.dataset.file != null) return fileToken(n.dataset.file)
   // The browser keeps a <br> at the very end so a final newline shows; it is not text.
   if (n.nodeName === 'BR') return last ? '' : '\n'
   let out = ''
@@ -116,13 +143,16 @@ export function render(el: HTMLElement, value: string) {
   const nodes: Node[] = []
   for (const r of splitImages(value)) {
     if ('url' in r) { nodes.push(imgNode(media(r.url), r.url)); continue }
-    let list = false
-    r.text.split('\n').forEach((l, i) => {
-      if (i) nodes.push(document.createTextNode('\n'))
-      const out = line(l, list)
-      nodes.push(...out.nodes)
-      list = out.list
-    })
+    for (const f of splitFiles(r.text)) {
+      if ('file' in f) { nodes.push(fileNode(f.file)); continue }
+      let list = false
+      f.text.split('\n').forEach((l, i) => {
+        if (i) nodes.push(document.createTextNode('\n'))
+        const out = line(l, list)
+        nodes.push(...out.nodes)
+        list = out.list
+      })
+    }
   }
   // A final newline needs something after it to show as a line.
   if (value.endsWith('\n')) nodes.push(document.createElement('br'))
@@ -147,13 +177,17 @@ function offsetOf(el: HTMLElement, node: Node, off: number): number {
       n += p.textContent?.length ?? 0
       return false
     }
-    if (p !== el && (p instanceof HTMLImageElement || p.nodeName === 'BR')) { n += textOf(p, false).length; return false }
+    if (p !== el && (isAtom(p) || p.nodeName === 'BR')) { if (p.contains(node)) { found = n; return true } n += textOf(p, false).length; return false }
     for (const k of p.childNodes) if (walk(k)) return true
     return false
   }
   walk(el)
   return found < 0 ? n : found
 }
+
+// The text offset of a range's start (a drop point), or of a node (a pill).
+export const rangeOffset = (el: HTMLElement, r: Range) => offsetOf(el, r.startContainer, r.startOffset)
+export const nodeOffset = (el: HTMLElement, n: Node) => offsetOf(el, n.parentNode!, [...n.parentNode!.childNodes].indexOf(n as ChildNode))
 
 export function selectionOffsets(el: HTMLElement): [number, number] | null {
   const s = getSelection()
@@ -178,7 +212,7 @@ function positionAt(el: HTMLElement, target: number): [Node, number] {
       n += len
       return false
     }
-    if (p !== el && (p instanceof HTMLImageElement || p.nodeName === 'BR')) {
+    if (p !== el && (isAtom(p) || p.nodeName === 'BR')) {
       const len = textOf(p, false).length
       if (target <= n && !best) { best = [p.parentNode!, [...p.parentNode!.childNodes].indexOf(p as ChildNode)]; return true }
       n += len

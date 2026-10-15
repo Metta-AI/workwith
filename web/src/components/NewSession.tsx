@@ -59,8 +59,9 @@ export function NewSession({ cwd: initial, machine: start = currentMachine(), on
             </select>
           </label>
         )}
+        {/* With a folder given (the + on a project), start in the first message: focus on the folder would open its menu. */}
         <div className="field">Directory
-          <DirPicker value={cwd} onChange={setCwd} autoFocus machine={machine} />
+          <DirPicker value={cwd} onChange={setCwd} autoFocus={!initial} machine={machine} />
         </div>
         <label>Title <input value={title} placeholder="Defaults to the folder name" onChange={(e) => setTitle(e.target.value)} /></label>
         <div className="two">
@@ -85,7 +86,7 @@ export function NewSession({ cwd: initial, machine: start = currentMachine(), on
           </select>
         </label>
         <div className="field">First message (optional)
-          <RichInput value={prompt} onChange={setPrompt} images={images} onImages={setImages} onSubmit={() => void create()} minRows={4} machine={machine} />
+          <RichInput value={prompt} onChange={setPrompt} images={images} onImages={setImages} onSubmit={() => void create()} minRows={4} machine={machine} autoFocus={!!initial} uploadDir={cwd} />
         </div>
         {err && <div className="notice error">{err}</div>}
         <div className="modal-actions">
