@@ -32,6 +32,13 @@ fs.mkdirSync(BLOBS, { recursive: true })
 type Version = { n: number; at: number; files: Record<string, string> }
 type Rec = { created?: ArtifactTouch; edits: ArtifactTouch[]; published?: ArtifactPublished; versions?: Version[] }
 let record: Record<string, Rec> = (() => { try { return JSON.parse(fs.readFileSync(RECORD, 'utf8')) } catch { return {} } })()
+// Publishes from before the history was kept: the version that went up is the last one kept before it.
+for (const r of Object.values(record)) {
+  const p = r.published
+  if (!p || p.history) continue
+  p.local ??= r.versions?.filter((v) => v.at <= p.at).at(-1)?.n
+  if (p.local != null) p.history = [{ version: p.version, local: p.local, at: p.at }]
+}
 const saveRecord = () => fs.writeFile(RECORD, JSON.stringify(record, null, 1), () => {})
 const recOf = (name: string) => (record[name] ??= { edits: [] })
 
@@ -329,37 +336,46 @@ export function watchArtifacts(changed: () => void) {
 
 const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex')
 
-// Send an artifact to Prolifica: each data file that changed since the last time, then
-// the page. The first publish makes a new page there; later ones make new versions of it.
-export async function publish(name: string, opts: { visibility?: Visibility; note?: string }): Promise<{ published: ArtifactPublished; madePublic: string[] }> {
+// Send an artifact to Prolifica, as it is now or one of its versions (v): each data file
+// that changed since the last time, then the page. The first publish makes a new page
+// there; each later one a new version of it. A data file that changed goes up under a
+// new name, so the page's earlier versions there keep showing the data they had.
+export async function publish(name: string, opts: { visibility?: Visibility; note?: string; v?: number }): Promise<{ published: ArtifactPublished; madePublic: string[] }> {
   if (checkArtifact(name)) throw new Error(checkArtifact(name)!)
-  const dir = dirOf(name)
-  const m = manifest(name)
+  const local = opts.v ?? snapshot(name)
+  saveRecord()
+  const src = sourceOf(name, local)
+  if (!src) throw new Error(`There is no version ${local} of ${name}.`)
+  const m = src.manifest()
   const r = recOf(name)
   const before = r.published
+  const next = before ? before.version + 1 : 1
   const data: ArtifactPublished['data'] = {}
   const bindings: Record<string, string> = {}
   for (const [slot, file] of Object.entries(m.bindings ?? {})) {
     if (file.startsWith('prolifica:')) { bindings[slot] = file.slice(10); continue }
-    const bytes = fs.readFileSync(path.join(dir, file))
+    const bytes = src.read(file)
+    if (!bytes) throw new Error(`Version ${local} has no ${file}.`)
     const hash = sha(bytes)
     const prev = before?.data[file]
     if (prev?.sha === hash) { bindings[slot] = prev.id; data[file] = prev; continue }
-    const q = new URLSearchParams({ path: `${name}/${path.basename(file)}` })
+    const ext = path.extname(file), stem = path.basename(file, ext)
+    const q = new URLSearchParams({ path: `${name}/${prev ? `${stem}.v${next}${ext}` : `${stem}${ext}`}` })
     if (m.slots?.[slot]?.description) q.set('description', m.slots[slot].description!)
-    const ds = await call(`/api/data?${q}`, { method: 'POST', headers: { 'content-type': typeOf(file) }, body: bytes })
+    const ds = await call(`/api/data?${q}`, { method: 'POST', headers: { 'content-type': typeOf(file) }, body: new Uint8Array(bytes) })
     bindings[slot] = ds.id
     data[file] = { sha: hash, id: ds.id }
   }
   const visibility = opts.visibility ?? before?.visibility ?? 'public'
   const body = (id?: string) => JSON.stringify({
-    id, html: fs.readFileSync(path.join(dir, 'index.html'), 'utf8'), title: m.title ?? name, description: m.description,
+    id, html: src.read('index.html')?.toString('utf8') ?? '', title: m.title ?? name, description: m.description,
     shortTitle: m.short_title, viewName: m.view_name, slots: m.slots ?? {}, bindings, visibility, note: opts.note || undefined,
   })
   const post = (id?: string) => call('/api/isles', { method: 'POST', headers: { 'content-type': 'application/json' }, body: body(id) })
   // Deleted on Prolifica since: publish it as a new page.
   const out = await post(before?.id).catch((e) => { if (before?.id && e.status === 404) return post(); throw e })
-  r.published = { id: out.isle.id, url: `${ORIGIN}/i/${out.isle.id}`, version: out.isle.version, at: Date.now(), mtime: mtimeOf(dir), visibility, data }
+  const history = [...(out.isle.id === before?.id ? before?.history ?? (before ? [{ version: before.version, local: before.local ?? 0, at: before.at }] : []) : []), { version: out.isle.version, local, at: Date.now() }]
+  r.published = { id: out.isle.id, url: `${ORIGIN}/i/${out.isle.id}`, version: out.isle.version, at: Date.now(), mtime: mtimeOf(dirOf(name)), visibility, data, local, history }
   saveRecord()
   return { published: r.published, madePublic: (out.madePublic ?? []).map((d: { path?: string; id: string }) => d.path ?? d.id) }
 }

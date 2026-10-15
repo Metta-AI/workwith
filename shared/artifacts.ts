@@ -19,9 +19,12 @@ export type Artifact = {
 }
 
 // data: what each data file was when it went up (sha256), and its dataset id there.
+// local: the artifact's own version that went up; history: every publish, oldest first
+// (version: the page's version on Prolifica; local: the artifact's version it was).
 export type ArtifactPublished = {
   id: string; url: string; version: number; at: number; mtime: number
   visibility: Visibility; data: Record<string, { sha: string; id: string }>
+  local?: number; history?: { version: number; local: number; at: number }[]
 }
 export type Visibility = 'public' | 'unlisted' | 'private'
 

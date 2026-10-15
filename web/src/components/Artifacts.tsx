@@ -81,7 +81,8 @@ export function ArtifactLine({ sid, b, result }: { sid: string; b: Extract<Block
 
 // Publish an artifact to Prolifica: its data files, then its page. Later publishes make new
 // versions there. The first press connects Codinger to Prolifica (one approval in the browser).
-export function PublishControl({ a }: { a: Artifact }) {
+// v: the version on view (none: the artifact as it is now), which is what goes up.
+export function PublishControl({ a, v }: { a: Artifact; v?: number }) {
   const st = useStore()
   const [open, setOpen] = useState(false)
   const [waiting, setWaiting] = useState(false)
@@ -92,7 +93,9 @@ export function PublishControl({ a }: { a: Artifact }) {
   // Back from approving: go on to publishing.
   useEffect(() => { if (waiting && st.prolifica) { setWaiting(false); setOpen(true) } }, [waiting, !!st.prolifica])
   const p = a.published
-  const fresh = p && p.mtime >= a.mtime
+  const local = v ?? a.latest
+  // Already there: an old version that went up before, or the artifact unchanged since the last publish.
+  const upAs = p && (v != null ? p.history?.find((h) => h.local === v)?.version : p.mtime >= a.mtime ? p.version : undefined)
   const press = async () => {
     if (st.prolifica) return setOpen(!open)
     const { url } = await api<{ url: string }>('/api/prolifica/connect')
@@ -102,16 +105,20 @@ export function PublishControl({ a }: { a: Artifact }) {
   const go = async () => {
     setBusy(true)
     try {
-      const r = await api<{ madePublic: string[] }>(`/api/artifacts/${encodeURIComponent(a.name)}/publish`, 'POST', { visibility: vis, note })
+      const r = await api<{ madePublic: string[] }>(`/api/artifacts/${encodeURIComponent(a.name)}/publish`, 'POST', { visibility: vis, note, v })
       setMade(r.madePublic); setNote(''); setOpen(false)
     } finally { setBusy(false) }
   }
   return (
     <span className="publish">
-      {p && <a href={p.url} target="_blank" rel="noreferrer" className="publish-link" data-tip={`Published ${timeAgo(p.at)} (${p.visibility})${fresh ? '' : '. It changed since.'}`}>v{p.version}{fresh ? '' : '*'} <OpenIcon size={11} /></a>}
+      {p && <a href={p.url} target="_blank" rel="noreferrer" className="publish-link" data-tip={`Version ${p.version} on Prolifica, published ${timeAgo(p.at)} (${p.visibility})`}>Prolifica v{p.version} <OpenIcon size={11} /></a>}
       <button className="publish-btn" onClick={() => void press()} data-tip={st.prolifica ? 'Publish to Prolifica' : 'Publish to Prolifica (connects Codinger to it first)'}>{waiting ? 'Approve in the browser…' : 'Publish'}</button>
       {open && (
         <div className="publish-pop">
+          <div className="small">{upAs != null
+            ? `Version ${local} is on Prolifica already, as version ${upAs}.`
+            : p ? `This makes version ${p.version + 1} of the page on Prolifica, from version ${local} here. Version ${p.version} there stays as it is, with its data.`
+            : `This makes a new page on Prolifica, from version ${local} here.`}</div>
           <label>Who can see it
             <select value={vis} onChange={(e) => setVis(e.target.value as Visibility)}>
               <option value="public">Public: listed, anyone can remix</option>
@@ -124,7 +131,7 @@ export function PublishControl({ a }: { a: Artifact }) {
           <div className="publish-foot">
             <span className="muted small">{st.prolifica?.handle ? `As @${st.prolifica.handle}` : ''}</span>
             <button className="link" onClick={() => setOpen(false)}>Cancel</button>
-            <button className="primary" disabled={busy} onClick={() => void go()}>{busy ? 'Publishing…' : 'Publish'}</button>
+            <button className="primary" disabled={busy || upAs != null} onClick={() => void go()}>{busy ? 'Publishing…' : p ? `Publish version ${p.version + 1}` : 'Publish'}</button>
           </div>
         </div>
       )}
@@ -171,12 +178,13 @@ function Picker<T>({ value, choices, onPick, label, className }: { value: T; cho
 function VersionPicker({ a, v, onPick }: { a: Artifact; v?: number; onPick(v?: number): void }) {
   const st = useStore()
   if (!a.versions?.length) return null
+  const on = (n: number) => { const h = a.published?.history?.find((x) => x.local === n); return h && `Prolifica v${h.version}` }
   const who = (n: number) => { const t = a.edits.find((e) => e.v === n); return t && st.sessions.find((x) => x.id === t.sid)?.title }
   const choices = [...a.versions].reverse().map((x) => ({
     value: x.n === a.latest ? 0 : x.n,
     label: x.n === a.latest ? `Latest · v${x.n}` : `Version ${x.n}`,
     short: `v${x.n}`,
-    sub: [timeAgo(x.at), who(x.n)].filter(Boolean).join(' · '),
+    sub: [timeAgo(x.at), who(x.n), on(x.n)].filter(Boolean).join(' · '),
   }))
   return <Picker label="Version" className="version-picker" value={v != null && v !== a.latest ? v : 0} choices={choices} onPick={(n) => onPick(n || undefined)} />
 }
@@ -213,7 +221,7 @@ export function ArtifactPane({ sid, width, wide, onWide, onHide }: { sid: string
         {a && <>
           <span className="artifact-sep" />
           <VersionPicker a={a} v={v} onPick={(n) => showIn(sid, { artifact: a.name, v: n })} />
-          <PublishControl a={a} />
+          <PublishControl a={a} v={v} />
         </>}
         <button className="icon-btn" data-tip="Hide" onClick={onHide}><XIcon size={13} /></button>
       </div>
@@ -284,7 +292,7 @@ export function ArtifactsView() {
             </div>
             <span className="artifact-detail-actions">
               <VersionPicker a={a} v={v} onPick={setV} />
-              <PublishControl key={a.name} a={a} />
+              <PublishControl key={a.name} a={a} v={v} />
             </span>
           </div>
           {v != null && <VersionBar a={a} v={v} onLatest={() => setV(undefined)} />}
