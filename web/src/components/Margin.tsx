@@ -309,7 +309,7 @@ function NoteCard({ sid, note, onFocus, onBlur }: { sid: string; note: NoteDraft
       />
       <div className="reactions" onMouseDown={(e) => e.preventDefault()}>
         {/* The passage's reactions first, whatever they are, then your most used. */}
-        {[...new Set([...reactions.map((d) => d.text.trim()), ...topEmoji(10)])].slice(0, Math.max(10, reactions.length)).map((r) => (
+        {[...new Set([...reactions.map((d) => d.text.trim()), ...topEmoji(8)])].slice(0, Math.max(8, reactions.length)).map((r) => (
           <button key={r} className={note.text.includes(r) || reactions.some((d) => d.text.trim() === r) ? 'on' : ''} onClick={() => react(r)}>{r}</button>
         ))}
         <button className="more-emoji" onClick={() => setPicking(true)}>+</button>

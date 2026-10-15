@@ -367,7 +367,7 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .rail-ack { position: relative; }
 /* Each row is its own layer, so the row with an open popup or picker must rise over the rows below it. */
 .rail-row:has(.ack-pop, .emoji-picker) { z-index: 4; }
-.ack-btn, .react-mark { display: block; border: 1px solid transparent; padding: 0 3px; font-size: calc(16px * var(--fs, 1)); line-height: 22px; border-radius: 6px; white-space: nowrap; user-select: none; }
+.ack-btn, .react-mark { display: block; border: 1px solid transparent; padding: 0 3px; font-size: calc(18px * var(--fs, 1)); line-height: 24px; border-radius: 6px; white-space: nowrap; user-select: none; }
 .react-mark { background: none; cursor: pointer; touch-action: none; }
 .rail-row .em { display: inline-block; transition: transform .12s; }
 .react-mark, .ack-btn { transition: padding .12s; }
@@ -384,9 +384,13 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 /* The row's first emoji sits right above the button you pressed; the remove button hangs off to its left. */
 .ack-pop { position: absolute; bottom: calc(100% + 4px); left: -6px; }
 .ack-row { position: relative; display: flex; align-items: center; display: flex; gap: 2px; padding: 3px; background: var(--card); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 4px 16px rgba(0, 0, 0, .15); white-space: nowrap; }
-.ack-row button { border: none; background: none; font-size: calc(18px * var(--fs, 1)); line-height: 1; padding: 4px; border-radius: 50%; transition: transform .08s; }
-.ack-row button:hover { transform: scale(1.3); background: rgba(127, 127, 127, .12); }
-.ack-row .more-emoji { padding: 4px 10px; border-radius: 14px; }
+.ack-row button { border: none; background: none; font-size: calc(24px * var(--fs, 1)); line-height: 1; padding: 4px; border-radius: 50%; transition: transform .08s; }
+/* The circle grows a little and stays inside the row's edge; the emoji in it grows more. */
+.ack-row button:hover { transform: scale(1.1); background: rgba(127, 127, 127, .12); }
+.ack-row button > span { display: inline-block; transition: transform .08s; }
+.ack-row button:hover > span { transform: scale(1.2); }
+/* "+" and the comment button are as big as an emoji, so the hover circle matches. */
+.ack-row .more-emoji { display: inline-flex; align-items: center; justify-content: center; width: calc(24px * var(--fs, 1) + 8px); height: calc(24px * var(--fs, 1) + 8px); padding: 0; font-size: calc(20px * var(--fs, 1)) !important; }
 .ack-row button.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); position: relative; }
 /* An emoji you already put on comes off: hovering it says so. */
 .ack-row button.on:hover { transform: none; background: rgba(229, 83, 75, .14); box-shadow: inset 0 0 0 1.5px var(--bad); }
@@ -406,7 +410,7 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .emoji-grid > button, .emoji-group > button { width: 12.5%; }
 .emoji-grid button.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
 .note-card .emoji-picker { left: 0; top: calc(100% + 4px); }
-.react-badge { position: absolute; z-index: 2; pointer-events: auto; border: 1px solid var(--line); background: var(--card); border-radius: 12px; padding: 1px 6px; font-size: calc(13px * var(--fs, 1)); line-height: 1.4; box-shadow: 0 1px 3px rgba(0, 0, 0, .06); }
+.react-badge { position: absolute; z-index: 2; pointer-events: auto; border: 1px solid var(--line); background: var(--card); border-radius: 12px; padding: 1px 6px; font-size: calc(17px * var(--fs, 1)); line-height: 1.4; box-shadow: 0 1px 3px rgba(0, 0, 0, .06); }
 .react-badge.draft { border-color: #f0b400; }
 .react-badge.hover { box-shadow: 0 0 0 2px var(--hl-focus); }
 .note-card.sent { border-left-color: var(--line); padding-right: 8px; font-size: calc(13px * var(--fs, 1)); color: var(--muted); box-shadow: none; }
@@ -497,10 +501,10 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .note-card .ri-edit, .note-card .ri-edit:focus { border: none; background: none; padding: 2px 24px 2px 4px; outline: none; min-height: 24px !important; }
 .note-card .rich-input .attach { top: 3px; right: 0; }
 .note-card .thumbs { margin: 0 0 4px; }
-/* Into the card's right padding (kept clear only for the discard button, above), and narrower
-   buttons where the emoji are wider (Windows), so the row fits the card. */
-.reactions { position: relative; display: flex; gap: 1px; margin: 2px -20px 0 1px; }
-.reactions button { flex: 0 1 auto; min-width: 0; display: inline-flex; justify-content: center; border: none; background: none; padding: 1px 2px; font-size: calc(16px * var(--fs, 1)); line-height: 1.3; border-radius: 6px; }
+/* Into the card's right padding (kept clear only for the discard button, above); the buttons
+   share the row's width, so the row fits the card, also where the emoji are wider (Windows). */
+.reactions { position: relative; display: flex; gap: 0; margin: 4px -20px 0 1px; }
+.reactions button { flex: 1 1 0; min-width: 0; aspect-ratio: 1; display: inline-flex; align-items: center; justify-content: center; border: none; background: none; padding: 0; font-size: calc(20px * var(--fs, 1)); line-height: 1.3; border-radius: 6px; }
 .reactions button:hover { background: rgba(127, 127, 127, .15); }
 .reactions button.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
 .card-x { position: absolute; top: 4px; right: 4px; border: none; background: none; padding: 2px; line-height: 0; color: var(--muted); border-radius: 4px; }

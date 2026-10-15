@@ -359,9 +359,9 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
         {/* Takes your reactions off this passage: outside the row, so it can't be mistaken for an emoji. */}
         {on.size > 0 && <button className="ack-clear" data-emoji="remove" onClick={() => toggle('remove', p)}><XIcon size={14} /></button>}
         <div className="ack-row">
-          {[...new Set([...on, ...topEmoji(8)])].slice(0, Math.max(8, on.size)).map((e) => <button key={e} data-emoji={e} className={on.has(e) ? 'on' : ''} onClick={() => toggle(e, p)}>{e}</button>)}
+          {[...new Set([...on, ...topEmoji(8)])].slice(0, Math.max(8, on.size)).map((e) => <button key={e} data-emoji={e} className={on.has(e) ? 'on' : ''} onClick={() => toggle(e, p)}><span>{e}</span></button>)}
           <button className="more-emoji" data-emoji="+" onClick={() => toggle('+', p)}>+</button>
-          <button className="more-emoji" data-emoji="comment" onClick={() => toggle('comment', p)}><CommentIcon size={14} /></button>
+          <button className="more-emoji" data-emoji="comment" onClick={() => toggle('comment', p)}><CommentIcon size={17} /></button>
         </div>
         </div>
       )}
