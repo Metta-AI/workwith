@@ -40,6 +40,8 @@ export default {
 
 export class Hub extends DurableObject<Env> {
   private pending = new Map<string, (m: Extract<MachineMsg, { t: 'res' }>) => void>()
+  // Answers coming in parts (shared/remote.ts), by request id.
+  private streams = new Map<string, Stream>()
 
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url)
@@ -224,7 +226,7 @@ ${again ? `<p>A machine with this name is connected already. It will be disconne
     else delete next.label
     await this.ctx.storage.put(`machine:${name}`, next)
     const ws = this.socket(name)
-    if (ws) send(ws, { t: 'hello', name, ...(next.label ? { label: next.label } : {}) })
+    if (ws) send(ws, { t: 'hello', name, parts: true, ...(next.label ? { label: next.label } : {}) })
     return json({ name, label: next.label ?? null })
   }
 
@@ -253,7 +255,7 @@ ${again ? `<p>A machine with this name is connected already. It will be disconne
     for (const old of this.ctx.getWebSockets(`m:${m.name}`)) { this.dropMachine(m.name); old.close(1012, 'Connected again') }
     const [client, server] = Object.values(new WebSocketPair())
     this.ctx.acceptWebSocket(server, ['m', `m:${m.name}`])
-    send(server, { t: 'hello', name: m.name, ...(m.label ? { label: m.label } : {}) })
+    send(server, { t: 'hello', name: m.name, parts: true, ...(m.label ? { label: m.label } : {}) })
     return new Response(null, { status: 101, webSocket: client })
   }
 
@@ -272,10 +274,10 @@ ${again ? `<p>A machine with this name is connected already. It will be disconne
     if (!machine) return json({ error: `${name} is not connected` }, 502)
     const path = '/' + rest.join('/') + url.search
     if (req.headers.get('upgrade')?.toLowerCase() === 'websocket') return this.channel(req, name, path, machine)
-    return this.request(req, path, machine)
+    return this.request(req, name, path, machine)
   }
 
-  private async request(req: Request, path: string, machine: WebSocket): Promise<Response> {
+  private async request(req: Request, name: string, path: string, machine: WebSocket): Promise<Response> {
     const id = crypto.randomUUID()
     const headers: Record<string, string> = {}
     for (const h of REQ_HEADERS) { const v = req.headers.get(h); if (v) headers[h] = v }
@@ -288,7 +290,44 @@ ${again ? `<p>A machine with this name is connected already. It will be disconne
     if (!res) return json({ error: 'The machine did not answer in time' }, 504)
     const out = new Headers()
     for (const h of RES_HEADERS) if (res.headers[h]) out.set(h, res.headers[h])
+    if (res.more) return new Response(this.stream(id, name, machine), { status: res.status, headers: out })
     return new Response(req.method === 'HEAD' ? null : fromBase64(res.body), { status: res.status, headers: out })
+  }
+
+  // A big answer, passed on part by part: each part written (the browser read the last) lets
+  // the machine send one more, so only a few are ever held here.
+  private stream(id: string, name: string, machine: WebSocket): ReadableStream<Uint8Array> {
+    const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>()
+    const writer = writable.getWriter()
+    const s: Stream = { machine: name, writer, idle: null }
+    this.streams.set(id, s)
+    // The browser went away: the machine stops.
+    writer.closed.catch(() => { if (this.streams.delete(id)) send(machine, { t: 'cancel', id }) })
+    this.idle(id, s)
+    return readable
+  }
+
+  // No part for TIMEOUT_MS: the machine is stuck, so the browser gets an error.
+  private idle(id: string, s: Stream) {
+    clearTimeout(s.idle)
+    s.idle = setTimeout(() => this.endStream(id, 'The machine stopped sending'), TIMEOUT_MS)
+  }
+
+  private endStream(id: string, why?: string) {
+    const s = this.streams.get(id)
+    if (!s) return
+    this.streams.delete(id)
+    clearTimeout(s.idle)
+    if (why) s.writer.abort(why).catch(() => {})
+  }
+
+  private part(machine: WebSocket, m: Extract<MachineMsg, { t: 'part' }>) {
+    const s = this.streams.get(m.id)
+    if (!s) return
+    if (m.failed) return this.endStream(m.id, 'The machine stopped sending')
+    if (m.end) this.endStream(m.id)
+    else this.idle(m.id, s)
+    s.writer.write(fromBase64(m.data)).then(() => m.end ? s.writer.close() : send(machine, { t: 'ack', id: m.id })).catch(() => {})
   }
 
   private channel(req: Request, name: string, path: string, machine: WebSocket): Response {
@@ -307,6 +346,7 @@ ${again ? `<p>A machine with this name is connected already. It will be disconne
       let m: MachineMsg
       try { m = JSON.parse(data) } catch { return }
       if (m.t === 'res') { this.pending.get(m.id)?.(m); this.pending.delete(m.id) }
+      else if (m.t === 'part') this.part(ws, m)
       else if (m.t === 'msgs') for (const b of this.ctx.getWebSockets(`c:${m.chan}`)) for (const d of m.data) b.send(d)
       else if (m.t === 'close') for (const b of this.ctx.getWebSockets(`c:${m.chan}`)) b.close(1000, 'Closed')
       return
@@ -333,11 +373,14 @@ ${again ? `<p>A machine with this name is connected already. It will be disconne
 
   // A machine went: so do the browsers on it.
   private dropMachine(name: string) {
+    for (const [id, s] of this.streams) if (s.machine === name) this.endStream(id, 'The machine went away')
     for (const b of this.ctx.getWebSockets(`b:${name}`)) try { b.close(1011, 'The machine went away') } catch { /* closed */ }
   }
 }
 
 // ---- helpers -----------------------------------------------------------------
+
+type Stream = { machine: string; writer: WritableStreamDefaultWriter<Uint8Array>; idle: ReturnType<typeof setTimeout> | null }
 
 const send = (ws: WebSocket, m: HubMsg) => { try { ws.send(JSON.stringify(m)) } catch { /* gone */ } }
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)

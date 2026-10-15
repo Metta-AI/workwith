@@ -21,9 +21,9 @@ import fs from 'node:fs'
 import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
-import type { Duplex } from 'node:stream'
+import { Readable, type Duplex } from 'node:stream'
 import WebSocket, { WebSocketServer } from 'ws'
-import { machineName, RES_HEADERS, type HubMsg, type MachineMsg } from '../shared/remote.ts'
+import { machineName, PART_BYTES, PARTS_AHEAD, REQ_HEADERS, RES_HEADERS, type HubMsg, type MachineMsg } from '../shared/remote.ts'
 import type { RemoteStatus } from '../shared/types.ts'
 import { DATA } from './store.ts'
 
@@ -138,6 +138,8 @@ function connect() {
   const ws = new WebSocket(`${hubUrl().replace(/^http/, 'ws')}/_remote/connect`, { headers: { authorization: `Bearer ${saved.token}` } })
   hub = ws
   const chans = new Map<string, Chan>()
+  // Answers going in parts; null until the hub says it takes them.
+  let outs: Map<string, Out> | null = null
   const send = (m: MachineMsg) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m)) }
 
   ws.on('open', () => { wait = 1000; connected = true; tell() })
@@ -149,13 +151,15 @@ function connect() {
     let m: HubMsg
     try { m = JSON.parse(String(raw)) } catch { return }
     // The hub says who this machine is there (a rename or a new display name, from anywhere).
-    if (m.t === 'hello') { saved.name = m.name; if (m.label) saved.label = m.label; else delete saved.label; save(); tell(); return }
+    if (m.t === 'hello') { outs = m.parts ? outs ?? new Map() : null; saved.name = m.name; if (m.label) saved.label = m.label; else delete saved.label; save(); tell(); return }
     if (m.t === 'bye') {
       if (m.why === 'forgotten') { unlink(); save(); disconnect(); tell() }
       else { disconnect(); wait = 1000; connect() }
       return
     }
-    if (m.t === 'req') request(local, m).then(send)
+    if (m.t === 'req') request(local, m, send, outs)
+    else if (m.t === 'ack') outs?.get(m.id)?.ack()
+    else if (m.t === 'cancel') outs?.get(m.id)?.cancel()
     else if (m.t === 'open') chans.set(m.chan, new Chan(local, m, send, () => chans.delete(m.chan)))
     else if (m.t === 'msg') chans.get(m.chan)?.in(m.data)
     else if (m.t === 'close') { chans.get(m.chan)?.end(); chans.delete(m.chan) }
@@ -163,6 +167,7 @@ function connect() {
   ws.on('close', (code) => {
     for (const c of chans.values()) c.end()
     chans.clear()
+    for (const o of outs?.values() ?? []) o.cancel()
     // A socket let go of on purpose (off, renamed, replaced) changes nothing more.
     if (hub !== ws) return
     hub = null
@@ -187,31 +192,62 @@ function disconnect() {
   ws?.close(1000, 'Turned off')
 }
 
-// base64 makes it a third bigger.
+// For a hub that takes no parts: one message, and base64 makes it a third bigger.
 const MAX_BODY = 20 * 1024 * 1024
 
-// One HTTP request, replayed here.
-function request(local: string, m: Extract<HubMsg, { t: 'req' }>): Promise<MachineMsg> {
-  return new Promise((resolve) => {
-    const r = http.request({
-      host: '127.0.0.1', port, method: m.method, path: m.path,
-      headers: { ...m.headers, host: local, origin: `http://${local}`, 'x-codinger-remote': '1' },
-    }, (res) => {
-      const parts: Buffer[] = []
-      res.on('data', (b: Buffer) => parts.push(b))
-      res.on('end', () => {
-        const headers: Record<string, string> = {}
-        for (const h of RES_HEADERS) { const v = res.headers[h]; if (v) headers[h] = String(v) }
-        const body = Buffer.concat(parts)
-        // The answer goes as one WebSocket message, and the hub closes the socket on one over 32 MiB.
-        if (body.length > MAX_BODY) return resolve({ t: 'res', id: m.id, status: 413, headers: { 'content-type': 'text/plain' }, body: Buffer.from(`Too big to send through web.codinger.app (${Math.round(body.length / 1048576)} MB; the limit is ${MAX_BODY / 1048576} MB). Open it on the machine.`).toString('base64') })
-        resolve({ t: 'res', id: m.id, status: res.statusCode ?? 502, headers, body: body.toString('base64') })
-      })
+// An answer going to the hub in parts: an ack lets one more part go; a cancel stops it.
+type Out = { ack(): void; cancel(): void }
+
+// One HTTP request, replayed here. An answer over PART_BYTES goes in parts when the hub
+// takes them (outs), so a file of any size gets through.
+function request(local: string, m: Extract<HubMsg, { t: 'req' }>, send: (m: MachineMsg) => void, outs: Map<string, Out> | null) {
+  const fail = (status: number, text: string) => send({ t: 'res', id: m.id, status, headers: { 'content-type': 'text/plain' }, body: Buffer.from(text).toString('base64') })
+  const r = http.request({
+    host: '127.0.0.1', port, method: m.method, path: m.path,
+    headers: { ...m.headers, host: local, origin: `http://${local}`, 'x-codinger-remote': '1' },
+  }, (res) => {
+    const headers: Record<string, string> = {}
+    for (const h of RES_HEADERS) { const v = res.headers[h]; if (v) headers[h] = String(v) }
+    let parts: Buffer[] = [], size = 0, inParts = false, ahead = 0, done = false
+    const flush = (end: boolean) => {
+      send({ t: 'part', id: m.id, data: Buffer.concat(parts).toString('base64'), ...(end ? { end } : {}) })
+      parts = []
+      size = 0
+      if (!end && ++ahead >= PARTS_AHEAD) res.pause()
+    }
+    res.on('data', (b: Buffer) => {
+      if (done) return
+      parts.push(b)
+      size += b.length
+      if (!inParts && outs && size > PART_BYTES) {
+        inParts = true
+        send({ t: 'res', id: m.id, status: res.statusCode ?? 502, headers, body: '', more: true })
+        outs.set(m.id, { ack: () => { if (--ahead < PARTS_AHEAD) res.resume() }, cancel: () => { done = true; outs.delete(m.id); res.destroy() } })
+      }
+      if (inParts && size >= PART_BYTES) flush(false)
+      // The hub closes the socket on a message over 32 MiB.
+      if (!inParts && size > MAX_BODY) {
+        done = true
+        res.destroy()
+        fail(413, `Too big to send through web.codinger.app (the limit is ${MAX_BODY / 1048576} MB). Open it on the machine.`)
+      }
     })
-    r.on('error', (e) => resolve({ t: 'res', id: m.id, status: 502, headers: { 'content-type': 'text/plain' }, body: Buffer.from(e.message).toString('base64') }))
-    if (m.body) r.write(Buffer.from(m.body, 'base64'))
-    r.end()
+    res.on('end', () => {
+      if (done) return
+      done = true
+      if (inParts) { flush(true); outs?.delete(m.id); return }
+      send({ t: 'res', id: m.id, status: res.statusCode ?? 502, headers, body: Buffer.concat(parts).toString('base64') })
+    })
+    res.on('error', () => {
+      if (done) return
+      done = true
+      if (inParts) { send({ t: 'part', id: m.id, data: '', end: true, failed: true }); outs?.delete(m.id) }
+      else fail(502, 'The answer broke off')
+    })
   })
+  r.on('error', (e) => fail(502, e.message))
+  if (m.body) r.write(Buffer.from(m.body, 'base64'))
+  r.end()
 }
 
 // One browser WebSocket, as a local one.
@@ -268,13 +304,16 @@ export async function remoteProxy(req: http.IncomingMessage, res: http.ServerRes
   const body = req.method === 'GET' || req.method === 'HEAD' ? undefined : await new Promise<Buffer>((resolve) => { const b: Buffer[] = []; req.on('data', (d) => b.push(d)); req.on('end', () => resolve(Buffer.concat(b))) })
   const r = await fetch(hubUrl() + target + url.search, {
     method: req.method,
-    headers: { authorization: `Bearer ${saved.token}`, ...(req.headers['content-type'] ? { 'content-type': req.headers['content-type'] } : {}) },
+    headers: { authorization: `Bearer ${saved.token}`, ...Object.fromEntries(REQ_HEADERS.flatMap((h) => req.headers[h] ? [[h, String(req.headers[h])]] : [])) },
     body: body && new Uint8Array(body),
   }).catch((e: Error) => e)
   if (r instanceof Error) { res.writeHead(502, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `Could not reach ${hubUrl()}: ${r.message}` })); return }
   const headers: Record<string, string> = {}
   for (const h of RES_HEADERS) { const v = r.headers.get(h); if (v) headers[h] = v }
-  res.writeHead(r.status, headers).end(Buffer.from(await r.arrayBuffer()))
+  res.writeHead(r.status, headers)
+  // A big file comes in parts: on as it comes.
+  if (r.body) Readable.fromWeb(r.body as import('node:stream/web').ReadableStream).pipe(res)
+  else res.end()
 }
 
 // A WebSocket to /api/remote/m/<name>/…: one to the hub, joined to it.

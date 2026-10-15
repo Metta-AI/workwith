@@ -12,14 +12,22 @@ export type HubMsg =
   | { t: 'open'; chan: string; path: string; protocols: string[] }
   | { t: 'msg'; chan: string; data: string }
   | { t: 'close'; chan: string }
-  | { t: 'hello'; name: string; label?: string }   // on connect: the machine's name and display name here
+  | { t: 'hello'; name: string; label?: string; parts?: boolean } // on connect: the machine's name and display name here; parts: it takes answers in parts
   | { t: 'bye'; why: 'renamed' | 'forgotten' }      // connect again under the new name, or forget the token
+  | { t: 'ack'; id: string }                        // a part went on to the browser: send another
+  | { t: 'cancel'; id: string }                     // the browser stopped reading: send no more
 
 // From a machine to the hub. A channel's messages come in batches.
 export type MachineMsg =
-  | { t: 'res'; id: string; status: number; headers: Record<string, string>; body: string } // body: base64
+  | { t: 'res'; id: string; status: number; headers: Record<string, string>; body: string; more?: boolean } // body: base64; more: it comes in parts
+  | { t: 'part'; id: string; data: string; end?: boolean; failed?: boolean } // data: base64
   | { t: 'msgs'; chan: string; data: string[] }
   | { t: 'close'; chan: string }
+
+// A message over 32 MiB closes the socket, so a big answer comes in parts of PART_BYTES, with
+// at most PARTS_AHEAD of them sent and not yet passed on (each `ack` lets one more go).
+export const PART_BYTES = 1024 * 1024
+export const PARTS_AHEAD = 4
 
 // Request headers that go through to the machine, and response headers that come back.
 export const REQ_HEADERS = ['content-type', 'accept', 'if-none-match', 'range']
