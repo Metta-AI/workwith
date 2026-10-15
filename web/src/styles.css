@@ -92,7 +92,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 
 /* ---- sidebar ---- */
 .sidebar { flex: none; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
-.brand { display: none; align-items: center; padding: 8px 10px 0; }
 .conn { width: 8px; height: 8px; border-radius: 50%; }
 .conn.on { background: var(--ok); } .conn.off { background: var(--bad); }
 .side-actions { padding: 10px; display: flex; gap: 6px; }
@@ -384,7 +383,7 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .ack-btn:hover { border-color: var(--line); }
 .ack-btn.on { background: var(--accent-soft); }
 /* The row's first emoji sits right above the button you pressed; the remove button hangs off to its left. */
-.ack-pop { position: absolute; bottom: calc(100% + 4px); left: -6px; }
+.ack-pop { position: absolute; bottom: calc(100% + 4px); left: -6px; touch-action: none; }
 .ack-row { position: relative; display: flex; align-items: center; display: flex; gap: 2px; padding: 3px; background: var(--card); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 4px 16px rgba(0, 0, 0, .15); white-space: nowrap; }
 .ack-row button { border: none; background: none; font-size: calc(24px * var(--fs, 1)); line-height: 1; padding: 4px; border-radius: 50%; transition: transform .08s; }
 /* The circle grows a little and stays inside the row's edge; the emoji in it grows more. */
@@ -403,7 +402,7 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .more-emoji { font-size: calc(14px * var(--fs, 1)) !important; color: var(--muted); }
 .emoji-picker { position: absolute; z-index: 20; width: 320px; max-width: calc(100vw - 16px); background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px rgba(0, 0, 0, .18); padding: 6px; }
 .emoji-picker input { width: 100%; box-sizing: border-box; font-size: calc(12.5px * var(--fs, 1)); margin-bottom: 4px; }
-.emoji-grid { display: flex; flex-wrap: wrap; max-height: 300px; overflow-y: auto; scrollbar-width: thin; }
+.emoji-grid { display: flex; flex-wrap: wrap; max-height: 300px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .emoji-group { display: flex; flex-wrap: wrap; width: 100%; }
 .emoji-group-name { width: 100%; font-size: calc(11px * var(--fs, 1)); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; padding: 6px 4px 2px; }
 .emoji-grid button { border: none; background: none; font-size: calc(25px * var(--fs, 1)); line-height: 1; padding: 5px 0; border-radius: 6px; }
@@ -786,8 +785,9 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .row-spend { color: var(--muted); }
 .tip { position: fixed; z-index: 100; max-width: min(380px, 90vw); padding: 7px 10px; border-radius: 8px; background: light-dark(var(--card), var(--text)); color: light-dark(var(--text), var(--bg)); border: 1px solid light-dark(var(--line), transparent); font-size: calc(12.5px * var(--fs, 1)); line-height: 1.4; white-space: pre-line; pointer-events: none; opacity: 0; transition: opacity .1s; box-shadow: 0 4px 16px light-dark(rgba(0, 0, 0, .12), rgba(0, 0, 0, .25)); }
 .tip.on { opacity: 1; }
-.emoji-peek { position: fixed; z-index: 101; padding: 6px; border-radius: 50%; background: var(--card); border: 1px solid var(--line); box-shadow: 0 4px 16px rgba(0, 0, 0, .2); font-size: 40px; line-height: 1; pointer-events: none; opacity: 0; }
+.emoji-peek { position: fixed; z-index: 101; display: flex; align-items: center; justify-content: center; min-width: calc(1em + 12px); min-height: calc(1em + 12px); padding: 6px; border-radius: 50%; background: var(--card); border: 1px solid var(--line); box-shadow: 0 4px 16px rgba(0, 0, 0, .2); font-size: 40px; line-height: 1; pointer-events: none; opacity: 0; }
 .emoji-peek.on { opacity: 1; }
+.emoji-peek svg { width: .8em; height: .8em; }
 .cache-guard { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; padding: 8px 12px; border-radius: 8px; font-size: calc(13px * var(--fs, 1)); border: 1px solid color-mix(in srgb, var(--bad) 45%, var(--line)); background: color-mix(in srgb, var(--bad) 9%, var(--card)); }
 .cache-guard .primary { flex: none; background: var(--bad); border-color: var(--bad); color: #fff; }
 .cache-guard.nudge { animation: shake .35s ease-in-out; }
@@ -989,8 +989,7 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
   .app > .splitter { display: none; }
   .sidebar { position: fixed; inset: 0; z-index: 25; width: auto !important; border-right: none; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); transform: translateX(-100%); visibility: hidden; transition: transform .2s ease-out, visibility 0s .2s; }
   .app.side-open .sidebar { transform: none; visibility: visible; transition: transform .2s ease-out; }
-  .brand { display: flex; }
-  .side-hide { display: inline-flex; margin-left: auto; padding: 6px; }
+  .side-hide { display: inline-flex; padding: 6px; }
   /* Over the page here (the sidebar is hidden), so clear of the message field. */
   .toasts { bottom: calc(90px + env(safe-area-inset-bottom)); }
   /* Its middle (19px down) lines up with the first line of a banner, or of the title. */
@@ -1020,6 +1019,7 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
   .head-more .icon { transform: rotate(90deg); transition: transform .15s; }
   .session-head.head-open .head-more .icon { transform: rotate(-90deg); }
   .transcript-inner, .transcript-inner.gutter { padding: 14px 12px 30px 40px; }
+  .rail-row { right: calc(100% + 2px); }
   .composer { padding: 8px 10px calc(10px + env(safe-area-inset-bottom)); }
   .composer .slash-menu { left: 10px; width: calc(100% - 20px); }
 

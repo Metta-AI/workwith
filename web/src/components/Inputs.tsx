@@ -118,7 +118,13 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
 
   useEffect(() => {
     const el = ed.current!
-    if (autoFocus) { el.focus(); select(el, fromDom(el).length) }
+    if (!autoFocus) return
+    const go = () => { el.focus(); select(el, fromDom(el).length) }
+    go()
+    // On a phone the focus can miss while the card still appears; try once more if the
+    // hidden field that holds the keyboard (holdKeyboard), or nothing, has it.
+    const again = setTimeout(() => { if (!document.activeElement || document.activeElement === document.body || document.activeElement.matches('[data-hold-keyboard]')) go() }, 150)
+    return () => clearTimeout(again)
   }, [autoFocus])
 
   useEffect(() => {

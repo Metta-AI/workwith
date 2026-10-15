@@ -132,11 +132,13 @@ export function imagesFrom(dt: DataTransfer | null): File[] {
 
 // iOS brings up the keyboard only for a focus inside a touch handler, and a comment card's
 // field mounts after it. A hidden field takes the focus now; the card's field takes it over.
-// Call it from the touch or click that opens the card. Only on a touch screen.
+// Call it from the touch or click that opens the card. Only on a touch screen, and not while
+// a card's field (or the hidden field) has the focus: taking it would empty a new card.
 export function holdKeyboard() {
-  if (!matchMedia('(pointer: coarse)').matches) return
+  if (!matchMedia('(pointer: coarse)').matches || document.activeElement?.closest('.note-card, [data-hold-keyboard]')) return
   const f = document.createElement('input')
   f.setAttribute('aria-hidden', 'true')
+  f.setAttribute('data-hold-keyboard', '')
   f.tabIndex = -1
   f.style.cssText = 'position: fixed; top: 30%; left: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; font-size: 16px'
   document.body.appendChild(f)

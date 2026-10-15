@@ -142,13 +142,11 @@ export function Sidebar({ width }: { width: number }) {
   const tree = (machine: string) => <MachineTree machine={machine} onNew={(cwd) => setNewIn({ cwd, machine })} onMenu={openMenu} />
   return (
     <aside className="sidebar" style={{ width }}>
-      {/* Only on a phone, where the sidebar covers the page: its close button. A lost connection shows as a banner (main.tsx: Offline). */}
-      <div className="brand">
-        <button className="icon-btn side-hide" aria-label="Hide sessions" onClick={() => { state.sideOpen = false; changed() }}><XIcon size={18} /></button>
-      </div>
       <div className="side-actions">
         <button className="primary" onClick={() => setNewIn({ cwd: '', machine: tab === 'local' ? LOCAL : others[0]?.name })}>+ New session</button>
         <button onClick={() => setHistory(true)} title={`Continue any Claude Code conversation on ${st.web ? currentMachine() : 'this machine'}, including terminal ones`}>Resume…</button>
+        {/* Only on a phone, where the sidebar covers the page: its close button. A lost connection shows as a banner (main.tsx: Offline). */}
+        <button className="icon-btn side-hide" aria-label="Hide sessions" onClick={() => { state.sideOpen = false; changed() }}><XIcon size={18} /></button>
       </div>
       {/* On a machine's own page: its sessions, and the other machines'. On the web, every machine is remote. */}
       {!st.web && (others.length > 0 || away.length > 0 || !!local?.remote?.linked) && (

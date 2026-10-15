@@ -168,6 +168,7 @@ document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.prev
 
 // On a phone a swipe from the left edge pulls the sessions out under the finger, instead of going back a page.
 // They open if you let go past a third of the way or with a flick to the right; else they go back.
+// A swipe to the left anywhere on the open sessions pushes them back the same way.
 const phone = matchMedia('(max-width: 720px)')
 const openSide = () => { if (!state.sideOpen) { state.sideOpen = true; changed() } }
 const sideEl = () => document.querySelector<HTMLElement>('.sidebar')
@@ -180,36 +181,43 @@ function pull(x: number | null) {
   el.style.visibility = 'visible'
   el.style.transform = `translateX(${Math.min(0, x - el.offsetWidth)}px)`
 }
-let edge: { x0: number; y0: number; x: number; t: number; v: number; drag: boolean } | null = null
+let edge: { x0: number; y0: number; x: number; t: number; v: number; drag: boolean; shut: boolean } | null = null
 document.addEventListener('touchstart', (e) => {
-  const t = e.touches[0]
-  edge = phone.matches && !state.sideOpen && e.touches.length === 1 && t.clientX < 20 && !(e.target as Element).closest?.('button, a, input, textarea, select')
-    ? { x0: t.clientX, y0: t.clientY, x: t.clientX, t: e.timeStamp, v: 0, drag: false } : null
-  if (edge) e.preventDefault()  // so Safari does not start its own back swipe, where it lets a page stop it
+  const t = e.touches[0], el = e.target as Element
+  const shut = state.sideOpen && !!el.closest?.('.sidebar')
+  edge = phone.matches && e.touches.length === 1 && (shut || (!state.sideOpen && t.clientX < 20 && !el.closest?.('button, a, input, textarea, select, .ack-pop, .emoji-picker')))
+    ? { x0: t.clientX, y0: t.clientY, x: t.clientX, t: e.timeStamp, v: 0, drag: false, shut } : null
+  if (edge && !shut) e.preventDefault()  // so Safari does not start its own back swipe, where it lets a page stop it
 }, { passive: false })
 document.addEventListener('touchmove', (e) => {
   if (!edge) return
-  const t = e.touches[0], dx = t.clientX - edge.x0, dy = t.clientY - edge.y0
+  if (document.body.classList.contains('sorting')) { edge = null; return }  // a held press moves a session, not the sessions
+  const t = e.touches[0], dx = (t.clientX - edge.x0) * (edge.shut ? -1 : 1), dy = t.clientY - edge.y0
   if (!edge.drag) {
     if (Math.abs(dy) > 10 && Math.abs(dy) > dx) { edge = null; return }  // a move up or down, not a pull
     if (dx < 10) return
     edge.drag = true
   }
+  if (edge.shut) e.preventDefault()  // the list does not scroll under a push
   // The speed in px/ms, smoothed over the last moves.
   const dt = e.timeStamp - edge.t
   if (dt > 0) edge.v = 0.6 * (t.clientX - edge.x) / dt + 0.4 * edge.v
   edge.x = t.clientX
   edge.t = e.timeStamp
-  pull(edge.x)
-}, { passive: true })
+  pull(edge.shut ? (sideEl()?.offsetWidth ?? innerWidth) + edge.x - edge.x0 : edge.x)
+}, { passive: false })
 const release = (e: TouchEvent) => {
   const d = edge
   edge = null
   if (!d?.drag) return
   const w = sideEl()?.offsetWidth ?? innerWidth
   const v = e.timeStamp - d.t < 100 ? d.v : 0  // a finger that stopped before it let go has no flick
-  const open = e.type === 'touchend' && (v > 0.3 || (d.x > w / 3 && v > -0.3))
   pull(null)
+  if (d.shut) {
+    if (e.type === 'touchend' && (v < -0.3 || (d.x0 - d.x > w / 3 && v < 0.3))) { state.sideOpen = false; changed() }
+    return
+  }
+  const open = e.type === 'touchend' && (v > 0.3 || (d.x > w / 3 && v > -0.3))
   if (open) openSide()
 }
 document.addEventListener('touchend', release)
