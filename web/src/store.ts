@@ -2,7 +2,7 @@
 // Components re-render on any change; at this scale that's plenty.
 
 import { useSyncExternalStore } from 'react'
-import type { Anchor, AuthState, Event, ImageRef, InboxItem, Part, ServerMsg, SessionMeta, Settings, Task, Usage } from '../../shared/types.ts'
+import type { AgentInfo, Anchor, AuthState, Event, ImageRef, InboxItem, Part, Person, ServerMsg, SessionMeta, Settings, Task, Usage } from '../../shared/types.ts'
 import { inboxParts } from '../../shared/inbox.ts'
 import { itemsOf } from '../../shared/blocks.ts'
 import { applyAppearance, holdingAppearance } from './appearance.ts'
@@ -46,6 +46,9 @@ type State = {
   stale: boolean                     // the server's code on disk is newer than the server
   restarting: boolean
   loaded: boolean                    // the server's hello came: sessions and settings are real
+  agent: AgentInfo | null            // Codiner is this agent's desk (server/agent.ts)
+  me: Person | null                  // who this browser is, as the proxy says
+  billing: 'api' | 'plan'            // 'api': billed per token, so no plan limits to show
 }
 
 const saved = <T,>(k: string, d: T): T => { try { return JSON.parse(localStorage.getItem(k) ?? '') ?? d } catch { return d } }
@@ -76,6 +79,9 @@ export const state: State = {
   fileTick: {},
   stale: false,
   restarting: false,
+  agent: null,
+  me: null,
+  billing: 'plan',
 }
 
 let version = 0
@@ -156,6 +162,8 @@ function onServer(m: ServerMsg) {
       state.sessions = m.sessions; state.settings = m.settings; state.usage = m.usage; state.loaded = true
       applyAppearance(m.settings.appearance)
       state.platform = m.platform; state.home = m.home; state.auth = m.auth ?? { state: 'ok' }; state.stale = !!m.stale; state.restarting = false
+      state.agent = m.agent ?? null; state.me = m.me ?? null; state.billing = m.billing ?? 'plan'
+      if (state.billing === 'api') state.money = 'usd'
       if (!m.sessions.some((s) => s.id === state.selected)) state.selected = 'lead'
       break
     case 'sessions': state.sessions = m.sessions; break
@@ -348,12 +356,27 @@ export function queuedParts(sid: string, alsoDismiss: { key: string; label: stri
 
 export async function sendQueued(sid: string, alsoDismiss: { key: string; label: string }[] = []) {
   const parts = queuedParts(sid, alsoDismiss)
-  if (!parts.length) return
+  // Held replies alone make a message too: the server adds them (server/index.ts 'send').
+  if (!parts.length && !state.sessions.find((s) => s.id === sid)?.held?.length) return
   await api(`/api/sessions/${sid}/send`, 'POST', { parts, inbox: inboxOf(sid).map((i) => i.id) })
   state.drafts[sid] = []
   state.composer[sid] = { text: '', images: [] }
   changed()
 }
+
+// Hold everything queued for a joint turn: it waits on the server, where everyone
+// sees it, and goes with the next send from anyone (server/index.ts 'hold').
+export async function holdQueued(sid: string) {
+  const parts = queuedParts(sid)
+  if (!parts.length) return
+  await api(`/api/sessions/${sid}/hold`, 'POST', { parts })
+  state.drafts[sid] = []
+  state.composer[sid] = { text: '', images: [] }
+  changed()
+}
+
+// The agent's name where the UI would say "Claude".
+export const agentName = () => state.agent?.name ?? 'Claude'
 
 // Delete one of your messages and everything after it; with parts, send them
 // in its place (an edit).

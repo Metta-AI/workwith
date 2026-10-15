@@ -11,7 +11,7 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer, type WebSocket } from 'ws'
-import type { InboxItem, Part, PermissionMode, ServerMsg, SessionMeta, Settings, Usage } from '../shared/types.ts'
+import type { InboxItem, Part, Person, PermissionMode, ServerMsg, SessionMeta, Settings, Usage } from '../shared/types.ts'
 import { inboxLabel, inboxParts, openItemsOf } from '../shared/inbox.ts'
 import { execFile, execFileSync, spawn } from 'node:child_process'
 import os from 'node:os'
@@ -27,6 +27,7 @@ import { notesFile } from '../shared/notes.ts'
 import { allTasks, endText, logPath, markTold, readLog, removeTask, searchLog, startTask, startTasks, statusLine, stopTask, taskOf } from './tasks.ts'
 import type { Task, TaskNotify } from '../shared/types.ts'
 import { configsFor, probe, serversFor } from './mcpservers.ts'
+import { agentInfo, billing, personOf, serveAgent } from './agent.ts'
 import { DEFAULT_CACHE_GUARD, cacheLeft, knownTtl } from '../shared/cache.ts'
 import { AGENTS_FILE, agentsPrompt, readAgentsMd, writeAgentsMd } from './agentsmd.ts'
 import { handleMcp, type Tool } from './mcp.ts'
@@ -261,17 +262,24 @@ function resumeHistory(claudeId: string): Session {
 // the board; a worker gets who else is at work in its directory, from the
 // ~/.claude/bin/agents helper when there is one, so it need not check first.
 const AGENTS_BIN = path.join(os.homedir(), '.claude', 'bin', 'agents')
-// When a proxy names the signed-in person in a header (CODINER_USER_HEADER, e.g.
-// "Tailscale-User-Login"), Claude is told who is writing whenever that changes, so
-// several people can share one Codiner. Kept in memory: a restart tells it again.
-const USER_HEADER = process.env.CODINER_USER_HEADER?.toLowerCase()
-const speakers = new Map<string, string>()
-function speakerNote(s: Session, req: http.IncomingMessage): string {
-  const raw = USER_HEADER ? req.headers[USER_HEADER] : undefined
-  const login = (Array.isArray(raw) ? raw[0] : raw)?.trim()
-  if (!login || speakers.get(s.meta.id) === login) return ''
-  speakers.set(s.meta.id, login)
-  return `[Codiner] This message, and the ones after it until told otherwise, come from ${login}.`
+// When a proxy names the signed-in person (server/agent.ts), every part Claude gets is
+// signed with a name; the first time a name shows up in a session, Claude also learns
+// whose login it is. Kept in memory: a restart tells it again.
+const introduced = new Map<string, Set<string>>()
+function speakerNote(s: Session, parts: Part[]): string {
+  const seen = introduced.get(s.meta.id) ?? new Set<string>()
+  introduced.set(s.meta.id, seen)
+  const fresh = new Map<string, Person>()
+  for (const p of parts) if (p.by && !seen.has(p.by.login)) fresh.set(p.by.login, p.by)
+  for (const l of fresh.keys()) seen.add(l)
+  if (!fresh.size) return ''
+  const who = [...fresh.values()].map((p) => `${p.name} is ${p.login}`).join('; ')
+  return `[Codiner] Several people may work with you here; each part of a message is signed with its writer's name. ${who}.`
+}
+
+// Parts from the browser carry no trusted author: sign them with the request's person.
+function sign(parts: Part[], by: Person | null): Part[] {
+  return parts.map((p) => { const { by: _ignored, ...rest } = p; return (by ? { ...rest, by } : rest) as Part })
 }
 
 function hiddenFor(s: Session): { hidden?: string } {
@@ -953,13 +961,34 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   const body = await json(req)
   switch (b) {
     case 'send': {
-      const p: Part[] = Array.isArray(body.parts) ? body.parts : []
+      const me = personOf(req)
+      // What others held for a joint turn goes first, then this person's own replies.
+      // A slash command must be the whole message, so held replies wait for the next one.
+      const command = body.parts?.length === 1 && body.parts[0].kind === 'text' && /^\/[\w:.-]+/.test(String(body.parts[0].text).trim())
+      const held = command ? [] : s.meta.held ?? []
+      const p: Part[] = [...held.flatMap((h) => h.parts), ...sign(Array.isArray(body.parts) ? body.parts : [], me)]
       // The lead's drafts that went with your reply.
       if (Array.isArray(body.inbox) && body.inbox.length) { s.meta.inbox = s.meta.inbox.filter((i) => !body.inbox.includes(i.id)); metaChanged() }
-      const opts = hiddenFor(s)
-      const who = speakerNote(s, req)
+      const opts: { hidden?: string; by?: Person } = { ...hiddenFor(s), ...(me ? { by: me } : {}) }
+      const who = speakerNote(s, p)
       if (who) opts.hidden = opts.hidden ? `${opts.hidden}\n\n${who}` : who
       s.send(p, opts)
+      if (held.length) { s.meta.held = []; metaChanged() }
+      return send(res, 200, { ok: true })
+    }
+    // Hold replies for a joint turn: they wait here, signed, until someone sends.
+    case 'hold': {
+      const parts = sign(Array.isArray(body.parts) ? body.parts : [], personOf(req))
+      if (!parts.length) throw new HttpError(400, 'Nothing to hold')
+      s.meta.held = [...(s.meta.held ?? []), { id: randomUUID().slice(0, 8), by: personOf(req), parts, ts: Date.now() }]
+      metaChanged()
+      return send(res, 200, { ok: true })
+    }
+    case 'unhold': {
+      // Take back held replies (anyone may: it is a shared tray); with parts: one part of them.
+      s.meta.held = (s.meta.held ?? []).flatMap((h) => h.id !== body.id ? [h]
+        : Number.isInteger(body.part) ? (h.parts.length > 1 ? [{ ...h, parts: h.parts.filter((_, i) => i !== body.part) }] : []) : [])
+      metaChanged()
       return send(res, 200, { ok: true })
     }
     case 'drafting':
@@ -1059,6 +1088,7 @@ const server = http.createServer(async (req, res) => {
     const look = url.pathname.startsWith(`/mcp/${MCP_TOKEN}/look/`) && url.pathname.split('/').pop()
     if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look), mcpTool(look), ...taskTools(look)])
     if (url.pathname.startsWith('/api/')) return await api(req, res, url)
+    if (serveAgent(url.pathname, res)) return
     if (vite) return vite.middlewares(req, res)
     serveStatic(url.pathname, res)
   } catch (e) {
@@ -1087,7 +1117,7 @@ server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => {
     sockets.add(ws)
     ws.on('close', () => sockets.delete(ws))
-    ws.send(JSON.stringify({ type: 'hello', sessions: metas(), settings, usage, platform: process.platform, home: os.homedir(), auth: authState(), stale } satisfies ServerMsg))
+    ws.send(JSON.stringify({ type: 'hello', sessions: metas(), settings, usage, platform: process.platform, home: os.homedir(), auth: authState(), stale, agent: agentInfo(), me: personOf(req), billing: billing() } satisfies ServerMsg))
     ws.send(JSON.stringify({ type: 'tasks', tasks: allTasks() } satisfies ServerMsg))
   })
 })

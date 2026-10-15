@@ -761,3 +761,18 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .cost-review { border-top: 1px solid var(--line); padding: 6px 0; }
 .cost-review summary { cursor: pointer; font-size: calc(13px * var(--fs, 1)); }
 .cost-review[open] summary { margin-bottom: 6px; }
+
+/* An agent's desk (server/agent.ts): its face and name, who wrote what, and replies held for a joint turn. */
+.brand-avatar { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; margin-right: 8px; flex: none; }
+.brand-avatar + span { flex: 1; }
+.user-turn .from.by { font-weight: 600; color: var(--text); opacity: .8; }
+.part-by, .note-by { font-size: calc(11px * var(--fs, 1)); font-weight: 600; color: var(--muted); margin-bottom: 2px; }
+.note-card.sent.held { border-left-color: var(--accent); border-left-style: dashed; }
+.send.hold { background: var(--card); }
+.held-tray { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 8px; background: var(--panel); }
+.held-head { font-size: calc(11px * var(--fs, 1)); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.held-by { display: flex; align-items: center; gap: 6px; } .held-by .icon-btn { margin-left: auto; }
+.held-part { display: flex; align-items: baseline; gap: 6px; padding-left: 10px; font-size: calc(13px * var(--fs, 1)); }
+.held-part .icon-btn { margin-left: auto; flex: none; }
+.held-quote { color: var(--muted); font-style: italic; flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.held-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

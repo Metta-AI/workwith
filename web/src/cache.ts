@@ -106,6 +106,7 @@ export function spendOf(m: SessionMeta) {
 
 const NEXT = { usd: 'pct', pct: 'week', week: 'usd' } as const
 export function toggleMoney() {
+  if (state.billing === 'api') return   // per-token billing: dollars are all there is
   state.money = NEXT[state.money]
   localStorage.setItem('codiner.money', JSON.stringify(state.money))
   changed()

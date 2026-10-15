@@ -71,6 +71,7 @@ export type SessionMeta = {
   expectedModel?: string
   // Set by a rewind: the next start resumes claudeSessionId cut at this entry, as a fork.
   resumeAt?: string | null
+  held?: Held[]           // replies waiting for a joint turn (Held)
 }
 
 // Rolling notes on a session, and the keep-warm calls that keep its prompt cache
@@ -94,7 +95,16 @@ export type ImageRef = { url: string; mediaType: string }
 export type AnchorPiece = { block: number; quotes: string[]; nths: number[] }
 export type Anchor = { msg: string; pieces: AnchorPiece[] }
 
-export type Part =
+// Who wrote something, when a proxy in front of Codiner names the signed-in person
+// (CODINER_USER_HEADER; server/agent.ts). login: as the proxy gives it; name: to show.
+export type Person = { login: string; name: string }
+
+// The agent this Codiner belongs to, when it runs on an agent's own host (server/agent.ts):
+// its name for "Message Synth", and whether it has a face and a theme of its own.
+export type AgentInfo = { name: string; avatar: boolean; theme: boolean }
+
+// by: who wrote the part, when Codiner knows people apart (see Person).
+export type Part = ({ by?: Person }) & (
   | { kind: 'text'; text: string; images?: ImageRef[] }
   // itemKey: the <consider> item this comment replies to ("<msg>:<id>").
   // whole: a reaction to a whole paragraph or list item.
@@ -106,6 +116,11 @@ export type Part =
   // Items the user marked done; `text` on one is a problem they hit doing it.
   // result: how a command the item asked for went.
   | { kind: 'done'; text: string; items: { key: string; label: string; text?: string; result?: string }[]; images?: ImageRef[] }
+)
+
+// Replies someone held for a joint turn instead of sending them: they wait on the
+// server, everyone sees them, and the next send from anyone takes them along.
+export type Held = { id: string; by: Person | null; parts: Part[]; ts: number }
 
 export type Block =
   | { type: 'text'; text: string }
@@ -117,7 +132,8 @@ type E<T extends string, B> = { seq: number; ts: number; t: T } & B
 export type Event =
   // uuid: the id Claude Code gave the message in its transcript (we choose it);
   // csid: the Claude session it went to. A rewind cuts the transcript there.
-  | E<'user', { parts: Part[]; from?: string; uuid?: string; csid?: string }>
+  // by: who sent it (the parts say who wrote each, which differs in a joint turn).
+  | E<'user', { parts: Part[]; from?: string; by?: Person; uuid?: string; csid?: string }>
   | E<'assistant', { msgId: string; blocks: Block[]; synthetic?: boolean }>
   | E<'tool_result', { toolUseId: string; text: string; isError: boolean }>
   | E<'permission', { requestId: string; toolName: string; input: any; description?: string; canAlways: boolean; toolUseId?: string }>
@@ -149,7 +165,10 @@ export type Settings = {
 }
 
 export type ServerMsg =
-  | { type: 'hello'; sessions: SessionMeta[]; settings: Settings; usage: Usage; platform: string; home: string; auth: AuthState; stale?: boolean }
+  // agent: set when Codiner runs as one agent's desk; me: who this browser is, per the proxy;
+  // billing: 'api' when Claude Code bills per token (Bedrock, Vertex), so there are no plan limits.
+  | { type: 'hello'; sessions: SessionMeta[]; settings: Settings; usage: Usage; platform: string; home: string; auth: AuthState; stale?: boolean
+      agent?: AgentInfo; me?: Person | null; billing?: 'api' | 'plan' }
   | { type: 'auth'; auth: AuthState }
   // The server's code on disk is newer than the running server.
   | { type: 'stale'; stale: boolean }

@@ -45,7 +45,8 @@ function dueReview(c: CostsReply): Period | null {
 export function CostBanner({ open }: { open(): void }) {
   const st = useStore()
   const c = useCosts()
-  if (!c) return null
+  // No plan to confirm when Claude Code bills per token.
+  if (!c || st.billing === 'api') return null
   const p = st.settings.plan, plan = c.plan
   if (plan && p?.tier !== plan.tier) return (
     <div className="cost-banner">

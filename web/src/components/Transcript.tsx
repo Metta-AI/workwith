@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Anchor, Block, Event, ImageRef, Part } from '../../../shared/types.ts'
-import { addDraft, api, draftsOf, removeDraft, rewind, uid, useStore } from '../store.ts'
+import { addDraft, agentName, api, draftsOf, removeDraft, rewind, uid, useStore } from '../store.ts'
 import { anchorFromRange } from '../anchoring.ts'
 import { renderInline, renderMd, renderText } from '../util.ts'
 import { AssistantMessage, type Reaction } from './AssistantMessage.tsx'
@@ -329,6 +329,8 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
     <div className="user-wrap" onMouseLeave={() => setConfirm(false)}>
     <div className="user-turn">
       {e.from && <div className="from">via {e.from === 'master' ? 'lead' : e.from}</div>}
+      {/* Who sent it; in a joint turn, each part also names its writer when that differs. */}
+      {e.by && <div className="from by">{e.by.name}</div>}
       {replies.length > 0 && (
         <button className={`replies-sum${open ? ' open' : ''}`} onClick={() => setOpen(!open)}>
           <ChevronIcon size={11} className="chevron" /> {repliesSummary(replies)}
@@ -349,6 +351,7 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
             },
           } : {})}
         >
+          {p.by && p.by.login !== e.by?.login && <div className="part-by">{p.by.name}</div>}
           <PartHead p={p} />
           {p.text.trim() && <div className="md" dangerouslySetInnerHTML={{ __html: renderText(p.text) }} />}
           <Thumbs images={p.images} />
@@ -421,7 +424,7 @@ function UserEdit({ sid, e, onDone }: { sid: string; e: Extract<Event, { t: 'use
           <PartHead p={p} />
           {p.kind !== 'dismiss' && p.kind !== 'done' && (
             <RichInput value={p.text} onChange={(text) => set(i, { text })} images={p.images ?? []} onImages={(images) => set(i, { images })}
-              placeholder={p.kind === 'note' ? 'Comment' : p.kind === 'answer' ? 'Answer' : 'Message Claude'}
+              placeholder={p.kind === 'note' ? 'Comment' : p.kind === 'answer' ? 'Answer' : `Message ${agentName()}`}
               autoFocus={i === parts.length - 1} minRows={1} onSubmit={submit} onEscape={onDone} />
           )}
         </div>

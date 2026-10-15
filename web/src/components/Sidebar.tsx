@@ -125,7 +125,8 @@ export function Sidebar({ width }: { width: number }) {
   return (
     <aside className="sidebar" style={{ width }}>
       <div className="brand">
-        <span>Codiner</span>
+        {st.agent?.avatar && <img className="brand-avatar" src="/agent/avatar" alt="" />}
+        <span>{st.agent?.name ?? 'Codiner'}</span>
         <span className={`conn ${st.connected ? 'on' : 'off'}`} title={st.connected ? 'Connected' : 'Reconnecting…'} />
       </div>
       {lead && <Row s={lead} label="Lead" active={st.selected === lead.id} onMenu={openMenu} />}
@@ -168,7 +169,8 @@ export function Sidebar({ width }: { width: number }) {
         {custom && <button className="reset-order" title="Sort folders by latest activity, sessions oldest first" onClick={() => void api('/api/sessions/order', 'DELETE')}>Reset order</button>}
         <button className="link" title="Settings" onClick={() => setSettings(true)}><GearIcon size={14} /></button>
         <div className="side-foot-mid">
-          {(u.fiveHour != null || u.sevenDay != null) && (
+          {st.billing === 'api' && <ApiSpend sessions={st.sessions} open={() => setSettings('cost')} />}
+          {st.billing !== 'api' && (u.fiveHour != null || u.sevenDay != null) && (
             <div className="usage" data-tip={limitsTip(u)} onClick={() => setSettings('cost')}>
               {u.fiveHour != null && <span className={level(u.fiveHour)}>5h {limitLabel(u.fiveHour, u.rate?.fiveHour, st.money)}</span>}
               {u.fiveHour != null && u.sevenDay != null && <span className="usage-dot">·</span>}
@@ -189,6 +191,19 @@ export function Sidebar({ width }: { width: number }) {
       {tasks && <TasksDialog onClose={() => setTasks(false)} />}
       {menu && <RowMenu at={menu} onClose={() => setMenu(null)} />}
     </aside>
+  )
+}
+
+// Billed per token (Bedrock, Vertex): what all sessions spent today and in 7 days, at API prices.
+function ApiSpend({ sessions, open }: { sessions: SessionMeta[]; open(): void }) {
+  useNow(60_000)
+  const day = new Date(); day.setHours(0, 0, 0, 0)
+  const since = (t: number) => sessions.reduce((sum, m) => sum + (m.spend?.hours ?? []).reduce((a, [h, d]) => a + (h >= t ? d : 0), 0), 0)
+  const today = since(day.getTime()), week = since(Date.now() - 7 * 86_400_000)
+  return (
+    <div className="usage" data-tip={`API spend at list prices, all sessions here, notes and keep-warm calls included.\nToday: ${usd(today)}\nLast 7 days: ${usd(week)}`} onClick={open}>
+      <span>today {usd(today)}</span><span className="usage-dot">·</span><span>7d {usd(week)}</span>
+    </div>
   )
 }
 

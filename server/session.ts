@@ -11,7 +11,7 @@ import fs from 'node:fs'
 import { formatAnswer, formatNote } from '../shared/asks.ts'
 import { formatDismissed, formatDone, itemsOf } from '../shared/blocks.ts'
 import { mediaTypeOf, splitImages, withoutImages } from '../shared/images.ts'
-import type { Block, Event, Part, PermissionMode, SessionMeta, Status, Usage } from '../shared/types.ts'
+import type { Block, Event, Part, Person, PermissionMode, SessionMeta, Status, Usage } from '../shared/types.ts'
 import { AUTH_ERROR, childEnv } from './auth.ts'
 import { entryBefore } from './history.ts'
 import { addSpend, costOf } from '../shared/prices.ts'
@@ -257,8 +257,8 @@ export class Session {
 
   // `hidden` is appended to what Claude sees but left out of the transcript
   // (the lead's board snapshot).
-  send(parts: Part[], opts: { from?: string; hidden?: string } = {}) {
-    const { from, hidden } = opts
+  send(parts: Part[], opts: { from?: string; hidden?: string; by?: Person } = {}) {
+    const { from, hidden, by } = opts
     // A message that is only a slash command goes in as one, as if typed at the claude prompt.
     const only = parts.length === 1 && parts[0].kind === 'text' && !parts[0].images?.length ? parts[0].text.trim() : ''
     if (/^\/[\w:.-]+/.test(only)) return this.command(only, from)
@@ -291,7 +291,7 @@ export class Session {
     this.meta.unread = false
     this.meta.pendingAsks = 0
     this.meta.error = null
-    this.record('user', { parts, uuid, csid: this.meta.claudeSessionId, ...(from ? { from } : {}) })
+    this.record('user', { parts, uuid, csid: this.meta.claudeSessionId, ...(from ? { from } : {}), ...(by ? { by } : {}) })
     this.refresh()
   }
 
@@ -599,13 +599,16 @@ export class Session {
   }
 }
 
-// The text Claude receives for one part of a message.
+// The text Claude receives for one part of a message; signed with its writer's name
+// when Codiner knows people apart (server/agent.ts).
 function partText(p: Part): string {
-  return p.kind === 'note' ? formatNote(p.quote, p.text)
-    : p.kind === 'answer' ? formatAnswer(p.askKey.split(':').pop()!, p.question, p.choices, p.text, p.draft)
-    : p.kind === 'dismiss' ? formatDismissed(p.items)
-    : p.kind === 'done' ? formatDone(p.items)
-    : p.text
+  const n = p.by?.name
+  const t = n ? (p.text.trim() ? `${n}: ${p.text}` : `(${n})`) : p.text
+  return p.kind === 'note' ? formatNote(p.quote, t)
+    : p.kind === 'answer' ? formatAnswer(p.askKey.split(':').pop()!, p.question, p.choices, t, p.draft)
+    : p.kind === 'dismiss' ? (n ? `${n}:\n` : '') + formatDismissed(p.items)
+    : p.kind === 'done' ? (n ? `${n}:\n` : '') + formatDone(p.items)
+    : t
 }
 
 // The tail of what Claude said, for overviews: questions as their text, without the markup.

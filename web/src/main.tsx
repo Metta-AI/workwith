@@ -19,12 +19,14 @@ function App() {
 
   // A tab title that says when something needs you.
   const needs = st.sessions.filter((s) => ['permission', 'asking', 'waiting'].includes(s.status)).length
-  useEffect(() => { document.title = needs ? `(${needs}) Codiner` : 'Codiner' }, [needs])
+  const name = st.agent?.name ?? 'Codiner'
+  useEffect(() => { document.title = needs ? `(${needs}) ${name}` : name }, [needs, name])
   useFavicon(st.sessions, st.settings.appearance)
 
   // The first load asks for a colour; the welcome stays until you close it.
   const [welcome, setWelcome] = useState(false)
-  useEffect(() => { if (st.loaded && !st.settings.appearance) setWelcome(true) }, [st.loaded])
+  // An agent's own theme (server/agent.ts) stands in for that choice.
+  useEffect(() => { if (st.loaded && !st.settings.appearance && !st.agent?.theme) setWelcome(true) }, [st.loaded])
 
   return (
     <div className="app">
