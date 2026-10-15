@@ -44,6 +44,8 @@
 :root[data-font=dyslexic] body { line-height: 1.7; }
 :root { --accent-soft: light-dark(color-mix(in srgb, var(--accent) 17%, var(--bg)), color-mix(in srgb, var(--accent) 24%, var(--bg))); }
 * { box-sizing: border-box; }
+/* Links take the accent colour, visited or not (the browser's default turns them purple once visited). */
+:where(a) { color: var(--accent); }
 
 /* Syntax colours (highlight.ts), light and dark. */
 :root {
