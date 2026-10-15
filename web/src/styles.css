@@ -99,6 +99,9 @@ body.resizing { cursor: col-resize; user-select: none; }
 .tree { flex: 1; overflow-y: auto; }
 .group { margin-bottom: 8px; }
 .group-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 12px; font-size: calc(11.5px * var(--fs, 1)); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+/* A long folder name stays on one line and ends in an ellipsis, clear of the "+". */
+.group-head > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-head > button { flex: none; }
 .row { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; border: none; border-radius: 0; background: none; padding: 6px 10px; }
 .row:hover { background: rgba(127, 127, 127, .08); }
 .row.active { background: var(--accent-soft); }
