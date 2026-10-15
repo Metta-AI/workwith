@@ -397,6 +397,9 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
     data[file].said = said
   }
   const bindings: Record<string, string> = {}
+  // Data Prolifica made public along the way: a page that is public already shows the bound data,
+  // so the sources go public as soon as it says it was made from them.
+  const madePublic: { path?: string; id: string }[] = []
   for (const [slot, file] of Object.entries(m.bindings ?? {})) {
     if (file.startsWith('prolifica:')) { bindings[slot] = file.slice(10); continue }
     bindings[slot] = (await send(file, m.slots?.[slot]?.description)).id
@@ -405,6 +408,7 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
     const from = sources.filter(([f, s]) => f !== file && (!s.slots || s.slots.includes(slot))).map(([f]) => sourceIds[f]).sort()
     if (!from.length || JSON.stringify(data[file].from ?? []) === JSON.stringify(from)) continue
     const ds = await call(`/api/data/${encodeURIComponent(bindings[slot])}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ derived_from: from }) })
+    madePublic.push(...(ds?.madePublic ?? []))
     // A Prolifica that does not take derived_from yet: it is tried again on the next publish.
     if (Array.isArray(ds?.derivedFrom) && from.every((id) => ds.derivedFrom.some((d: { id: string }) => d.id === id))) data[file].from = from
   }
@@ -439,5 +443,5 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
   }
   r.published = { id: out.isle.id, url: `${ORIGIN}/i/${out.isle.id}`, version: out.isle.version, at: Date.now(), mtime: mtimeOf(dirOf(name)), visibility, data, local, history }
   saveRecord()
-  return { published: r.published, madePublic: (out.madePublic ?? []).map((d: { path?: string; id: string }) => d.path ?? d.id) }
+  return { published: r.published, madePublic: [...new Set([...madePublic, ...(out.madePublic ?? [])].map((d: { path?: string; id: string }) => d.path ?? d.id))] }
 }
