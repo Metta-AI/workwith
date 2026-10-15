@@ -21,9 +21,6 @@ function App() {
   const sel = st.sessions.find((s) => s.id === st.selected && s.kind === 'worker')
   useEffect(() => { if (sel) select(sel.id, false) }, [sel?.id])
 
-  // A tab title that says when something needs you.
-  const needs = st.sessions.filter((s) => ['permission', 'asking', 'waiting'].includes(s.status)).length
-  useEffect(() => { document.title = needs ? `(${needs}) Codinger` : 'Codinger' }, [needs])
   useFavicon(st.sessions, st.settings.appearance)
 
   // The first load asks for a colour; the welcome stays until you close it.
