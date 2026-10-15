@@ -3,12 +3,12 @@
 // all with the sessions that made them, and publishing to Prolifica. Artifacts run from
 // a server on another port, so their scripts never share Codinger's origin.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Artifact, ArtifactTouch, PreviewTarget, Visibility } from '../../../shared/artifacts.ts'
 import type { Block, Event } from '../../../shared/types.ts'
 import { api, changed, revealEvent, state, useStore } from '../store.ts'
 import { timeAgo } from '../util.ts'
-import { OpenIcon, XIcon } from './Icons.tsx'
+import { ChevronIcon, OpenIcon, XIcon } from './Icons.tsx'
 
 const Svg = ({ size = 14, children }: { size?: number; children: React.ReactNode }) => (
   <svg className="icon" width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>{children}</svg>
@@ -109,7 +109,7 @@ export function PublishControl({ a }: { a: Artifact }) {
   return (
     <span className="publish">
       {p && <a href={p.url} target="_blank" rel="noreferrer" className="publish-link" data-tip={`Published ${timeAgo(p.at)} (${p.visibility})${fresh ? '' : '. It changed since.'}`}>v{p.version}{fresh ? '' : '*'} <OpenIcon size={11} /></a>}
-      <button className={!p || !fresh ? 'primary' : ''} onClick={() => void press()} data-tip={st.prolifica ? 'Publish to Prolifica' : 'Publish to Prolifica (connects Codinger to it first)'}>{waiting ? 'Approve in the browser…' : 'Publish'}</button>
+      <button className="publish-btn" onClick={() => void press()} data-tip={st.prolifica ? 'Publish to Prolifica' : 'Publish to Prolifica (connects Codinger to it first)'}>{waiting ? 'Approve in the browser…' : 'Publish'}</button>
       {open && (
         <div className="publish-pop">
           <label>Who can see it
@@ -131,6 +131,52 @@ export function PublishControl({ a }: { a: Artifact }) {
       {made && made.length > 0 && <span className="muted small" title={made.join('\n')}>{made.length} data {made.length === 1 ? 'file is' : 'files are'} public now</span>}
     </span>
   )
+}
+
+// A small menu in place of a native select: the current choice on a button, the choices below it.
+type Choice<T> = { value: T; label: string; sub?: string }
+function Picker<T>({ value, choices, onPick, label, className }: { value: T; choices: Choice<T>[]; onPick(v: T): void; label: string; className?: string }) {
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const down = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false) }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', down)
+    document.addEventListener('keydown', key)
+    return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
+  }, [open])
+  const cur = choices.find((c) => c.value === value)
+  return (
+    <div className={`menu-wrap picker${className ? ' ' + className : ''}`} ref={box}>
+      <button className={`picker-btn${open ? ' on' : ''}`} aria-label={label} aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="picker-label">{cur?.label ?? label}</span><ChevronIcon size={11} className="picker-caret" />
+      </button>
+      {open && (
+        <div className="menu picker-menu" role="listbox">
+          {choices.map((c, i) => (
+            <button key={i} role="option" aria-selected={c.value === value} className={c.value === value ? 'on' : ''} onClick={() => { setOpen(false); onPick(c.value) }}>
+              <span>{c.label}</span>{c.sub && <span className="picker-sub">{c.sub}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Which version shows: the latest (the artifact as it is now) or any one kept, newest first,
+// each with when and which session left it.
+function VersionPicker({ a, v, onPick }: { a: Artifact; v?: number; onPick(v?: number): void }) {
+  const st = useStore()
+  if (!a.versions?.length) return null
+  const who = (n: number) => { const t = a.edits.find((e) => e.v === n); return t && st.sessions.find((x) => x.id === t.sid)?.title }
+  const choices = [...a.versions].reverse().map((x) => ({
+    value: x.n === a.latest ? 0 : x.n,
+    label: x.n === a.latest ? `Latest · v${x.n}` : `Version ${x.n}`,
+    sub: [timeAgo(x.at), who(x.n)].filter(Boolean).join(' · '),
+  }))
+  return <Picker label="Version" className="version-picker" value={v != null && v !== a.latest ? v : 0} choices={choices} onPick={(n) => onPick(n || undefined)} />
 }
 
 // An old version is showing: say so, with the way back to the artifact as it is now.
@@ -155,10 +201,9 @@ export function ArtifactPane({ sid, width, wide, onWide, onHide }: { sid: string
       <div className="artifact-top">
         {target && 'url' in target
           ? <span className="artifact-url" title={target.url}>{target.url}</span>
-          : <select value={a?.name ?? ''} onChange={(e) => showIn(sid, { artifact: e.target.value })}>
-            {!a && <option value="">No artifact</option>}
-            {(a && !mine.includes(a) ? [a, ...mine] : mine).map((x) => <option key={x.name} value={x.name}>{x.title}</option>)}
-          </select>}
+          : <Picker label="Artifact" className="artifact-picker" value={a?.name ?? ''} onPick={(name) => showIn(sid, { artifact: name })}
+            choices={(a && !mine.includes(a) ? [a, ...mine] : mine).map((x) => ({ value: x.name, label: x.title, sub: timeAgo(x.mtime) }))} />}
+        {a && <VersionPicker a={a} v={v} onPick={(n) => showIn(sid, { artifact: a.name, v: n })} />}
         <button className="icon-btn" data-tip="Load again" onClick={() => setReload(Date.now())}><RefreshIcon size={14} /></button>
         {target && <a className="icon-btn" data-tip="Open in a new tab" href={srcOf(target, a, st.artifactsPort, 0)} target="_blank" rel="noreferrer"><OpenIcon size={14} /></a>}
         <button className="icon-btn" data-tip={wide ? 'Show the conversation' : 'Use the full width'} onClick={onWide}>{wide ? <NarrowIcon size={14} /> : <WideIcon size={14} />}</button>
@@ -231,7 +276,10 @@ export function ArtifactsView() {
               <h2>{a.title}</h2>
               {a.description && <p className="muted">{a.description}</p>}
             </div>
-            <PublishControl key={a.name} a={a} />
+            <span className="artifact-detail-actions">
+              <VersionPicker a={a} v={v} onPick={setV} />
+              <PublishControl key={a.name} a={a} />
+            </span>
           </div>
           {v != null && <VersionBar a={a} v={v} onLatest={() => setV(undefined)} />}
           <ArtifactFrame key={`${a.name}@${v ?? ''}`} target={{ artifact: a.name, v }} />

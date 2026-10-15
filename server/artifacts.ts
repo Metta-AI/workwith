@@ -109,7 +109,7 @@ export function listArtifacts(): Artifact[] {
   for (const e of fs.readdirSync(ARTIFACTS, { withFileTypes: true })) {
     if (!e.isDirectory() || !NAME_RE.test(e.name) || !fs.existsSync(path.join(dirOf(e.name), 'index.html'))) continue
     const r = record[e.name] ?? { edits: [] }
-    const a: Artifact = { name: e.name, title: e.name, mtime: mtimeOf(dirOf(e.name)), created: r.created, edits: r.edits, published: r.published, latest: r.versions?.at(-1)?.n }
+    const a: Artifact = { name: e.name, title: e.name, mtime: mtimeOf(dirOf(e.name)), created: r.created, edits: r.edits, published: r.published, latest: r.versions?.at(-1)?.n, versions: r.versions?.map(({ n, at }) => ({ n, at })) }
     try { const m = manifest(e.name); a.title = m.title || e.name; a.description = m.description } catch (err) { a.error = `artifact.json: ${(err as Error).message}` }
     out.push(a)
   }

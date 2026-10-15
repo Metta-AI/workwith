@@ -881,10 +881,20 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 /* ---- artifacts (components/Artifacts.tsx) ---- */
 .artifact-pane { flex: none; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); background: var(--panel); }
 .artifact-top { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
-/* Its own caret, with room on the right: the native one sits against the edge. */
-.artifact-top select { min-width: 0; max-width: 45%; appearance: none; -webkit-appearance: none; padding: 4px 26px 4px 9px; text-overflow: ellipsis;
-  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
-  background-position: right 13px center, right 9px center; background-size: 4px 4px, 4px 4px; background-repeat: no-repeat; }
+.artifact-detail-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+/* Picker (Artifacts.tsx): a button with the current choice, and a menu of the choices. */
+.picker { min-width: 0; }
+.artifact-picker { flex: 0 1 auto; max-width: 40%; }
+.picker-btn { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 9px; }
+.picker-btn.on { background: rgba(127, 127, 127, .15); }
+.picker-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.picker-caret { flex: none; transform: rotate(90deg); color: var(--muted); }
+.picker-menu { left: 0; right: auto; min-width: 200px; max-width: 340px; max-height: 60vh; overflow-y: auto; }
+.artifact-detail-actions .picker-menu { left: auto; right: 0; }
+.picker-menu button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; border: none; background: none; text-align: left; padding: 6px 10px; border-radius: 5px; font-size: calc(13px * var(--fs, 1)); }
+.picker-menu button:hover { background: rgba(127, 127, 127, .12); }
+.picker-menu button.on { background: var(--accent-soft); }
+.picker-sub { font-size: calc(11.5px * var(--fs, 1)); color: var(--muted); }
 .artifact-top .icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 5px; }
 .artifact-top .publish button { padding: 3px 10px; }
 .artifact-pane.wide { flex: 1; min-width: 0; }

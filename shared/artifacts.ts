@@ -14,6 +14,7 @@ export type Artifact = {
   edits: ArtifactTouch[]  // every one since, oldest first (the last 100)
   published?: ArtifactPublished
   latest?: number         // its newest version
+  versions?: { n: number; at: number }[]   // every version kept, oldest first
   error?: string          // its artifact.json could not be read
 }
 
