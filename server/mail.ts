@@ -78,9 +78,10 @@ function refusal(from: SessionMeta, to: SessionMeta, reply = false): string | nu
     return null
   }
   if (reply || relation(from, to)) return null
+  // The inbox is open unless the session narrowed it with set_inbox.
   const f = to.mailFilter
-  if (f?.mode === 'any' || (f?.mode === 'only' && f.ids?.includes(from.id))) return null
-  return `"${to.title}" (${to.id}) takes messages only from ${f?.mode === 'only' ? 'its parent, its children and the sessions it named' : 'its parent and its children'}.`
+  if (!f || f.mode === 'any' || (f.mode === 'only' && f.ids?.includes(from.id))) return null
+  return `"${to.title}" (${to.id}) closed its inbox: it takes messages only from ${f.mode === 'only' ? 'its parent, its children and the sessions it named' : 'its parent and its children'}.`
 }
 
 function post(to: Session, m: Omit<Mail, 'id' | 'ts'>): Mail {
@@ -194,7 +195,7 @@ export function mailTools(id: string): Tool[] {
   return [
     {
       name: 'list_sessions',
-      description: 'The other Codinger sessions (each a full Claude Code session with a name): id, title, directory, status, parent and children, what each is to you, and whether it takes messages from you. It also lists your archived children, and for each child its context use and its prompt cache: a message to a child whose cache expired writes its whole context to the cache again, at full price.',
+      description: 'The other Codinger sessions (each a full Claude Code session with a name): id, title, directory, status, parent and children, what each is to you, and whether it takes messages from you (every session does, unless it closed its inbox with set_inbox). It also lists your archived children, and for each child its context use and its prompt cache: a message to a child whose cache expired writes its whole context to the cache again, at full price.',
       inputSchema: { type: 'object', properties: {} },
       run: () => {
         const m = me().meta
@@ -204,7 +205,7 @@ export function mailTools(id: string): Tool[] {
           ...(x.id === m.id ? { you: true } : { is: relation(m, x) ?? (x.parentId && x.parentId === m.parentId ? 'sibling' : 'other') }),
           ...(x.parentId === m.id ? { context: `${Math.round(x.context.used / 1000)}k of ${Math.round(x.context.window / 1000)}k tokens`, cache: cacheOf(x) } : {}),
           parent: x.parentId, children: childrenOf(x.id).filter((c) => !c.archived).map((c) => c.id),
-          inbox: x.mailFilter?.mode === 'any' ? 'any' : x.mailFilter?.mode === 'only' ? `parent, children and ${x.mailFilter.ids?.join(', ')}` : 'parent and children',
+          inbox: x.mailFilter?.mode === 'none' ? 'parent and children' : x.mailFilter?.mode === 'only' ? `parent, children and ${x.mailFilter.ids?.join(', ')}` : 'any',
           ...(x.id === m.id ? {} : { takes_messages_from_you: !refusal(m, x) }),
         }))
       },
@@ -233,7 +234,7 @@ export function mailTools(id: string): Tool[] {
     },
     {
       name: 'send_message',
-      description: 'Send a message to another session. It goes in at once if the session is between turns, or when its turn ends. Your parent and your children always take your messages; other sessions only if they opened their inbox to you (see list_sessions). A message to your archived child takes it out of the archive. To answer a message you got, use reply.',
+      description: 'Send a message to another session. It goes in at once if the session is between turns, or when its turn ends. Any session takes your messages, unless it closed its inbox with set_inbox (see list_sessions); your parent and your children always do. A message to your archived child takes it out of the archive. To answer a message you got, use reply.',
       inputSchema: { type: 'object', required: ['to', 'message'], properties: { to: { type: 'string', description: 'The session id' }, message: { type: 'string' } } },
       run: ({ to, message }) => {
         const m = me().meta, s = session(to)
@@ -264,18 +265,18 @@ export function mailTools(id: string): Tool[] {
     },
     {
       name: 'set_inbox',
-      description: 'Choose which other sessions may send you messages. Your parent and your children always may. none (the default): no others. only: the sessions in ids. any: every session. You can close it for a while and open it again.',
+      description: 'Choose which other sessions may send you messages. Your parent and your children always may. any (the default): every session. only: the sessions in ids. none: no others. Close it when you want quiet; open it again with any.',
       inputSchema: { type: 'object', required: ['mode'], properties: { mode: { type: 'string', enum: ['none', 'only', 'any'] }, ids: { type: 'array', items: { type: 'string' } } } },
       run: ({ mode, ids }) => {
         const m = me().meta
-        if (mode === 'any') m.mailFilter = { mode: 'any' }
+        if (mode === 'any') m.mailFilter = undefined
         else if (mode === 'only') {
           const list = (Array.isArray(ids) ? ids : []).map(String)
           const unknown = list.filter((x) => !metaOf(x))
           if (unknown.length) throw new Error(`No sessions ${unknown.join(', ')}. Call list_sessions.`)
           if (!list.length) throw new Error('Give the ids')
           m.mailFilter = { mode: 'only', ids: list }
-        } else m.mailFilter = undefined
+        } else m.mailFilter = { mode: 'none' }
         ctx.changed()
         return mode === 'any' ? 'Every session may now send you messages.' : mode === 'only' ? `Your parent, your children and ${(ids as string[]).join(', ')} may now send you messages.` : 'Only your parent and your children may now send you messages.'
       },

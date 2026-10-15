@@ -198,7 +198,8 @@ uses, and if its prompt cache is still warm. Start a new child when the old one'
 large or the work is unrelated.
 A message from another session comes in as "[Message \`m…\` from session …]". Answer it with
 the reply tool: the sender does not see your chat. send_message starts a new exchange. Your
-parent and your children can always write to you; set_inbox opens your inbox to others.
+inbox is open: any session can write to you. If you want quiet, close it with set_inbox; your
+parent and your children can always write to you.
 `
 
 export const LEAD_PROMPT = `

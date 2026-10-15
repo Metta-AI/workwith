@@ -77,8 +77,9 @@ export type SessionMeta = {
   // Set by a rewind: the next start resumes claudeSessionId cut at this entry, as a fork.
   resumeAt?: string | null
   autopilot?: Autopilot
-  // Messages between sessions (server/mail.ts). mailFilter: who else may send to it; its parent
-  // and children always may. mail: messages waiting to go in (it is mid-turn, or held for your OK).
+  // Messages between sessions (server/mail.ts). mailFilter: who else may send to it (unset: every
+  // session; set_inbox narrows it); its parent and children always may. mail: messages waiting
+  // to go in (it is mid-turn, or held for your OK).
   // mailRun: messages in a row from each sender since you last wrote in either session.
   // parentWaits: its parent sent it work, so the parent hears when it next goes idle.
   mailFilter?: MailFilter
