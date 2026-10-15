@@ -1,5 +1,5 @@
 :root {
-  --ok: #3fb950; --warn: #d4a72c; --hot: #e08a3c; --bad: #e5534b; --blue: #4c8dff;
+  --ok: light-dark(#1f8a3b, #3fb950); --warn: #d4a72c; --hot: #e08a3c; --bad: #e5534b; --blue: #4c8dff;
   /* Codinger's own lines about tasks (Transcript.tsx): a purple apart from the accent. */
   --codinger: light-dark(#7a4cb8, #a98be0);
   --hl-draft: light-dark(rgba(255, 196, 0, .38), rgba(255, 196, 0, .30)); --hl-sent: light-dark(rgba(255, 196, 0, .16), rgba(255, 196, 0, .13)); --hl-focus: light-dark(rgba(255, 170, 0, .62), rgba(255, 180, 0, .5));
