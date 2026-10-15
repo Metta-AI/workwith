@@ -115,7 +115,8 @@ export function Transcript({ sid }: { sid: string }) {
       if (at(r.commonAncestorContainer)?.closest('.ri-edit, textarea, input, button, summary')) return null
       return { sel, r, el }
     }
-    const comment = () => {
+    // hold: from a touch, which may bring up the keyboard (holdKeyboard), once the selection is read.
+    const comment = (hold = false) => {
       const t = target()
       if (!t) return
       const { sel, r, el } = t
@@ -133,22 +134,24 @@ export function Transcript({ sid }: { sid: string }) {
       const anchor = anchorFromRange(whole ? all : r, el)
       if (!anchor) return
       const quote = whole ? whole.innerText.trim() : sel.toString().trim().replace(/\n{3,}/g, '\n\n')
+      // A comment inside an item to consider or a question counts as the reply to it.
+      const itemKey = at(r.commonAncestorContainer)?.closest<HTMLElement>('[data-item]')?.dataset.item
+      // Only now: the hidden field's focus clears the selection.
+      if (hold) holdKeyboard()
       // One empty comment at a time: starting a new one drops the untouched last one.
       for (const d of draftsOf(sid)) if (d.kind === 'note' && !d.text.trim() && !d.images.length) removeDraft(sid, d.id)
       sel.removeAllRanges()
-      // A comment inside an item to consider or a question counts as the reply to it.
-      const itemKey = at(r.commonAncestorContainer)?.closest<HTMLElement>('[data-item]')?.dataset.item
       addDraft(sid, { id: uid(), kind: 'note', anchor, quote, text: '', images: [], createdAt: Date.now(), ...(whole ? { whole: true } : {}), ...(itemKey ? { itemKey } : {}) })
     }
-    const up = () => setTimeout(comment, 0)
+    const up = () => setTimeout(() => comment(), 0)
     const touch = matchMedia('(pointer: coarse)')
     let wait = 0, down = 0
-    const settle = () => { clearTimeout(wait); if (touch.matches && !down) wait = window.setTimeout(comment, 300) }
+    const settle = () => { clearTimeout(wait); if (touch.matches && !down) wait = window.setTimeout(() => comment(), 300) }
     const fingers = (e: TouchEvent) => {
       down = e.touches.length
       clearTimeout(wait)
       if (down) return
-      if (touch.matches && target()) { holdKeyboard(); comment() } else settle()
+      if (touch.matches && target()) comment(true); else settle()
     }
     document.addEventListener('mouseup', up)
     document.addEventListener('selectionchange', settle)
