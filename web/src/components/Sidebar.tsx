@@ -126,16 +126,16 @@ export function Sidebar({ width }: { width: number }) {
         <span>Codinger</span>
         <span className={`conn ${st.connected ? 'on' : 'off'}`} title={st.connected ? 'Connected' : 'Reconnecting…'} />
       </div>
+      <div className="side-actions">
+        <button className="primary" onClick={() => setNewIn({ cwd: '', machine: tab === 'local' ? LOCAL : others[0]?.name })}>+ New session</button>
+        <button onClick={() => setHistory(true)} title={`Continue any Claude Code conversation on ${st.web ? currentMachine() : 'this machine'}, including terminal ones`}>Resume…</button>
+      </div>
       {/* On a machine's own page: its sessions, and the other machines'. On the web, every machine is remote. */}
       {!st.web && (others.length > 0 || away.length > 0 || !!local?.remote?.linked) && (
         <div className="side-tabs">
           {(['local', 'remote'] as const).map((t) => <button key={t} className={tab === t ? 'on' : ''} onClick={() => { state.sideTab = t; changed() }}>{t === 'local' ? 'Local' : <><GlobeIcon size={12} /> Remote</>}</button>)}
         </div>
       )}
-      <div className="side-actions">
-        <button className="primary" onClick={() => setNewIn({ cwd: '', ...(tab === 'remote' && others[0] ? { machine: others[0].name } : {}) })}>+ New session</button>
-        <button onClick={() => setHistory(true)} title={`Continue any Claude Code conversation on ${st.web ? currentMachine() : 'this machine'}, including terminal ones`}>Resume…</button>
-      </div>
       <nav className={`tree${st.showArchived ? ' archived' : ''}`}>
         {st.showArchived && <div className="archive-banner"><ArchiveIcon size={13} /> Archived sessions<button className="icon-btn" title="Back to active sessions" onClick={() => { state.showArchived = false; changed() }}><XIcon size={12} /></button></div>}
         {tab === 'local' ? local && tree(LOCAL) : <>
@@ -144,7 +144,7 @@ export function Sidebar({ width }: { width: number }) {
             const shut = st.collapsed.includes(m.name)
             return (
               <div key={m.name} {...d} className={`machine${shut ? ' shut' : ''}${d.className}`}>
-                <div className="machine-head" title={`${m.name}: ${m.connected ? 'connected through web.codinger.app' : 'reconnecting…'}\nClick to ${shut ? 'show' : 'hide'} its sessions; drag to move`}
+                <div className="machine-head"
                   onPointerDown={(e) => drag.start(e, 'machines', m.name)}
                   onClick={() => { state.collapsed = shut ? state.collapsed.filter((n) => n !== m.name) : [...state.collapsed, m.name]; changed() }}>
                   <ChevronIcon size={11} className="machine-chevron" />
@@ -157,7 +157,7 @@ export function Sidebar({ width }: { width: number }) {
               </div>
             )
           })}
-          {away.map((name) => <div key={name} className="machine off"><div className="machine-head" title={`${name} is not connected. Turn on remote access in its Codinger.`}><span className="machine-name">{name}</span><span className="muted">not connected</span></div></div>)}
+          {away.map((name) => <div key={name} className="machine off"><div className="machine-head"><span className="machine-name">{name}</span><span className="muted">not connected</span></div></div>)}
           {!others.length && !away.length && <div className="muted pad">No other machines. Connect one in Settings → Remote access on that machine.</div>}
         </>}
         {tab === 'local' && !local?.sessions.some((s) => s.kind === 'worker' && s.archived === st.showArchived) && <div className="muted pad">{st.showArchived ? 'No archived sessions.' : 'No sessions yet.'}</div>}
@@ -196,7 +196,8 @@ export function Sidebar({ width }: { width: number }) {
 // A machine's icon: laptop or desktop, and what it runs.
 const OS: Record<string, string> = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }
 function DeviceIcon({ m }: { m: Machine }) {
-  const title = `${m.device === 'laptop' ? 'Laptop' : m.device === 'desktop' ? 'Desktop' : 'Computer'}${OS[m.platform] ? `, ${OS[m.platform]}` : ''}`
+  // The only tooltip on a machine's head: on its icon, not on the head you click and drag.
+  const title = `${m.name}: ${m.device === 'laptop' ? 'laptop' : m.device === 'desktop' ? 'desktop' : 'computer'}${OS[m.platform] ? `, ${OS[m.platform]}` : ''}, ${m.connected ? 'connected through web.codinger.app' : 'reconnecting…'}`
   return m.device === 'desktop' ? <DesktopIcon os={m.platform} size={18} className="device" title={title} /> : <LaptopIcon os={m.platform} size={18} className="device" title={title} />
 }
 
@@ -236,7 +237,7 @@ function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: s
     }
     return (
       <div key={cwd} {...g} className={`group${g.className}`}>
-        <div className="group-head" title={`${cwd}\nDrag to move`} onPointerDown={(e) => start(e, `${machine}|groups`, cwd)}>
+        <div className="group-head" onPointerDown={(e) => start(e, `${machine}|groups`, cwd)}>
           <span>{cwd.split(/[\\/]/).pop()}</span>
           <button className="link" title={`New session in ${machine ? cwd : short(cwd)}`} onClick={() => onNew(cwd)}>+</button>
         </div>

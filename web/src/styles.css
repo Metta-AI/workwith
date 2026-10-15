@@ -115,8 +115,8 @@ body.resizing { cursor: col-resize; user-select: none; }
 .archive-banner { display: flex; align-items: center; gap: 6px; padding: 6px 12px; margin-bottom: 4px; background: color-mix(in srgb, var(--text) 6%, transparent); border-bottom: 1px solid var(--line); color: var(--muted); font-size: calc(12px * var(--fs, 1)); }
 .archive-banner .icon-btn { margin-left: auto; }
 /* The sidebar's tabs on a machine's own page: Local and Remote. */
-.side-tabs { display: flex; margin: 0 10px 8px; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
-.side-tabs button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: none; border-radius: 0; background: none; padding: 5px 0; color: var(--muted); font-size: calc(12.5px * var(--fs, 1)); }
+.side-tabs { display: flex; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.side-tabs button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: none; border-radius: 0; background: none; padding: 7px 0; color: var(--muted); font-size: calc(12.5px * var(--fs, 1)); }
 .side-tabs button + button { border-left: 1px solid var(--line); }
 .side-tabs button.on { background: color-mix(in srgb, var(--text) 9%, transparent); color: var(--text); font-weight: 600; }
 /* Other machines' sessions (web/src/store.ts machines): one full-width section each, its head shaded. */
@@ -132,8 +132,9 @@ body.resizing { cursor: col-resize; user-select: none; }
 .machine-head .link { margin-left: auto; }
 .machine.off .machine-head { font-weight: normal; color: var(--muted); background: none; cursor: default; }
 .machine.off .muted { margin-left: auto; font-size: calc(11.5px * var(--fs, 1)); }
-/* A machine you drag: see-through, the list behind it blurred. */
-.machine.dragged { position: relative; z-index: 3; background: color-mix(in srgb, var(--panel) 55%, transparent); backdrop-filter: blur(8px) saturate(1.2); -webkit-backdrop-filter: blur(8px) saturate(1.2); box-shadow: 0 6px 18px rgba(0, 0, 0, .2); }
+/* A machine you drag: see-through, and the other machines blurred while it moves. */
+.machine.dragged { position: relative; z-index: 3; background: color-mix(in srgb, var(--panel) 70%, transparent); box-shadow: 0 6px 18px rgba(0, 0, 0, .2); }
+.tree:has(.machine.dragged) .machine:not(.dragged) { filter: blur(2px); opacity: .7; transition: filter .15s, opacity .15s; }
 .machine.dragged .machine-head { background: color-mix(in srgb, var(--text) 10%, transparent); }
 .machine.sliding { transition: transform .18s ease; }
 .remote-panel p { margin: 0 0 10px; }
