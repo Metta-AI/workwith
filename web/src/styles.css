@@ -1008,3 +1008,26 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
   .artifacts-head { padding-left: 38px; }
   .modal { width: 94vw; max-height: 92vh; overflow-y: auto; }
 }
+
+/* A published transcript (web/src/share.tsx), and the dialog that publishes one (PublishDialog.tsx). */
+.share-page { display: flex; flex-direction: column; height: 100%; }
+.share-head { padding: 14px 24px 10px 72px; max-width: 848px; width: 100%; box-sizing: border-box; margin: 0 auto; border-bottom: 1px solid var(--line); }
+.share-head h1 { margin: 0 0 2px; font-size: 18px; }
+.share-head .muted { font-size: 12.5px; }
+.share-head a { color: var(--accent); }
+.tool-line.static, .tool-line.static:hover { cursor: default; background: none; }
+.publish-modal { max-height: 92vh; }
+.publish-lead { margin: 0; }
+.publish-link { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.publish-link a { font-family: var(--mono); font-size: 12.5px; word-break: break-all; color: var(--accent); }
+.publish-opts .settings-check { flex-direction: row; margin: 0 0 4px; color: var(--text); }
+.publish-scan { font-size: 12.5px; }
+.publish-scan ul { margin: 4px 0 0; padding-left: 20px; }
+.publish-scan.warn summary { color: var(--bad); }
+.publish-frame { width: 100%; height: 46vh; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.publish-actions { align-items: center; }
+.publish-actions > .muted { margin-right: auto; font-size: 12.5px; }
+.publish-need { color: var(--bad); font-size: 12.5px; }
+@media (max-width: 700px) {
+  .share-head { padding-left: 16px; padding-right: 16px; }
+}

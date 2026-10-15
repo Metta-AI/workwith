@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "types": []
   },
-  "include": ["src", "worker-configuration.d.ts", "../shared/remote.ts"]
+  "include": ["src", "worker-configuration.d.ts", "../shared/remote.ts", "../shared/media.ts"]
 }

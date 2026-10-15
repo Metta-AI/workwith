@@ -86,6 +86,9 @@ type State = {
   sideOpen: boolean                  // on a phone the sidebar covers the page: is it showing
   collapsed: string[]                // machines whose sessions you hid in the sidebar
   machineOrder: string[]             // other machines, in the order you dragged them to
+  // A published transcript, shown read-only (web/src/share.tsx): where its files come from, and
+  // whether its tool calls have their input and output or one line each. Null in Codinger itself.
+  share: { file(url: string): string; tools: 'line' | 'full' } | null
 }
 
 const saved = <T,>(k: string, d: T): T => { try { return JSON.parse(localStorage.getItem(k) ?? '') ?? d } catch { return d } }
@@ -119,6 +122,7 @@ export const state = {
   sideTab: saved('codinger.sideTab', 'local'),
   collapsed: saved('codinger.collapsed', []),
   machineOrder: saved('codinger.machineOrder', []),
+  share: null,
 } as Partial<State> as State
 
 // ---- machines -------------------------------------------------------------------
@@ -156,7 +160,8 @@ const cur = () => state.machines[currentMachine()] ?? blank(LOCAL)
 export const baseOf = (machine: string) => !machine ? '' : state.web ? `/m/${machine}` : `/api/remote/m/${machine}`
 export const urlOf = (path: string, machine = currentMachine()) => baseOf(machine) + path
 // An image or file the server keeps (/api/images/…), from the current session's machine.
-export const media = (url: string, machine = currentMachine()) => url.startsWith('/api/') ? urlOf(url, machine) : url
+export const media = (url: string, machine = currentMachine()) =>
+  state.share && /^\/api\/(images|media)\//.test(url) ? state.share.file(url) : url.startsWith('/api/') ? urlOf(url, machine) : url
 
 Object.defineProperties(state, {
   sessions: {

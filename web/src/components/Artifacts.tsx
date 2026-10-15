@@ -66,7 +66,8 @@ export function ArtifactLine({ sid, b, result }: { sid: string; b: Extract<Block
   const open = () => showIn(sid, url ? { url } : { artifact: name, v: t?.v })
   return (
     <div className={`tool codinger-line artifact-line${failed ? ' err' : ''}${result ? '' : ' running'}`}>
-      <button className="tool-line" onClick={open} title={failed ? result!.text : 'Show it in the preview pane'}>
+      {/* A published transcript has no preview pane. */}
+      <button className={`tool-line${st.share ? ' static' : ''}`} onClick={st.share ? undefined : open} title={st.share ? undefined : failed ? result!.text : 'Show it in the preview pane'}>
         <span className="tool-icon"><ArtifactIcon size={13} /></span>
         <span className="tool-name">{url ? 'Preview' : first ? 'New artifact' : 'Artifact'}</span>
         <span className="tool-sum">

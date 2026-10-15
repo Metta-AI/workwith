@@ -46,6 +46,8 @@ import { embedOf, mediaKind, mediaType } from '../shared/media.ts'
 import { MEDIA_MAX, MEDIA_PART, keepMedia, mediaFile } from './media.ts'
 import { ARTIFACTS, artifactsChanged, artifactsPrompt, checkArtifact, listArtifacts, noteTool, publish, reportOf, showArtifact, startHost, typeOf, watchArtifacts } from './artifacts.ts'
 import { connectCallback, connectUrl, disconnect as prolificaDisconnect, prolificaState } from './prolifica.ts'
+import { buildShare, publishShare, unpublishShare } from './share.ts'
+import type { ShareOpts } from '../shared/share.ts'
 
 const ROOT =path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const PORT = Number(process.env.PORT ?? 4545)
@@ -892,6 +894,13 @@ function startContext(cwd: string, fresh: boolean): Promise<string> {
   })
 }
 
+// From a query (strings) or a body: messages and one line for each tool call, unless asked for more.
+const shareOpts = (o: Record<string, unknown>): ShareOpts => ({
+  tools: o.tools === 'full' ? 'full' : 'line',
+  thinking: o.thinking === true || o.thinking === '1',
+  redact: o.redact !== false && o.redact !== '0',
+})
+
 function send(res: http.ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body))
 }
@@ -1245,6 +1254,17 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     return send(res, 200, { ok: true })
   }
   if (b === 'events' && method === 'GET') return send(res, 200, s.getEvents())
+  // Its transcript, published read-only (server/share.ts): what would go, and taking it down.
+  if (b === 'share' && method === 'GET') {
+    const { paths, ...preview } = buildShare(s.meta, s.getEvents(), settings, shareOpts(Object.fromEntries(url.searchParams)))
+    return send(res, 200, preview)
+  }
+  if (b === 'share' && method === 'DELETE') {
+    if (s.meta.share) await unpublishShare(s.meta.share)
+    delete s.meta.share
+    metaChanged()
+    return send(res, 200, s.meta)
+  }
   if (b === 'commands' && method === 'GET') return send(res, 200, commands.get(id) ?? lastCommands)
   if (b === 'mcp' && method === 'GET') {
     return send(res, 200, { servers: serversFor(s.meta.cwd), on: s.meta.mcp?.on ?? null })
@@ -1352,6 +1372,10 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       if (!busy(s)) goOn(s)
       return send(res, 200, s.meta)
     }
+    case 'share':
+      s.meta.share = await publishShare(s.meta, s.getEvents(), settings, shareOpts(body))
+      metaChanged()
+      return send(res, 200, s.meta)
     case 'seen': s.markSeen(); return send(res, 200, { ok: true })
     case 'unread': s.markUnread(); return send(res, 200, { ok: true })
     case 'permission':

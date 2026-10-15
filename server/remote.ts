@@ -53,6 +53,9 @@ export function remoteStatus(): RemoteStatus {
 }
 const tell = () => changed(remoteStatus())
 
+// The hub and this machine's token, to publish there (server/share.ts); null before it is connected.
+export const hubAuth = () => saved.token ? { hub: hubUrl(), token: saved.token } : null
+
 export function startRemote(localPort: number, onChange: (s: RemoteStatus) => void) {
   port = localPort
   changed = onChange

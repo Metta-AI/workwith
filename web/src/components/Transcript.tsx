@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Anchor, Block, Event, ImageRef, Part, Task } from '../../../shared/types.ts'
-import { addDraft, api, draftsOf, removeDraft, rewind, select, uid, useStore, here } from '../store.ts'
+import { addDraft, api, draftsOf, removeDraft, rewind, select, state, uid, useStore, here } from '../store.ts'
 import { anchorFromRange } from '../anchoring.ts'
 import { renderInline, renderMd, renderText } from '../util.ts'
 import { AssistantMessage, type Reaction } from './AssistantMessage.tsx'
@@ -76,15 +76,16 @@ export function Transcript({ sid }: { sid: string }) {
   const scroller = useRef<HTMLDivElement>(null)
   const inner = useRef<HTMLDivElement>(null)
   const column = useRef<HTMLDivElement>(null)
-  const stick = useRef(true)
-  const [gutter, setGutter] = useState(true)
+  // A published transcript starts at the top, for a reader; a session follows its end.
+  const stick = useRef(!state.share)
+  const [gutter, setGutter] = useState(!state.share)
 
   // Follow new output while you're at the bottom; stay put if you scrolled up.
   useLayoutEffect(() => {
     const el = scroller.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
   }, [events?.length, streaming, sid])
-  useEffect(() => { stick.current = true }, [sid])
+  useEffect(() => { stick.current = !state.share }, [sid])
 
   // The composer lines up with the text column, which moves over for the margin.
   useEffect(() => { scroller.current?.closest('.session-main')?.classList.toggle('gutter', gutter) }, [gutter, !!events])
@@ -92,13 +93,14 @@ export function Transcript({ sid }: { sid: string }) {
   useEffect(() => {
     const el = scroller.current
     if (!el) return
-    const ro = new ResizeObserver(() => setGutter(el.clientWidth >= GUTTER_MIN))
+    const ro = new ResizeObserver(() => setGutter(!state.share && el.clientWidth >= GUTTER_MIN))
     ro.observe(el)
     return () => ro.disconnect()
   }, [!!events])
 
   // Select any of Claude's text and a comment opens on it, focused, as in Marginer.
   useEffect(() => {
+    if (state.share) return
     const up = () => setTimeout(() => {
       const sel = getSelection()
       if (!sel || sel.isCollapsed || !sel.rangeCount || !sel.toString().trim()) return
@@ -152,10 +154,10 @@ export function Transcript({ sid }: { sid: string }) {
           {streaming && <AssistantMessage sid={sid} msg="live" text={streaming} live />}
           {meta?.status === 'working' && !streaming && <WorkingDots />}
         </div>
-        <Margin sid={sid} inner={inner} column={column} gutter={gutter} events={events} />
+        {!st.share && <Margin sid={sid} inner={inner} column={column} gutter={gutter} events={events} />}
       </div>
     </div>
-    <OpenToast scroller={scroller} keys={[...folded.items.values()].filter((t) => t.status === 'open').map((t) => t.key)} />
+    {!st.share && <OpenToast scroller={scroller} keys={[...folded.items.values()].filter((t) => t.status === 'open').map((t) => t.key)} />}
     </div>
   )
 }
@@ -519,12 +521,12 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
         </div>
       ))}
     </div>
-      <div className="user-actions">
+      {!state.share && <div className="user-actions">
         <button className="icon-btn" title="Edit" disabled={busy} onClick={() => setEditing(true)}><PencilIcon size={13} /></button>
         {confirm
           ? <button className="link danger" disabled={busy} onClick={() => run(() => rewind(sid, e.seq))}>Delete from here</button>
           : <button className="icon-btn" title="Delete from here" disabled={busy} onClick={() => setConfirm(true)}><TrashIcon size={13} /></button>}
-      </div>
+      </div>}
     </div>
   )
 }
@@ -559,7 +561,7 @@ function SentQuote({ quote }: { quote: string }) {
 function MailHead({ p }: { p: Extract<Part, { kind: 'mail' }> }) {
   const { sessions } = useStore()
   const title = sessions.find((s) => s.id === here(p.from))?.title ?? p.title
-  const who = <button className="link mail-who" title="Show that session" onClick={() => select(here(p.from))}>{title}</button>
+  const who = state.share ? <b>{title}</b> : <button className="link mail-who" title="Show that session" onClick={() => select(here(p.from))}>{title}</button>
   return (
     <div className="mail-head">
       <MailIcon size={12} />
@@ -624,7 +626,7 @@ function summary(name: string, input: any): string {
   if (name === 'Bash') return input.command ?? ''
   if (input.file_path) return shortPath(input.file_path)
   const v = input.pattern ?? input.url ?? input.query ?? input.description ?? input.prompt
-  return typeof v === 'string' ? v : JSON.stringify(input)
+  return typeof v === 'string' ? v : Object.keys(input).length ? JSON.stringify(input) : ''
 }
 
 const RESOLUTION: Record<string, { Icon: (p: { size?: number }) => React.ReactElement; title: string }> = {
@@ -681,12 +683,14 @@ function replyTarget(events: Record<string, Event[]>, id: string): string | unde
 
 function AnyTool({ b, result, resolution }: { b: Extract<Block, { type: 'tool_use' }>; result?: Extract<Event, { t: 'tool_result' }>; resolution?: string }) {
   const [open, setOpen] = useState(false)
+  // A published transcript with one line for each call has nothing more to show.
+  const line = state.share?.tools === 'line'
   const name = b.name.replace(/^mcp__([^_]+)__/, '$1·')
   const Icon = TOOL_ICON[b.name] ?? ToolIcon
   const r = resolution ? RESOLUTION[resolution] : null
   return (
     <div className={`tool${result?.isError ? ' err' : ''}${result ? '' : ' running'}${resolution ? ` perm-${resolution}` : ''}`}>
-      <button className="tool-line" onClick={() => setOpen(!open)}>
+      <button className={`tool-line${line ? ' static' : ''}`} onClick={() => { if (!line) setOpen(!open) }}>
         <span className="tool-icon"><Icon size={13} /></span>
         <span className="tool-name">{name}</span>
         <span className="tool-sum">{summary(b.name, b.input).split('\n')[0]}</span>

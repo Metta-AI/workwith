@@ -4,7 +4,7 @@
   "name": "codinger-web",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
-  "assets": { "directory": "../dist", "not_found_handling": "single-page-application", "run_worker_first": ["/_remote/*", "/m/*"] },
+  "assets": { "directory": "../dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/_remote/*", "/m/*", "/s/*"] },
   "routes": [{ "pattern": "web.codinger.app", "custom_domain": true }],
   // Also at codinger-web.<account>.workers.dev, for networks where web.codinger.app does not resolve.
   "workers_dev": true,
@@ -12,13 +12,16 @@
   "vars": { "ALLOWED_EMAILS": "squashai@gmail.com,joshua@huttj.com", "MAIL_FROM": "login@codinger.app" },
   "send_email": [{ "name": "EMAIL", "allowed_destination_addresses": ["squashai@gmail.com", "joshua@huttj.com"] }],
   "durable_objects": { "bindings": [{ "name": "HUB", "class_name": "Hub" }] },
+  // Published transcripts (/s/<id>). Create it once: npx wrangler r2 bucket create codinger-shares
+  "r2_buckets": [{ "binding": "SHARES", "bucket_name": "codinger-shares" }],
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hub"] }],
   "env": {
     "dev": {
       "routes": [],
       "vars": { "ALLOWED_EMAILS": "squashai@gmail.com,joshua@huttj.com", "MAIL_FROM": "login@codinger.app" },
       "send_email": [{ "name": "EMAIL", "allowed_destination_addresses": ["squashai@gmail.com", "joshua@huttj.com"] }],
-      "durable_objects": { "bindings": [{ "name": "HUB", "class_name": "Hub" }] }
+      "durable_objects": { "bindings": [{ "name": "HUB", "class_name": "Hub" }] },
+      "r2_buckets": [{ "binding": "SHARES", "bucket_name": "codinger-shares-dev" }]
     }
   }
 }

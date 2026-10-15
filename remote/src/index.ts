@@ -8,14 +8,19 @@
 // - /m/<machine>/… goes through that machine's one outbound WebSocket
 //   (shared/remote.ts): each request, and each WebSocket as a channel. A signed-in
 //   browser or another machine (with its token) can use it.
+// - Transcripts your machines publish (server/share.ts), kept in R2 and readable by
+//   anyone with the link at /s/<id>.
 
 import { DurableObject } from 'cloudflare:workers'
 import { EmailMessage } from 'cloudflare:email'
 import { REQ_HEADERS, RES_HEADERS, type HubMsg, type MachineMsg, type RemoteMachine } from '../../shared/remote.ts'
+import { mediaKind, mediaType } from '../../shared/media.ts'
 
 type Env = {
   HUB: DurableObjectNamespace<Hub>
   EMAIL: SendEmail
+  SHARES: R2Bucket
+  ASSETS: Fetcher
   ALLOWED_EMAILS: string   // comma-separated
   MAIL_FROM: string
 }
@@ -30,9 +35,16 @@ type Login = { email: string; exp: number; next?: string }
 type Session = { email: string; exp: number }
 type Link = { name: string; poll: string; exp: number; token?: string }
 type Machine = { name: string; created: number; tokenHash: string; label?: string }
+// A published transcript: in R2 at s/<id>/share.json, with the files it shows at s/<id>/f/<name>.
+type ShareRec = { id: string; title: string; machine: string; created: number; updated: number; files: string[] }
+const SHARE_PATH = /^\/_remote\/shares\/([A-Za-z0-9]{16})(?:\/f\/([0-9a-f]{24}\.[a-z0-9]{1,8}))?$/
+const SHARE_FILE = /^[0-9a-f]{24}\.[a-z0-9]{1,8}$/
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
+    // A published transcript is public: no sign-in, so no need for the hub's state.
+    const url = new URL(req.url)
+    if (url.pathname.startsWith('/s/')) return await readShare(req, env, url).catch((e) => json({ error: e instanceof Error ? e.message : String(e) }, 500))
     // One owner, so one hub. Static files never get here (wrangler.jsonc: run_worker_first).
     return env.HUB.get(env.HUB.idFromName('owner')).fetch(req)
   },
@@ -74,6 +86,13 @@ export class Hub extends DurableObject<Env> {
         if (!await this.machineOf(req) && (!await this.session(req) || !sameOrigin(req, url))) return json({ error: 'Not signed in' }, 401)
         const body = await req.json<{ label?: string; name?: string }>()
         return change[2] === 'label' ? await this.label(change[1], String(body.label ?? '')) : await this.rename(change[1], String(body.name ?? ''))
+      }
+      // Publishing a transcript: from one of your machines only.
+      const share = SHARE_PATH.exec(p)
+      if (share) {
+        const m = await this.machineOf(req)
+        if (!m) return json({ error: 'Not allowed' }, 403)
+        return await this.share(req, m, share[1], share[2])
       }
       const forget = /^\/_remote\/machines\/([a-z0-9-]{1,40})$/.exec(p)
       if (forget && req.method === 'DELETE') {
@@ -263,6 +282,43 @@ ${again ? `<p>A machine with this name is connected already. It will be disconne
     return this.ctx.getWebSockets(`m:${name}`)[0]
   }
 
+  // ---- published transcripts ------------------------------------------------------
+
+  // GET: the files the hub has (to send only the new ones). PUT a file, then the transcript,
+  // which drops the files it no longer shows. DELETE: all of it.
+  private async share(req: Request, m: Machine, id: string, file?: string): Promise<Response> {
+    const key = `share:${id}`
+    const rec = await this.ctx.storage.get<ShareRec>(key)
+    const bucket = this.env.SHARES
+    if (file) {
+      if (req.method !== 'PUT' || !req.body) return json({ error: 'Not found' }, 404)
+      await bucket.put(`s/${id}/f/${file}`, req.body, { httpMetadata: { contentType: mediaType(file) } })
+      return json({ ok: true })
+    }
+    if (req.method === 'GET') return rec ? json({ files: rec.files }) : json({ error: 'No such transcript' }, 404)
+    if (req.method === 'PUT') {
+      const text = await req.text()
+      const s = JSON.parse(text) as { v?: number; title?: unknown; events?: unknown; files?: unknown }
+      if (s.v !== 1 || !Array.isArray(s.events) || !Array.isArray(s.files)) return json({ error: 'Not a transcript' }, 400)
+      const files = s.files.filter((f): f is string => typeof f === 'string' && SHARE_FILE.test(f))
+      const title = String(s.title ?? '').slice(0, 200)
+      await bucket.put(`s/${id}/share.json`, text, { httpMetadata: { contentType: 'application/json' }, customMetadata: { title } })
+      const keep = new Set(files.map((f) => `s/${id}/f/${f}`))
+      const gone = (await listAll(bucket, `s/${id}/f/`)).filter((k) => !keep.has(k))
+      if (gone.length) await bucket.delete(gone)
+      const now = Date.now()
+      await this.ctx.storage.put(key, { id, title, machine: m.name, created: rec?.created ?? now, updated: now, files } satisfies ShareRec)
+      return json({ ok: true })
+    }
+    if (req.method === 'DELETE') {
+      const all = await listAll(bucket, `s/${id}/`)
+      for (let i = 0; i < all.length; i += 1000) await bucket.delete(all.slice(i, i + 1000))
+      await this.ctx.storage.delete(key)
+      return json({ ok: true })
+    }
+    return json({ error: 'Not found' }, 404)
+  }
+
   // ---- /m/<machine>/… through the machine ------------------------------------------
 
   private async tunnel(req: Request, url: URL): Promise<Response> {
@@ -376,6 +432,59 @@ ${again ? `<p>A machine with this name is connected already. It will be disconne
     for (const [id, s] of this.streams) if (s.machine === name) this.endStream(id, 'The machine went away')
     for (const b of this.ctx.getWebSockets(`b:${name}`)) try { b.close(1011, 'The machine went away') } catch { /* closed */ }
   }
+}
+
+// ---- reading a published transcript --------------------------------------------
+
+// /s/<id>: the page (web/share.html) with the transcript's title; /s/<id>/share.json: the
+// transcript; /s/<id>/f/<name>: a file it shows. The files are kept by content, so they never
+// change; a page or an SVG among them is sandboxed, so it never runs as this site.
+async function readShare(req: Request, env: Env, url: URL): Promise<Response> {
+  const m = /^\/s\/([A-Za-z0-9]{16})(?:\/(share\.json)|\/f\/([0-9a-f]{24}\.[a-z0-9]{1,8}))?\/?$/.exec(url.pathname)
+  if (!m || (req.method !== 'GET' && req.method !== 'HEAD')) return page('Not found', '<p>There is no transcript here.</p>', 404)
+  const [, id, data, file] = m
+  if (file) {
+    const obj = await env.SHARES.get(`s/${id}/f/${file}`, req.headers.has('range') ? { range: req.headers } : {})
+    if (!obj) return new Response('Not found', { status: 404 })
+    const kind = mediaKind(file)
+    const headers = new Headers({
+      'content-type': mediaType(file), 'x-content-type-options': 'nosniff', 'cache-control': 'public, max-age=31536000, immutable', 'accept-ranges': 'bytes', etag: obj.httpEtag,
+      ...(kind === 'page' ? { 'content-security-policy': 'sandbox allow-scripts allow-popups' } : kind === 'image' || kind === 'file' ? { 'content-security-policy': 'sandbox' } : {}),
+      ...(kind === 'file' && mediaType(file) === 'application/octet-stream' ? { 'content-disposition': 'attachment' } : {}),
+    })
+    const r = obj.range as { offset?: number; length?: number; suffix?: number } | undefined
+    if (!r || !req.headers.has('range')) return new Response(req.method === 'HEAD' ? null : obj.body, { headers: (headers.set('content-length', String(obj.size)), headers) })
+    const offset = r.suffix != null ? obj.size - r.suffix : r.offset ?? 0
+    const length = r.suffix != null ? r.suffix : r.length ?? obj.size - offset
+    headers.set('content-range', `bytes ${offset}-${offset + length - 1}/${obj.size}`)
+    headers.set('content-length', String(length))
+    return new Response(req.method === 'HEAD' ? null : obj.body, { status: 206, headers })
+  }
+  if (data) {
+    const obj = await env.SHARES.get(`s/${id}/share.json`)
+    if (!obj) return json({ error: 'No such transcript' }, 404)
+    return new Response(obj.body, { headers: { 'content-type': 'application/json', 'x-content-type-options': 'nosniff', 'cache-control': 'no-cache' } })
+  }
+  const head = await env.SHARES.head(`s/${id}/share.json`)
+  if (!head) return page('Not found', '<p>There is no transcript here. Its owner may have taken it down.</p>', 404)
+  const title = head.customMetadata?.title || 'A transcript'
+  const shell = await env.ASSETS.fetch(new Request(new URL('/share.html', url)))
+  const meta = `<meta property="og:title" content="${esc(title)}"><meta property="og:type" content="article"><meta property="og:site_name" content="Codinger"><meta name="robots" content="noindex">`
+  return new HTMLRewriter()
+    .on('title', { element(e) { e.setInnerContent(`${title} · Codinger`) } })
+    .on('head', { element(e) { e.append(meta, { html: true }) } })
+    .transform(new Response(shell.body, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' } }))
+}
+
+async function listAll(bucket: R2Bucket, prefix: string): Promise<string[]> {
+  const out: string[] = []
+  let cursor: string | undefined
+  do {
+    const l = await bucket.list({ prefix, cursor })
+    out.push(...l.objects.map((o) => o.key))
+    cursor = l.truncated ? l.cursor : undefined
+  } while (cursor)
+  return out
 }
 
 // ---- helpers -----------------------------------------------------------------

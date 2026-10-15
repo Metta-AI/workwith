@@ -5,6 +5,7 @@ import type { Look } from './looks.ts'
 import type { Appearance } from './appearance.ts'
 import type { Artifact, PreviewTarget, ProlificaState } from './artifacts.ts'
 import type { UpdateMode, UpdateStatus } from './update.ts'
+import type { Published } from './share.ts'
 
 export type Status =
   | 'new'        // never sent anything
@@ -83,6 +84,7 @@ export type SessionMeta = {
   mail?: Mail[]
   mailRun?: Record<string, number>
   parentWaits?: boolean
+  share?: Published       // its transcript, published read-only (server/share.ts)
 }
 
 // none: only its parent and children (the default); only: those, and the sessions in ids.

@@ -22,6 +22,7 @@ import { StateMark, TasksDialog } from './TasksDialog.tsx'
 import { McpPill } from './McpDialog.tsx'
 import { shortPath } from './DirPicker.tsx'
 import { AutopilotButton } from './Autopilot.tsx'
+import { PublishDialog } from './PublishDialog.tsx'
 
 export function ContextGauge({ m, onCompact }: { m: SessionMeta; onCompact?: () => void }) {
   const used = m.context.used
@@ -99,6 +100,7 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
   const parent = useStore().sessions.find((x) => x.id === m.parentId)
   // On a phone the head is one line; this button shows the gauges and the mode (styles.css).
   const [more, setMore] = useState(false)
+  const [publishing, setPublishing] = useState(false)
   return (
     <header className={`session-head${more ? ' head-open' : ''}`}>
       <Mascot status={m.status} look={m.look} fatigue={fatigue(m.context.used, m.context.window)} size={44} title={STATUS_LABEL[m.status]} child={!!m.parentId} />
@@ -116,6 +118,8 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
           {model && <span className="muted" title={m.model?.includes('-') ? undefined : 'Model used for this choice last time'}>{model}</span>}
           <IdChip m={m} />
           {parent && <button className="link head-parent" title="Show the session that started this one" onClick={() => select(parent.id)}>from {parent.title}</button>}
+          {/* Its transcript is public: say so, one click from its link. */}
+          {m.share && <button className="link head-published" onClick={() => setPublishing(true)}>published</button>}
         </div>
       </div>
       <div className="head-side">
@@ -140,15 +144,16 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
           </span>
           {extra}
           <button className="icon-tall head-more" aria-label={more ? 'Fewer details' : 'More details'} onClick={() => setMore(!more)}><ChevronIcon size={15} /></button>
-          <SessionMenu m={m} />
+          <SessionMenu m={m} onPublish={() => setPublishing(true)} />
         </div>
       </div>
+      {publishing && <PublishDialog m={m} onClose={() => setPublishing(false)} />}
     </header>
   )
 }
 
 // Stop, Close and the rest, out of the way behind one button.
-function SessionMenu({ m }: { m: SessionMeta }) {
+function SessionMenu({ m, onPublish }: { m: SessionMeta; onPublish(): void }) {
   const [open, setOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -161,6 +166,7 @@ function SessionMenu({ m }: { m: SessionMeta }) {
   const act = (f: () => unknown) => () => { setOpen(false); void f() }
   const items = [
     busy && <button key="stop" className="danger" onClick={act(() => api(`/api/sessions/${m.id}/interrupt`))}>Stop</button>,
+    m.kind === 'worker' && <button key="publish" onClick={act(onPublish)}>{m.share ? 'Published transcript…' : 'Publish transcript…'}</button>,
     m.kind === 'worker' && !m.archived && <button key="close" title="Archive session" onClick={act(() => closeSession(m.id))}>Close</button>,
     m.kind === 'worker' && m.archived && <button key="reopen" onClick={act(() => api(`/api/sessions/${m.id}`, 'PATCH', { archived: false }))}>Reopen</button>,
     m.kind === 'worker' && m.archived && <button key="delete" className="danger" title="Remove from Codinger (it stays in Resume)" onClick={act(() => { if (confirm(`Delete "${m.title}" from Codinger? Claude Code's own transcript is kept, so you can still find it under Resume.`)) return api(`/api/sessions/${m.id}`, 'DELETE').then(selectFallback) })}>Delete</button>,

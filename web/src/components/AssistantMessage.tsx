@@ -125,7 +125,7 @@ export const AssistantMessage = memo(function AssistantMessage({ sid, msg, text,
   return (
     <div className={`assistant-text md${live ? ' streaming' : ''}`} ref={root} {...(live ? {} : { 'data-msg': msg, 'data-sid': sid })}>
       <Pieces c={{ sid, msg, items, live }} pieces={pieces} />
-      {!live && <LeftRail sid={sid} root={root} reacts={reacts} drafted={drafted} />}
+      {!live && !state.share && <LeftRail sid={sid} root={root} reacts={reacts} drafted={drafted} />}
     </div>
   )
 })
@@ -435,7 +435,7 @@ const FOLDER = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stro
 function useReveal(root: React.RefObject<HTMLDivElement | null>, sid: string, pieces: Piece[], live: boolean) {
   useEffect(() => {
     const el = root.current
-    if (!el || live) return
+    if (!el || live || state.share) return
     const cwd = state.sessions.find((s) => s.id === sid)?.cwd ?? '~'
     const codes = [...el.querySelectorAll<HTMLElement>('code')].filter((c) => {
       const t = c.textContent?.trim() ?? ''
@@ -489,6 +489,7 @@ function ConsiderCard({ c, p }: { c: Ctx; p: SectionPiece }) {
   const status = c.live ? 'live' : item?.status ?? 'open'
   const title = p.title || 'Item'
   const fold = useFold(status)
+  const ro = !!state.share
 
   // Comment on the item: a margin card on its title, tied to the item.
   const comment = (e: React.MouseEvent) => {
@@ -513,12 +514,12 @@ function ConsiderCard({ c, p }: { c: Ctx; p: SectionPiece }) {
       <div className="consider-head">
         {fold.chevron}
         <div data-block={p.block} className="md-block consider-title" onClick={fold.onTitle} dangerouslySetInnerHTML={{ __html: renderInline(title) }} />
-        {status === 'open' && <span className="item-actions"><button className="icon-btn" title="Dismiss" onClick={() => dismissItem(c.sid, key, title)}><XIcon size={13} /></button></span>}
+        {status === 'open' && !ro && <span className="item-actions"><button className="icon-btn" title="Dismiss" onClick={() => dismissItem(c.sid, key, title)}><XIcon size={13} /></button></span>}
         {(status === 'dismissing' || status === 'completing') && <span className="item-actions"><button className="icon-btn pop-in" title="Undo" onClick={() => undismissItem(c.sid, key)}><UndoIcon size={14} /></button></span>}
         <Done status={status} />
       </div>
       <div className="consider-body"><Pieces c={{ ...c, within: { key, label: title, status } }} pieces={p.pieces} /></div>
-      {(status === 'open' || status === 'drafted' || (fold.aside && !fold.folded)) && (
+      {(status === 'open' || status === 'drafted' || (fold.aside && !fold.folded)) && !ro && (
         <div className="consider-foot">
           {p.task && <button className="reply-btn" onClick={() => markDone(c.sid, key, title)}><CheckIcon size={13} /> Done</button>}
           <button className="reply-btn item-reply" onMouseDown={(e) => e.preventDefault()} onClick={comment}><CommentIcon size={13} /> Reply</button>
@@ -601,7 +602,7 @@ function DraftCard({ c, ask, compact, block }: { c: Ctx; ask: Ask & { draft: str
     </div>
   )
 
-  if (answer || (status !== 'open' && status !== 'drafted' && (!fold.aside || fold.folded || compact))) {
+  if (answer || state.share || (status !== 'open' && status !== 'drafted' && (!fold.aside || fold.folded || compact))) {
     const text = answer?.text ?? ask.draft
     return (
       <div className={`ask-card draft-card ${answer ? 'answered' : `st-${status}`}${fold.cls}`} {...attrs}>
@@ -682,14 +683,14 @@ function QuestionCard({ c, ask, compact, block }: { c: Ctx; ask: Ask; compact?: 
           <Done status="answered" />
         </div>
         <div className="ask-answer">
-          <span className="muted ask-who">You:</span>{' '}
+          <span className="muted ask-who">{state.share ? 'Answer:' : 'You:'}</span>{' '}
           {answer.choices?.length ? <b>{answer.choices.join('; ')}</b> : null} {answer.text}
           <Thumbs images={answer.images} />
         </div>
       </div>
     )
   }
-  if (status !== 'open' && status !== 'drafted' && (!fold.aside || fold.folded || compact)) {
+  if (state.share || (status !== 'open' && status !== 'drafted' && (!fold.aside || fold.folded || compact))) {
     return (
       <div className={`ask-card st-${status}${fold.cls}`} {...attrs}>
         <div className="ask-row">
@@ -697,7 +698,7 @@ function QuestionCard({ c, ask, compact, block }: { c: Ctx; ask: Ask; compact?: 
           <div className="ask-q" {...title} dangerouslySetInnerHTML={{ __html: question }} />
           <AsideMark sid={c.sid} itemKey={askKey} status={status} />
         </div>
-        {status === 'live' && ask.options.length > 0 && <div className="ask-options">{ask.options.map((o) => <span key={o} className="chip static">{o}</span>)}</div>}
+        {(status === 'live' || (state.share && !fold.folded)) && ask.options.length > 0 && <div className="ask-options">{ask.options.map((o) => <span key={o} className="chip static">{o}</span>)}</div>}
       </div>
     )
   }
