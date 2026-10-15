@@ -149,6 +149,25 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && state.li
 for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false })
 document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault() }, { passive: false })
 
+// On a phone a swipe from the left edge opens the sessions instead of going back a page.
+const phone = matchMedia('(max-width: 720px)')
+const openSide = () => { if (!state.sideOpen) { state.sideOpen = true; changed() } }
+let edge: { x: number; y: number } | null = null
+document.addEventListener('touchstart', (e) => {
+  const t = e.touches[0]
+  edge = phone.matches && e.touches.length === 1 && t.clientX < 20 && !(e.target as Element).closest?.('button, a, input, textarea, select') ? { x: t.clientX, y: t.clientY } : null
+  if (edge) e.preventDefault()  // so Safari does not start its own back swipe, where it lets a page stop it
+}, { passive: false })
+document.addEventListener('touchmove', (e) => {
+  if (!edge) return
+  const dx = e.touches[0].clientX - edge.x, dy = e.touches[0].clientY - edge.y
+  if (dx > 40 && dx > Math.abs(dy) * 1.5) { edge = null; openSide() }
+}, { passive: true })
+// Where Safari's back swipe still happens, it goes back to an entry of our own: open the sessions and add it again.
+// The entry goes in at the first tap, as Safari can skip entries that a page adds before the user does anything.
+document.addEventListener('click', () => { if (phone.matches) history.pushState({ side: true }, '') }, { once: true })
+addEventListener('popstate', () => { if (phone.matches) { openSide(); history.pushState({ side: true }, '') } })
+
 void start()
 initTooltips()
 createRoot(document.getElementById('root')!).render(<App />)
