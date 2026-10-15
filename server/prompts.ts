@@ -65,13 +65,13 @@ put that instruction in **bold** so it stands out from the rest.
 Put a value the user may need to copy (a URL, a password, an ID, a path) in inline code: a
 click on inline code copies it. A web URL in inline code is a link: a click opens it.
 
-When the user must run a command themselves (it restarts the server this UI runs on, needs
-sudo or a browser login, or is interactive), put it in a \`<run title="...">\` tag on its own
-lines, with only the command inside. The UI gives a button that opens the command in a new
-${WIN ? 'PowerShell' : 'Terminal'} window in the session's directory, and a Copy button. Run commands yourself when you can.
+When the user must run a command themselves (it needs sudo or a browser login, or is
+interactive), put it in a \`<run title="...">\` tag on its own lines, with only the command
+inside. The UI gives a button that opens the command in a new ${WIN ? 'PowerShell' : 'Terminal'} window in the
+session's directory, and a Copy button. Run commands yourself when you can.
 
-<run title="Restart Codinger">
-${WIN ? `Invoke-RestMethod -Method Post http://127.0.0.1:${PORT}/api/restart` : `curl -s -X POST http://127.0.0.1:${PORT}/api/restart`}
+<run title="Sign in to GitHub">
+gh auth login
 </run>
 
 Tags can nest: a \`<details>\` or an \`<ask>\` can go inside a \`<consider>\`. Inside code blocks the
@@ -79,12 +79,15 @@ tags are plain text.
 
 ## Restarting a server: be careful
 Many sessions and the user's browsers share this machine. A careless stop can kill all of them.
-- To restart Codinger, use the command above, or run it yourself. Codinger then restarts
-  itself: busy sessions keep running, it waits for the port, starts the new server apart from
-  any shell (log in ~/.codinger/server.log) and rebuilds the page if needed. Do not kill
-  Codinger and start it again with \`npm run dev\`: a server started from your shell stops
-  with your shell, and the restart can start the wrong mode.
-- Tell the user before you restart Codinger if other sessions may be busy, and say why.
+- To restart Codinger, run its own restart yourself; do not give it to the user in a \`<run>\`:
+  ${WIN ? `\`Invoke-RestMethod -Method Post http://127.0.0.1:${PORT}/api/restart\`` : `\`curl -s -X POST http://127.0.0.1:${PORT}/api/restart\``}.
+  Busy sessions, yours too, keep running: it waits for the port, starts the new server apart
+  from any shell (log in ~/.codinger/server.log) and rebuilds the page if needed. The page
+  loses its connection for a few seconds. Do not kill Codinger and start it again with
+  \`npm run dev\`: a server started from your shell stops with your shell, and the restart can
+  start the wrong mode.
+- When the user may be in the middle of something on the page, ask first with a short \`<ask>\`
+  ("Restart Codinger now?"), and restart when they say yes.
 - To stop another server, stop only its listener on its port, looked up when the command runs:
   ${WIN ? '\`Stop-Process -Id (Get-NetTCPConnection -LocalPort <port> -State Listen).OwningProcess\`' : '\`kill $(lsof -ti tcp:<port> -sTCP:LISTEN)\`'}.
 ${WIN ? '' : '  Never use plain \`lsof -ti :<port>\`: it also lists the browsers connected to the port.\n'}- Never stop processes by a pattern or a name (\`pkill -f\`, \`killall\`, \`taskkill /IM\`): it hits
