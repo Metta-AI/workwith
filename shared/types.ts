@@ -72,6 +72,25 @@ export type SessionMeta = {
   // Set by a rewind: the next start resumes claudeSessionId cut at this entry, as a fork.
   resumeAt?: string | null
   autopilot?: Autopilot
+  // Messages between sessions (server/mail.ts). mailFilter: who else may send to it; its parent
+  // and children always may. mail: messages waiting to go in (it is mid-turn, or held for your OK).
+  // mailRun: messages in a row from each sender since you last wrote in either session.
+  // parentWaits: its parent sent it work, so the parent hears when it next goes idle.
+  mailFilter?: MailFilter
+  mail?: Mail[]
+  mailRun?: Record<string, number>
+  parentWaits?: boolean
+}
+
+// none: only its parent and children (the default); only: those, and the sessions in ids.
+export type MailFilter = { mode: 'any' | 'only' | 'none'; ids?: string[] }
+// A message from one session to another. replyTo: the message it answers, and the start of
+// its text. idle: Codinger's note that a child ended its turn. held: past the limit of
+// messages in a row, it waits for your OK. step: from a child to its parent, it waits for the
+// child's next tool call or the end of its turn; endTurn: the child's turn ended after it.
+export type Mail = {
+  id: string; from: string; title: string; text: string; ts: number
+  replyTo?: { id: string; text: string }; idle?: boolean; held?: boolean; step?: boolean; endTurn?: boolean
 }
 
 // Autopilot (server/autopilot.ts): after each turn Codinger tells Claude to go on, until the
@@ -118,6 +137,8 @@ export type Part =
   // Items the user marked done; `text` on one is a problem they hit doing it.
   // result: how a command the item asked for went.
   | { kind: 'done'; text: string; items: { key: string; label: string; text?: string; result?: string }[]; images?: ImageRef[] }
+  // A message from another session (see Mail); relation: what the sender is to this session.
+  | { kind: 'mail'; text: string; id: string; from: string; title: string; relation?: 'parent' | 'child'; replyTo?: { id: string; text: string }; idle?: boolean; endTurn?: boolean; images?: ImageRef[] }
 
 export type Block =
   | { type: 'text'; text: string }

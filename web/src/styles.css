@@ -402,6 +402,13 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 /* Lines Codinger adds itself about tasks (Transcript.tsx: TaskStart, TaskEnd), in its own colour. */
 .tool.codinger-line .tool-icon, .tool.codinger-line .tool-name { color: var(--codinger); }
 .tool.codinger-line .tool-perm { color: inherit; }
+.mail-head { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; font-size: calc(12px * var(--fs, 1)); color: var(--codinger); margin-bottom: 3px; }
+.mail-head .link.mail-who { color: inherit; font-weight: 600; padding: 0; }
+.mail-head .mail-quote { flex-basis: 100%; margin: 0; }
+.row-from { color: var(--muted); font-weight: 400; }
+.mail-text { white-space: pre-wrap; max-height: 8em; overflow: auto; font-size: calc(12.5px * var(--fs, 1)); padding: 2px 0; }
+.mail-item.held .inbox-on { color: var(--warn); }
+.mail-item .inbox-from { display: inline-flex; align-items: center; gap: 4px; }
 .task-mark-btn { cursor: pointer; padding: 2px; margin: -2px; border-radius: 4px; } .task-mark-btn:hover { background: rgba(127, 127, 127, .15); }
 .log-tail { margin-top: 6px; } .log-tail > summary { color: var(--muted); font-size: calc(12.5px * var(--fs, 1)); } .log-tail > summary:hover { color: var(--text); }
 .log-tail pre { background: var(--panel); padding: 8px 10px; border-radius: 6px; overflow: auto; margin: 4px 0; }

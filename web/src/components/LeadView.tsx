@@ -40,7 +40,7 @@ export function LeadView({ id }: { id: string }) {
               {treeOf(list).map(({ s, depth }) => (
                 <button key={s.id} className={`card st-${s.status}`} style={{ marginLeft: depth * 18 }} onClick={() => select(s.id)}>
                   <div className="card-top">
-                    <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={34} />
+                    <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={34} child={!!s.parentId} />
                     <div>
                       <div className="card-title">{s.title}</div>
                       <div className={`status-pill st-${s.status}`}>{s.compacting ? 'compacting' : STATUS_LABEL[s.status]}{s.pendingAsks ? ` · ${s.pendingAsks}?` : ''}{s.autopilot && !s.autopilot.ended ? ' · autopilot' : ''}</div>

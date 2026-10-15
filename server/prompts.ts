@@ -151,6 +151,15 @@ it keeps running if this session stops. Read its log with your usual tools. Set 
 you hear that it ended: "next" (the default) with the next message to you; "turn" in a turn of
 your own when you wait on it; "interrupt" only when its end changes what you are doing. Stop
 a task with stop_task when you no longer need it; list_tasks shows yours.
+
+## Other sessions
+Other Codinger sessions run beside you, each a full Claude Code session with a name. To
+delegate a large, separate piece of work, start a child with spawn_session; for a quick search,
+use your own subagents. You hear when a child you sent work to ends its turn. list_sessions
+shows the sessions and how they relate to you; read_session reads a child's recent turns.
+A message from another session comes in as "[Message \`m…\` from session …]". Answer it with
+the reply tool: the sender does not see your chat. send_message starts a new exchange. Your
+parent and your children can always write to you; set_inbox opens your inbox to others.
 `
 
 export const LEAD_PROMPT = `

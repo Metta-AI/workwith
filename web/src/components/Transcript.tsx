@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Anchor, Block, Event, ImageRef, Part, Task } from '../../../shared/types.ts'
-import { addDraft, api, draftsOf, removeDraft, rewind, uid, useStore } from '../store.ts'
+import { addDraft, api, draftsOf, removeDraft, rewind, select, uid, useStore } from '../store.ts'
 import { anchorFromRange } from '../anchoring.ts'
 import { renderInline, renderMd, renderText } from '../util.ts'
 import { AssistantMessage, type Reaction } from './AssistantMessage.tsx'
@@ -13,7 +13,7 @@ import { highlight, langOfPath } from '../highlight.ts'
 import { CARD_W, GUTTER_GAP, Margin, focusPassage, rangesOfNote } from './Margin.tsx'
 import { StateMark, TasksDialog, lastDraw, stateLabel } from './TasksDialog.tsx'
 import { minutes } from '../cache.ts'
-import { AgentsIcon, BlockIcon, CheckIcon, ChevronIcon, DashIcon, XIcon, FileIcon, GlobeIcon, ListIcon, PencilIcon, SearchIcon, OpenIcon, TerminalIcon, TimerIcon, ToolIcon, TrashIcon } from './Icons.tsx'
+import { AgentsIcon, MailIcon, BlockIcon, CheckIcon, ChevronIcon, DashIcon, XIcon, FileIcon, GlobeIcon, ListIcon, PencilIcon, SearchIcon, OpenIcon, TerminalIcon, TimerIcon, ToolIcon, TrashIcon } from './Icons.tsx'
 import { shortPath } from './DirPicker.tsx'
 
 type PermEvent = Extract<Event, { t: 'permission' }>
@@ -243,7 +243,8 @@ function items(events: Event[], f: Folded, steps: Set<string>): Item[] {
     if (isTaskEnd(e)) continue
     switch (e.t) {
       case 'assistant':
-        e.blocks.forEach((b, i) => out.push({ key: `${e.seq}.${i}`, e, block: b, i, activity: b.type !== 'text' || steps.has(`${e.seq}.${i}`) }))
+        // Messages to other sessions stay in view, out of the folded activity.
+        e.blocks.forEach((b, i) => out.push({ key: `${e.seq}.${i}`, e, block: b, i, activity: b.type === 'tool_use' ? !MAIL_TOOL[b.name] : b.type !== 'text' || steps.has(`${e.seq}.${i}`) }))
         break
       case 'permission': {
         const resolved = f.resolved.has(e.requestId)
@@ -470,12 +471,14 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
     try { await f() } finally { setBusy(false) }
   }
   if (editing) return <UserEdit sid={sid} e={e} onDone={() => setEditing(false)} />
-  const replies = e.parts.filter((p) => p.kind !== 'text')
-  const shown = open ? e.parts : e.parts.filter((p) => p.kind === 'text')
+  // Messages from other sessions show like your text; the rest fold into one line.
+  const plain = (p: Part) => p.kind === 'text' || p.kind === 'mail'
+  const replies = e.parts.filter((p) => !plain(p))
+  const shown = open ? e.parts : e.parts.filter(plain)
   return (
     <div className="user-wrap" onMouseLeave={() => setConfirm(false)}>
     <div className="user-turn">
-      {e.from && <div className="from" title={e.from === 'codinger' ? viaCodinger(e, tasks) : undefined}>via {e.from === 'master' ? 'lead' : e.from}</div>}
+      {e.from && e.from !== 'mail' && <div className="from" title={e.from === 'codinger' ? viaCodinger(e, tasks) : undefined}>via {e.from === 'master' ? 'lead' : e.from}</div>}
       {e.from !== 'codinger' && !!e.tasks?.length && (
         <div className="task-results">
           <button className={`replies-sum${showTasks ? ' open' : ''}`} title="These went to the agent with this message" onClick={() => setShowTasks(!showTasks)}>
@@ -546,8 +549,24 @@ function SentQuote({ quote }: { quote: string }) {
   )
 }
 
+// Who sent a message from another session; a click shows that session.
+function MailHead({ p }: { p: Extract<Part, { kind: 'mail' }> }) {
+  const { sessions } = useStore()
+  const title = sessions.find((s) => s.id === p.from)?.title ?? p.title
+  const who = <button className="link mail-who" title="Show that session" onClick={() => select(p.from)}>{title}</button>
+  return (
+    <div className="mail-head">
+      <MailIcon size={12} />
+      {p.idle ? <span>{who} ended its turn and is idle</span>
+        : <span>{p.replyTo ? 'Reply from' : 'From'} {who}{p.relation && <span className="muted"> ({p.relation === 'parent' ? 'its parent' : 'its child'})</span>}{p.endTurn && <span className="muted"> · then ended its turn</span>}</span>}
+      {p.replyTo && <div className="sent-quote mail-quote">{p.replyTo.text}</div>}
+    </div>
+  )
+}
+
 function PartHead({ p }: { p: Part }) {
   return <>
+    {p.kind === 'mail' && <MailHead p={p} />}
     {p.kind === 'note' && p.quote.trim() && <SentQuote quote={p.quote} />}
     {p.kind === 'dismiss' && <div className="sent-dismiss"><XIcon size={11} /> {p.items.map((i) => i.label).join(' · ')}</div>}
     {p.kind === 'done' && <div className="sent-dismiss sent-done"><CheckIcon size={11} /> {p.items.map((i) => i.text ? `${i.label} (${i.text})` : i.label).join(' · ')}</div>}
@@ -611,7 +630,47 @@ const RESOLUTION: Record<string, { Icon: (p: { size?: number }) => React.ReactEl
 
 function ToolCall({ b, result, resolution }: { b: Extract<Block, { type: 'tool_use' }>; result?: Extract<Event, { t: 'tool_result' }>; resolution?: string }) {
   if (b.name === START_TASK && !resolution) return <TaskStart b={b} result={result} />
+  if (MAIL_TOOL[b.name] && !resolution) return <MailTool b={b} result={result} />
   return <AnyTool b={b} result={result} resolution={resolution} />
+}
+
+// The agent's messages to other sessions, and the sessions it started, in Codinger's colour.
+const MAIL_TOOL: Record<string, string> = {
+  mcp__codinger__send_message: 'Message', mcp__codinger__reply: 'Reply', mcp__codinger__spawn_session: 'New session', mcp__codinger__stop_session: 'Stop',
+}
+
+function MailTool({ b, result }: { b: Extract<Block, { type: 'tool_use' }>; result?: Extract<Event, { t: 'tool_result' }> }) {
+  const { sessions, events } = useStore()
+  const [open, setOpen] = useState(false)
+  const i = b.input ?? {}
+  // A reply goes to whoever sent the message it answers.
+  const to = i.to ?? i.id ?? (b.name === 'mcp__codinger__reply' ? replyTarget(events, String(i.message_id ?? '')) : undefined)
+  const spawned = result?.text.match(/^Started `([^`]+)`/)?.[1]
+  const target = sessions.find((s) => s.id === (spawned ?? to))
+  const name = target?.title ?? i.title ?? to ?? ''
+  const text = String(i.message ?? i.prompt ?? '')
+  return (
+    <div className={`tool codinger-line${result?.isError ? ' err' : ''}${result ? '' : ' running'}`}>
+      <button className="tool-line" onClick={() => setOpen(!open)}>
+        <span className="tool-icon"><MailIcon size={13} /></span>
+        <span className="tool-name">{MAIL_TOOL[b.name]}</span>
+        <span className="tool-sum">{b.name === 'mcp__codinger__stop_session' ? `Stopped ${name}` : `${b.name === 'mcp__codinger__spawn_session' ? '' : 'To '}${name}${text ? `: ${text.split('\n')[0]}` : ''}`}</span>
+        {target && <span className="tool-perm" role="button" title="Show that session" onClick={(ev) => { ev.stopPropagation(); select(target.id) }}><OpenIcon size={12} /></span>}
+      </button>
+      {open && (
+        <div className="tool-body">
+          {text && <div className="md" dangerouslySetInnerHTML={{ __html: renderText(text) }} />}
+          {result && <pre className="tool-result">{result.text}</pre>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// The sender of a message a session got, by the message's id (ids are unique across sessions).
+function replyTarget(events: Record<string, Event[]>, id: string): string | undefined {
+  for (const e of Object.values(events).flat()) if (e.t === 'user') for (const p of e.parts) if (p.kind === 'mail' && p.id === id) return p.from
+  return undefined
 }
 
 function AnyTool({ b, result, resolution }: { b: Extract<Block, { type: 'tool_use' }>; result?: Extract<Event, { t: 'tool_result' }>; resolution?: string }) {

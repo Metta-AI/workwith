@@ -197,11 +197,12 @@ export function Sidebar({ width }: { width: number }) {
 }
 
 function Row({ s, depth = 0, active, label, onPointerDown, onMenu }: { s: SessionMeta; depth?: number; active: boolean; label?: string; onPointerDown?(e: React.PointerEvent): void; onMenu?(s: SessionMeta, e: React.MouseEvent): void }) {
+  const parent = useStore().sessions.find((x) => x.id === s.parentId)
   return (
     <button className={`row${active ? ' active' : ''}${s.unread ? ' unread' : ''}`} style={{ paddingLeft: 10 + depth * 16 }} onClick={() => select(s.id)} onPointerDown={onPointerDown} onContextMenu={onMenu && ((e) => onMenu(s, e))}>
-      <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={26} title={STATUS_LABEL[s.status]} />
+      <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={26} title={STATUS_LABEL[s.status]} child={!!s.parentId} />
       <span className="row-main">
-        <span className="row-title">{label ?? s.title}</span>
+        <span className="row-title">{label ?? s.title}{parent && <span className="row-from"> (from {parent.title})</span>}</span>
         <span className="row-sub">{s.compacting ? 'compacting' : STATUS_LABEL[s.status]} · {timeAgo(s.lastActivity)}<SpendHint s={s} /><CacheHint s={s} /></span>
       </span>
       {s.inbox.length > 0 && <span className="count" title="Drafts from the lead">{s.inbox.length}</span>}

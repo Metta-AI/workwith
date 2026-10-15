@@ -31,6 +31,7 @@ import { configsFor, probe, serversFor } from './mcpservers.ts'
 import { DEFAULT_CACHE_GUARD, cacheLeft, knownTtl } from '../shared/cache.ts'
 import { AGENTS_FILE, agentsPrompt, readAgentsMd, writeAgentsMd } from './agentsmd.ts'
 import { handleMcp, type Tool } from './mcp.ts'
+import { MAIL_TOOLS, flushMail, mailTools, release, startMail, stepped, turnEnded, userWrote } from './mail.ts'
 import { AUTOPILOT_MODES, amount, nudge, startAutopilot, usedOf, verdict } from './autopilot.ts'
 import { blame, initFileHistory, moveHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
 import { CLAUDE, authState, cancelLogin, childEnv, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
@@ -156,7 +157,8 @@ const hooks: Hooks = {
   event: (s, event) => {
     broadcast({ type: 'event', sessionId: s.meta.id, event })
     metaChanged()
-    if (event.t === 'result') setImmediate(() => { autoSend(s); taskTurn(s); autopilotTurn(s, event.isError) })
+    if (event.t === 'assistant') stepped(s, event.blocks.flatMap((b) => b.type === 'tool_use' ? [b.name] : []))
+    if (event.t === 'result') setImmediate(() => { autoSend(s); flushMail(s); taskTurn(s); autopilotTurn(s, event.isError); turnEnded(s) })
     // A tool call that finished may have changed a tracked file: record it with this message.
     if (event.t === 'tool_result') {
       const ev = s.getEvents()
@@ -189,7 +191,7 @@ function launchFor(meta: SessionMeta): () => Launch {
         '--mcp-config', JSON.stringify({ mcpServers: { codinger: { type: 'http', url: `http://127.0.0.1:${PORT}/mcp/${MCP_TOKEN}/look/${meta.id}` } } }),
         // Started with your MCP servers off: only Codinger's, until one is turned on (server/mcpservers.ts).
         ...(meta.mcp ? ['--strict-mcp-config'] : []),
-        '--allowedTools', `mcp__codinger__set_look,mcp__codinger__set_title,mcp__codinger__start_task,mcp__codinger__stop_task,mcp__codinger__list_tasks${meta.mcp && settings.mcpClaude !== false ? ',mcp__codinger__use_mcp_server' : ''}`,
+        '--allowedTools', `mcp__codinger__set_look,mcp__codinger__set_title,mcp__codinger__start_task,mcp__codinger__stop_task,mcp__codinger__list_tasks,${MAIL_TOOLS.map((t) => `mcp__codinger__${t}`).join(',')}${meta.mcp && settings.mcpClaude !== false ? ',mcp__codinger__use_mcp_server' : ''}`,
       ],
       prompt: WORKER_PROMPT + lookPrompt(meta.look) + titlePrompt(meta) + mcpPrompt(meta) + (notes ? workerNotesPrompt(notesFile(meta.id)) : '') + agentsPrompt(),
     }
@@ -270,6 +272,7 @@ function resumeCut(s: Session) {
 }
 startNotes({ sessions: () => sessions.values(), settings: () => settings, usage: () => usage, changed: metaChanged })
 startTasks({ changed: (tasks) => broadcast({ type: 'tasks', tasks }), ended: taskEnded })
+setImmediate(() => startMail({ sessions, create: createSession, hidden: hiddenFor, changed: metaChanged }))
 // Autopilot goes on in sessions the last server left between turns (a handed-on busy one
 // gets there when its turn ends).
 setTimeout(() => { for (const s of sessions.values()) autopilotTurn(s, false, true) }, 3000)
@@ -1074,8 +1077,13 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       // The lead's drafts that went with your reply.
       if (Array.isArray(body.inbox) && body.inbox.length) { s.meta.inbox = s.meta.inbox.filter((i) => !body.inbox.includes(i.id)); metaChanged() }
       s.send(p, hiddenFor(s, p))
+      userWrote(s)
       return send(res, 200, { ok: true })
     }
+    // Your OK for a message another session sent, held past the limit; or send: false to drop it.
+    case 'mail':
+      try { release(s, String(c), body.send !== false) } catch (e) { throw new HttpError(404, (e as Error).message) }
+      return send(res, 200, { ok: true })
     case 'drafting':
       if (s.meta.drafting !== !!body.on) { s.meta.drafting = !!body.on; metaChanged() }
       return send(res, 200, { ok: true })
@@ -1181,7 +1189,7 @@ const server = http.createServer(async (req, res) => {
       return await handleMcp(req, res, lead ? [...tools, lookTool(lead.meta.id)] : tools)
     }
     const look = url.pathname.startsWith(`/mcp/${MCP_TOKEN}/look/`) && url.pathname.split('/').pop()
-    if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look), mcpTool(look), ...taskTools(look)])
+    if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look), mcpTool(look), ...taskTools(look), ...mailTools(look)])
     if (url.pathname.startsWith('/api/')) return await api(req, res, url)
     if (vite) return vite.middlewares(req, res)
     serveStatic(url.pathname, res)

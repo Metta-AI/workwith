@@ -50,8 +50,8 @@ export function draftStatus(sid: string, key: string): ItemStatus | null {
 }
 
 export function trackItems(sid: string, events: Event[], fold: ItemFold): TrackedItem[] {
-  // Autopilot's "go on" leaves the questions before it open, for you to answer later.
-  const lastUser = events.findLastIndex((e) => e.t === 'user' && e.from !== 'autopilot')
+  // Autopilot's "go on" and messages from other sessions leave the questions before them open, for you to answer later.
+  const lastUser = events.findLastIndex((e) => e.t === 'user' && e.from !== 'autopilot' && e.from !== 'mail')
   const out: TrackedItem[] = []
   events.forEach((e, idx) => {
     if (e.t !== 'assistant' || e.synthetic) return

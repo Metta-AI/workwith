@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { PermissionMode, SessionMeta, SlashCommand } from '../../../shared/types.ts'
+import type { Mail, PermissionMode, SessionMeta, SlashCommand } from '../../../shared/types.ts'
+import { MAX_RUN } from '../../../shared/mail.ts'
 import { api, closeSession, composerOf, draftsOf, hasContent, loadEvents, queuedParts, select, sendQueued, setComposer, state, undismissItem, useStore } from '../store.ts'
 import { fatigue, kTokens } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
@@ -7,7 +8,7 @@ import { RichInput } from './Inputs.tsx'
 import { Transcript } from './Transcript.tsx'
 import { AttentionPanel } from './AttentionPanel.tsx'
 import { revealItem, useItems } from '../items.ts'
-import { MoreIcon, PanelIcon, UndoIcon, XIcon } from './Icons.tsx'
+import { MailIcon, MoreIcon, PanelIcon, UndoIcon, XIcon } from './Icons.tsx'
 import { inboxLabel } from '../../../shared/inbox.ts'
 import { renderInline } from '../util.ts'
 import { isReaction } from '../emoji.ts'
@@ -85,9 +86,10 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
   const save = () => { setEditing(false); if (title.trim() && title !== m.title) void api(`/api/sessions/${m.id}`, 'PATCH', { title }) }
   // An alias or the default shows what it ran last time until Claude Code reports.
   const model = m.model?.includes('-') ? m.model : m.expectedModel ?? m.model
+  const parent = useStore().sessions.find((x) => x.id === m.parentId)
   return (
     <header className="session-head">
-      <Mascot status={m.status} look={m.look} fatigue={fatigue(m.context.used, m.context.window)} size={44} title={STATUS_LABEL[m.status]} />
+      <Mascot status={m.status} look={m.look} fatigue={fatigue(m.context.used, m.context.window)} size={44} title={STATUS_LABEL[m.status]} child={!!m.parentId} />
       <div className="head-main">
         {editing
           ? <input className="title-edit" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} onBlur={save} onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setTitle(m.title); setEditing(false) } }} />
@@ -100,6 +102,7 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
           <span className={`status-pill st-${m.status}`}>{m.compacting ? 'compacting' : STATUS_LABEL[m.status]}</span>
           <span className="muted mono path" title={m.cwd}>{'\u200E' + shortPath(m.cwd) + '\u200E'}</span>
           {model && <span className="muted" title={m.model?.includes('-') ? undefined : 'Model used for this choice last time'}>{model}</span>}
+          {parent && <button className="link head-parent" title="Show the session that started this one" onClick={() => select(parent.id)}>from {parent.title}</button>}
         </div>
       </div>
       <div className="head-side">
@@ -214,6 +217,31 @@ function Inbox({ m }: { m: SessionMeta }) {
   )
 }
 
+// Messages from other sessions that wait: for the end of this turn, or, past the limit, for your OK.
+function Mailbox({ m }: { m: SessionMeta }) {
+  const { sessions } = useStore()
+  if (!m.mail?.length) return null
+  const name = (x: Mail) => sessions.find((s) => s.id === x.from)?.title ?? x.title
+  const act = (id: string, send: boolean) => api(`/api/sessions/${m.id}/mail/${id}`, 'POST', { send })
+  return (
+    <div className="inbox">
+      {m.mail.map((x) => (
+        <div key={x.id} className={`inbox-item mail-item${x.held ? ' held' : ''}`}>
+          <div className="inbox-head">
+            <span className="inbox-from"><MailIcon size={12} /> {x.idle ? `${name(x)} is idle` : x.replyTo ? `Reply from ${name(x)}` : `From ${name(x)}`}</span>
+            <span className="inbox-on" title={x.held ? `${name(x)} sent ${MAX_RUN} messages in a row here, and you wrote in neither session since.` : undefined}>
+              {x.held ? 'Waits for your OK' : x.step ? `Goes in when ${name(x)} goes on or ends its turn` : 'Goes in when this turn ends'}
+            </span>
+            {x.held && <button className="link" onClick={() => void act(x.id, true)}>Send</button>}
+            <button className="icon-btn" title="Discard the message" onClick={() => void act(x.id, false)}><XIcon size={13} /></button>
+          </div>
+          {x.text && <div className="mail-text">{x.text}</div>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // Typing "/" at the start of the composer lists the session's slash commands:
 // Claude Code's built-ins, your skills and the project's own.
 function useSlashMenu(sid: string, text: string, setText: (t: string) => void) {
@@ -315,6 +343,7 @@ export function Composer({ m }: { m: SessionMeta }) {
     <div className="composer">
       <RunningTasks sid={m.id} />
       <Inbox m={m} />
+      <Mailbox m={m} />
       {(notes > 0 || reactions > 0 || answers > 0 || dismissed > 0 || done > 0 || open.length > 0) && (
         <div className="queue">
           {notes > 0 && <span className="chip static">{notes} {notes === 1 ? 'comment' : 'comments'}</span>}

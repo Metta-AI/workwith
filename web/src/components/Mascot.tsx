@@ -1,6 +1,7 @@
 // A pixel critter per session. Its pose is the session's status; how worn out
 // it looks is how full the context is (droopy eyes, sweat, then sleep). What it
-// wears is its look, which each Claude picks for itself (shared/looks.ts).
+// wears is its look, which each Claude picks for itself (shared/looks.ts). A session
+// another session started (a child) wears red shoes, which Codinger gives it.
 
 import type { Status } from '../../../shared/types.ts'
 import type { Look } from '../../../shared/looks.ts'
@@ -9,12 +10,14 @@ import { inkOn } from '../../../shared/appearance.ts'
 
 
 // body: a colour of your own, in place of the look's; alert: whose badge to show, if not its own.
-type Props = { status: Status; fatigue: number; size?: number; title?: string; look?: Look; body?: string; alert?: Status }
+type Props = { status: Status; fatigue: number; size?: number; title?: string; look?: Look; body?: string; alert?: Status; child?: boolean }
 
 // Drawn back to front.
 const LAYERS = ['face', 'hair', 'neck', 'eyewear', 'hat', 'held'] as const
 
-export function Mascot({ status, fatigue, size = 28, title, look = {}, body, alert }: Props) {
+const SHOE = '#e5534b'
+
+export function Mascot({ status, fatigue, size = 28, title, look = {}, body, alert, child }: Props) {
   // Looks saved before 'teal' became the default may still say 'classic'.
   const BODY = body ?? BODY_COLORS[look.color ?? 'teal'] ?? BODY_COLORS.teal
   const ink = (body ? inkOn(body) === '#ffffff' : look.color === 'midnight') ? '#e8ecff' : '#2a1f1a'
@@ -43,8 +46,8 @@ export function Mascot({ status, fatigue, size = 28, title, look = {}, body, ale
         {parts.map((p) => p.spin.length > 0 && <g key={`s${p.slot}`} className="m-spin">{rects(p.spin, `s${p.slot}`)}</g>)}
       </g>
       <g className="m-legs" fill={BODY}>
-        <rect className="m-leg a" x="4" y="10" width="2" height="2" />
-        <rect className="m-leg b" x="10" y="10" width="2" height="2" />
+        <g className="m-leg a"><rect x="4" y="10" width="2" height="2" />{child && <rect x="3" y="11" width="3" height="1" fill={SHOE} />}</g>
+        <g className="m-leg b"><rect x="10" y="10" width="2" height="2" />{child && <rect x="10" y="11" width="3" height="1" fill={SHOE} />}</g>
       </g>
       {tired && !spent && <rect className="m-sweat" x="14" y="2" width="1" height="2" fill="#7cc4ff" />}
       {spent && status !== 'working' && <text className="m-z" x="14" y="3" fontSize="4" fill="#9aa">z</text>}

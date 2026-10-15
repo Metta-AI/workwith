@@ -65,7 +65,7 @@ export function TasksDialog({ onClose, first }: { onClose(): void; first?: strin
                     const s = st.sessions.find((m) => m.id === x.sid)
                     return (
                       <button key={x.id} className={`task-row${x.id === t?.id ? ' on' : ''}`} onClick={() => setPick(x.id)}>
-                        {s ? <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={22} /> : <span className="task-nobody" />}
+                        {s ? <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={22} child={!!s.parentId} /> : <span className="task-nobody" />}
                         <span className="task-main">
                           <span className="task-title">{x.title}</span>
                           <span className="task-sub">{s?.title ?? 'Closed session'} · {minutes((x.ended ?? Date.now()) - x.started)}</span>
