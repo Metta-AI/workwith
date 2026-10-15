@@ -38,6 +38,7 @@ export type Machine = {
   auth: AuthState
   stale: boolean
   remote?: RemoteStatus    // its own remote access
+  device?: 'laptop' | 'desktop'
 }
 
 type State = {
@@ -77,6 +78,7 @@ type State = {
   email: string | null               // signed in there as
   self: string                       // this machine's name on web.codinger.app, once connected
   remoteOpen: boolean                // the Remote sessions section is open
+  machineOrder: string[]             // other machines, in the order you dragged them to
 }
 
 const saved = <T,>(k: string, d: T): T => { try { return JSON.parse(localStorage.getItem(k) ?? '') ?? d } catch { return d } }
@@ -107,6 +109,7 @@ export const state = {
   email: null,
   self: '',
   remoteOpen: saved('codinger.remoteOpen', true),
+  machineOrder: saved('codinger.machineOrder', []),
 } as Partial<State> as State
 
 // ---- machines -------------------------------------------------------------------
@@ -117,12 +120,19 @@ const SEP = '~'
 export const machineOf = (id: string) => id.includes(SEP) ? id.slice(0, id.indexOf(SEP)) : LOCAL
 export const localId = (id: string) => id.includes(SEP) ? id.slice(id.indexOf(SEP) + 1) : id
 export const globalId = (machine: string, id: string) => machine ? `${machine}${SEP}${id}` : id
-export const leadOf = (machine: string) => globalId(machine, 'lead')
 
 const blank = (name: string): Machine => ({ name, connected: false, loaded: false, sessions: [], settings: { leadAutoSend: false }, usage: {}, tasks: [], platform: '', home: '', auth: { state: 'ok' }, stale: false })
 
-// The machines in sidebar order: this page's own first, then the others by name.
-export const machineList = () => Object.values(state.machines).sort((a, b) => (a.name === LOCAL ? -1 : b.name === LOCAL ? 1 : a.name.localeCompare(b.name)))
+// The machines in sidebar order: this page's own first, then the others where you
+// dragged them, then any new ones by name.
+export function machineList() {
+  const rank = (n: string) => n === LOCAL ? -1 : (state.machineOrder.indexOf(n) + 1 || Infinity)
+  return Object.values(state.machines).sort((a, b) => rank(a.name) - rank(b.name) || a.name.localeCompare(b.name))
+}
+
+// What to show when the selected session is gone: the latest active one, anywhere.
+// The lead is not shown (Codinger's own lead agent is hidden for now).
+const fallback = () => state.sessions.filter((s) => s.kind === 'worker' && !s.archived).sort((a, b) => b.lastActivity - a.lastActivity)[0]?.id ?? ''
 
 // The machine of the selected session; what Settings, usage and tasks show.
 export function currentMachine(): string {
@@ -171,6 +181,7 @@ export function changed() {
     localStorage.setItem('codinger.showSteps', JSON.stringify(state.showSteps))
     localStorage.setItem('codinger.preview', JSON.stringify(state.preview))
     localStorage.setItem('codinger.remoteOpen', JSON.stringify(state.remoteOpen))
+    localStorage.setItem('codinger.machineOrder', JSON.stringify(state.machineOrder))
   }, 300)
 }
 // Tell the server which sessions you are writing a reply in, so the lead's
@@ -292,11 +303,11 @@ function onServer(m: ServerMsg, machine: string) {
   const looks = looksFrom() === machine
   switch (m.type) {
     case 'hello':
-      Object.assign(M, { sessions: own(m.sessions), settings: m.settings, usage: m.usage, loaded: true, platform: m.platform, home: m.home, auth: m.auth ?? { state: 'ok' }, stale: !!m.stale, remote: m.remote })
+      Object.assign(M, { sessions: own(m.sessions), settings: m.settings, usage: m.usage, loaded: true, platform: m.platform, home: m.home, auth: m.auth ?? { state: 'ok' }, stale: !!m.stale, remote: m.remote, device: m.device })
       if (looks) applyAppearance(m.settings.appearance)
       if (!machine) { state.restarting = false; onRemote(m.remote) }
-      // A selected session this machine does not have (any more): its lead.
-      if (machineOf(state.selected) === machine ? !M.sessions.some((s) => s.id === state.selected) : !state.machines[machineOf(state.selected)]) state.selected = leadOf(machine)
+      // A selected session that is gone, or a lead: the latest one instead.
+      if (!state.sessions.some((s) => s.id === state.selected && s.kind === 'worker')) state.selected = fallback()
       break
     case 'sessions': M.sessions = own(m.sessions); break
     case 'settings':
@@ -311,6 +322,7 @@ function onServer(m: ServerMsg, machine: string) {
     case 'preview': state.preview = { ...state.preview, [g(m.sessionId)]: { target: m.target, at: m.at } }; break
     case 'auth': M.auth = m.auth; break
     case 'stale': M.stale = m.stale; break
+    case 'device': M.device = m.device; break
     case 'remote': M.remote = m.remote; if (!machine) onRemote(m.remote); break
     case 'file': state.fileTick = { ...state.fileTick, [m.path]: (state.fileTick[m.path] ?? 0) + 1 }; break
     case 'run': {
@@ -374,6 +386,7 @@ export function select(id: string) {
   state.selected = id
   state.page = null
   changed()
+  if (!id) return
   void loadEvents(id)
   const s = state.sessions.find((x) => x.id === id)
   if (s?.unread) void api(`/api/sessions/${id}/seen`).catch(() => {})
@@ -394,9 +407,11 @@ export function revealEvent(sid: string, seq: number) {
 }
 
 // Closing archives the session (its process ends; Reopen brings it back).
+export const selectFallback = () => select(fallback())
+
 export async function closeSession(id: string) {
   await api(`/api/sessions/${id}`, 'PATCH', { archived: true })
-  if (state.selected === id) select(leadOf(machineOf(id)))
+  if (state.selected === id) select(fallback())
 }
 
 // ---- drafts -------------------------------------------------------------------------

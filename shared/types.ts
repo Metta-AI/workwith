@@ -188,7 +188,8 @@ export type Settings = {
 }
 
 export type ServerMsg =
-  | { type: 'hello'; sessions: SessionMeta[]; settings: Settings; usage: Usage; platform: string; home: string; auth: AuthState; stale?: boolean; remote?: RemoteStatus }
+  | { type: 'hello'; sessions: SessionMeta[]; settings: Settings; usage: Usage; platform: string; home: string; auth: AuthState; stale?: boolean; remote?: RemoteStatus; device?: 'laptop' | 'desktop' }
+  | { type: 'device'; device: 'laptop' | 'desktop' }
   | { type: 'remote'; remote: RemoteStatus }
   | { type: 'auth'; auth: AuthState }
   // The server's code on disk is newer than the running server.

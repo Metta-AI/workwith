@@ -39,3 +39,10 @@ export const TimerIcon = (p: P) => <Svg {...p}><circle cx="8" cy="9" r="5" /><pa
 export const OpenIcon = (p: P) => <Svg {...p}><path d="M9.5 2.5h4v4M13.5 2.5L8 8" /><path d="M11.5 9.5v3a1 1 0 01-1 1h-7a1 1 0 01-1-1v-7a1 1 0 011-1h3" /></Svg>
 export const MoreIcon = (p: P) => <Svg {...p}><path d="M3.5 8h.01M8 8h.01M12.5 8h.01" strokeWidth="2.2" /></Svg>
 export const MailIcon = (p: P) => <Svg {...p}><rect x="2" y="3.5" width="12" height="9" rx="1.5" /><path d="M2.5 4.5L8 9l5.5-4.5" /></Svg>
+// Machines: a laptop or a desktop, with what it runs on its screen (⌘ macOS, four panes Windows, >_ Linux).
+const Screen = ({ os, x, y }: { os: string; x: number; y: number }) =>
+  os === 'darwin' ? <path d={`M${x - 1} ${y - 1}h2v2h-2zM${x - 1} ${y - 1}a1 1 0 10-1 1M${x + 1} ${y - 1}a1 1 0 111 1M${x - 1} ${y + 1}a1 1 0 11-1-1M${x + 1} ${y + 1}a1 1 0 101-1`} strokeWidth="1" />
+  : os === 'win32' ? <path d={`M${x - 2} ${y - 2}h1.6v1.6h-1.6zM${x + 0.4} ${y - 2}h1.6v1.6h-1.6zM${x - 2} ${y + 0.4}h1.6v1.6h-1.6zM${x + 0.4} ${y + 0.4}h1.6v1.6h-1.6z`} strokeWidth="1" />
+  : <path d={`M${x - 2} ${y - 1.5}l1.5 1.5-1.5 1.5M${x} ${y + 1.5}h2`} strokeWidth="1" />
+export const LaptopIcon = (p: P & { os: string }) => <Svg {...p}><rect x="3" y="3.5" width="10" height="7" rx="1" /><path d="M1.5 12.5h13" /><Screen os={p.os} x={8} y={7} /></Svg>
+export const DesktopIcon = (p: P & { os: string }) => <Svg {...p}><rect x="2" y="2.5" width="12" height="8.5" rx="1" /><path d="M8 11v2.5M5.5 13.5h5" /><Screen os={p.os} x={8} y={6.75} /></Svg>

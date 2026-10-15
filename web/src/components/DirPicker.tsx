@@ -8,9 +8,10 @@ import { api, currentMachine, LOCAL, state, urlOf } from '../store.ts'
 import { timeAgo } from '../util.ts'
 import { FolderIcon, UpIcon } from './Icons.tsx'
 
-// Your home directory as ~. Windows paths do not care about case.
-export const shortPath = (p: string) => {
-  const h = state.home
+// Your home directory as ~, on the machine the path is on (the current one by default).
+// Windows paths do not care about case.
+export const shortPath = (p: string, machine?: string) => {
+  const h = machine == null ? state.home : state.machines[machine]?.home
   if (!h) return p
   const at = h.includes('\\') ? p.toLowerCase().startsWith(h.toLowerCase()) : p.startsWith(h)
   return at && (p.length === h.length || '/\\'.includes(p[h.length])) ? '~' + p.slice(h.length) : p
@@ -65,7 +66,7 @@ export function DirPicker({ value, onChange, autoFocus, machine = currentMachine
           <div className="dir-menu-head">{filter ? 'Matching recent directories' : 'Recent directories'}</div>
           {shown.map((d, i) => (
             <button type="button" key={d.path} className={i === index ? 'on' : ''} onMouseEnter={() => setIndex(i)} onClick={() => choose(d.path)}>
-              <span className="mono">{shortPath(d.path)}</span>
+              <span className="mono">{shortPath(d.path, machine)}</span>
               <span className="muted">{d.source === 'claude' ? 'Claude Code' : d.source === 'both' ? 'Codinger · Claude Code' : 'Codinger'} · {timeAgo(d.ts)}</span>
             </button>
           ))}
@@ -112,7 +113,7 @@ function DirBrowser({ start, onChoose, machine }: { start: string; onChoose(p: s
       <div className="dir-foot">
         <label className="toggle"><input type="checkbox" checked={hidden} onChange={(e) => { setHidden(e.target.checked); void go(listing.path, e.target.checked) }} /> Hidden folders</label>
         {err && <span className="muted">{err}</span>}
-        <button type="button" className="primary" onClick={() => onChoose(listing.path)}>Use {shortPath(listing.path)}</button>
+        <button type="button" className="primary" onClick={() => onChoose(listing.path)}>Use {shortPath(listing.path, machine)}</button>
       </div>
     </div>
   )

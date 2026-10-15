@@ -4,7 +4,6 @@ import { api, changed, select, start, state, useStore } from './store.ts'
 import { useState } from 'react'
 import { Sidebar } from './components/Sidebar.tsx'
 import { SessionView } from './components/SessionView.tsx'
-import { LeadView } from './components/LeadView.tsx'
 import { Splitter, useWidth } from './components/Splitter.tsx'
 import { AppearanceDialog } from './components/AppearanceDialog.tsx'
 import { ArtifactCheck, ArtifactsView } from './components/Artifacts.tsx'
@@ -15,7 +14,8 @@ import './styles.css'
 function App() {
   const st = useStore()
   const [side, setSide] = useWidth('sidebar', 260)
-  const sel = st.sessions.find((s) => s.id === st.selected)
+  // The lead agent is hidden for now: only workers show.
+  const sel = st.sessions.find((s) => s.id === st.selected && s.kind === 'worker')
   useEffect(() => { if (sel) select(sel.id) }, [sel?.id])
 
   // A tab title that says when something needs you.
@@ -36,7 +36,6 @@ function App() {
         <Restart />
         {!st.connected && !st.sessions.length ? <div className="empty">Connecting to the Codinger server…</div>
           : st.page === 'artifacts' ? <ArtifactsView />
-          : sel?.kind === 'lead' ? <LeadView id={sel.id} />
           : sel ? <SessionView key={sel.id} id={sel.id} />
           : <div className="empty">Pick a session.</div>}
       </main>

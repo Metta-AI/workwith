@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SessionMeta, Usage } from '../../../shared/types.ts'
-import { api, changed, closeSession, currentMachine, LOCAL, localId, machineList, machineOf, offline, select, state, useStore } from '../store.ts'
+import { api, changed, closeSession, currentMachine, LOCAL, localId, machineList, machineOf, offline, select, state, useStore, type Machine } from '../store.ts'
 import { HistoryDialog } from './HistoryDialog.tsx'
 import { fatigue, timeAgo } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { NewSession } from './NewSession.tsx'
-import { ArchiveIcon, ChevronIcon, GearIcon, GlobeIcon, TerminalIcon, XIcon } from './Icons.tsx'
+import { ArchiveIcon, ChevronIcon, DesktopIcon, GearIcon, GlobeIcon, LaptopIcon, TerminalIcon, XIcon } from './Icons.tsx'
 import { TasksDialog } from './TasksDialog.tsx'
 import { ArtifactIcon } from './Artifacts.tsx'
 import { SettingsDialog } from './SettingsDialog.tsx'
@@ -45,7 +45,7 @@ function useDragSort(onDrop: (key: string, ids: string[]) => void) {
   const [drag, setDrag] = useState<Drag | null>(null)
   const moved = useRef(false)
   const start = (e: React.PointerEvent, key: string, id: string) => {
-    if (e.button !== 0 || (e.target as Element).closest('.row-close, .group-head button')) return
+    if (e.button !== 0 || (e.target as Element).closest('.row-close, .group-head button, .machine-head button')) return
     const nav = (e.currentTarget as HTMLElement).closest('nav')
     if (!nav) return
     const y0 = e.clientY
@@ -112,11 +112,12 @@ export function Sidebar({ width }: { width: number }) {
   const [menu, setMenu] = useState<RowMenuAt | null>(null)
   const openMenu = (s: SessionMeta, e: React.MouseEvent) => { e.preventDefault(); setMenu({ s, x: e.clientX, y: e.clientY }) }
   const local = st.machines[LOCAL]
-  const lead = local?.sessions.find((s) => s.kind === 'lead')
   const others = machineList().filter((m) => m.name !== LOCAL)
   const away = offline()
   const custom = !!st.settings.groupOrder?.length || st.sessions.some((x) => x.order != null)
   const u = st.usage
+  // Machines move like folders: drag one by its head.
+  const drag = useDragSort((_key, names) => { state.machineOrder = names; changed() })
   const tree = (machine: string) => <MachineTree machine={machine} onNew={(cwd) => setNewIn({ cwd, machine })} onMenu={openMenu} />
   return (
     <aside className="sidebar" style={{ width }}>
@@ -124,7 +125,6 @@ export function Sidebar({ width }: { width: number }) {
         <span>Codinger</span>
         <span className={`conn ${st.connected ? 'on' : 'off'}`} title={st.connected ? 'Connected' : 'Reconnecting…'} />
       </div>
-      {lead && <Row s={lead} label="Lead" active={st.selected === lead.id} onMenu={openMenu} />}
       <div className="side-actions">
         <button className="primary" onClick={() => setNewIn({ cwd: '' })}>+ New session</button>
         <button onClick={() => setHistory(true)} title={`Continue any Claude Code conversation on ${st.web ? currentMachine() : 'this machine'}, including terminal ones`}>Resume…</button>
@@ -142,20 +142,20 @@ export function Sidebar({ width }: { width: number }) {
             )}
             {(st.web || st.remoteOpen) && <>
               {others.map((m) => {
-                const mlead = m.sessions.find((s) => s.kind === 'lead')
+                const d = drag.sortable('machines', m.name)
                 return (
-                  <div key={m.name} className="machine">
-                    <div className="machine-head" title={m.connected ? `${m.name}: connected through web.codinger.app` : `${m.name}: reconnecting…`}>
-                      <span className={`conn ${m.connected ? 'on' : 'off'}`} />
-                      <span>{m.name}</span>
+                  <div key={m.name} {...d} className={`machine${d.className}`}>
+                    <div className="machine-head" title={`${m.name}: ${m.connected ? 'connected through web.codinger.app' : 'reconnecting…'}\nDrag to move`} onPointerDown={(e) => drag.start(e, 'machines', m.name)}>
+                      <DeviceIcon m={m} />
+                      <span className="machine-name">{m.name}</span>
+                      {!m.connected && <span className="conn off" />}
                       <button className="link" title={`New session on ${m.name}`} onClick={() => setNewIn({ cwd: '', machine: m.name })}>+</button>
                     </div>
-                    {mlead && <Row s={mlead} label="Lead" active={st.selected === mlead.id} onMenu={openMenu} />}
                     {tree(m.name)}
                   </div>
                 )
               })}
-              {away.map((name) => <div key={name} className="machine-head off" title={`${name} is not connected. Turn on remote access in its Codinger.`}><span className="conn off" /><span>{name}</span><span className="muted">not connected</span></div>)}
+              {away.map((name) => <div key={name} className="machine off"><div className="machine-head" title={`${name} is not connected. Turn on remote access in its Codinger.`}><span className="machine-name">{name}</span><span className="muted">not connected</span></div></div>)}
             </>}
           </div>
         )}
@@ -190,6 +190,13 @@ export function Sidebar({ width }: { width: number }) {
       {menu && <RowMenu at={menu} onClose={() => setMenu(null)} />}
     </aside>
   )
+}
+
+// A machine's icon: laptop or desktop, and what it runs.
+const OS: Record<string, string> = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }
+function DeviceIcon({ m }: { m: Machine }) {
+  const title = `${m.device === 'laptop' ? 'Laptop' : m.device === 'desktop' ? 'Desktop' : 'Computer'}${OS[m.platform] ? `, ${OS[m.platform]}` : ''}`
+  return m.device === 'desktop' ? <DesktopIcon os={m.platform} size={16} className="device" title={title} /> : <LaptopIcon os={m.platform} size={16} className="device" title={title} />
 }
 
 // One machine's sessions, by folder. Its folder order and session order are its own.

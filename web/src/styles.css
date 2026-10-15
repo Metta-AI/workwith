@@ -114,16 +114,21 @@ body.resizing { cursor: col-resize; user-select: none; }
 .archive-toggle.on { color: var(--text); }
 .archive-banner { display: flex; align-items: center; gap: 6px; padding: 6px 12px; margin-bottom: 4px; background: color-mix(in srgb, var(--text) 6%, transparent); border-bottom: 1px solid var(--line); color: var(--muted); font-size: calc(12px * var(--fs, 1)); }
 .archive-banner .icon-btn { margin-left: auto; }
-/* Other machines' sessions (web/src/store.ts machines): a head you can close, then one per machine. */
-.remote-machines { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 4px; }
-.remote-head { display: flex; align-items: center; gap: 6px; width: 100%; border: none; background: none; padding: 6px 12px; color: var(--muted); font-size: calc(12px * var(--fs, 1)); text-align: left; }
+/* Other machines' sessions (web/src/store.ts machines): a head you can close, then one shaded box per machine. */
+.remote-machines { margin-top: 8px; border-top: 1px solid var(--line); padding: 4px 6px 0; }
+.remote-head { display: flex; align-items: center; gap: 6px; width: 100%; border: none; background: none; padding: 6px 6px; color: var(--muted); font-size: calc(12px * var(--fs, 1)); text-align: left; }
 .remote-head:hover { color: var(--text); }
 .remote-head > .icon:first-child { transition: transform .15s; }
 .remote-head.open > .icon:first-child { transform: rotate(90deg); }
-.machine-head { display: flex; align-items: center; gap: 6px; padding: 8px 12px 2px; font-weight: 600; font-size: calc(12.5px * var(--fs, 1)); }
+.machine { margin: 6px 0 8px; padding-bottom: 4px; border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--text) 4%, transparent); overflow: hidden; }
+.machine .group-head { padding-left: 10px; padding-right: 10px; }
+.machine-head { display: flex; align-items: center; gap: 7px; padding: 6px 10px; font-weight: 600; font-size: calc(12.5px * var(--fs, 1)); background: color-mix(in srgb, var(--text) 7%, transparent); border-bottom: 1px solid var(--line); cursor: grab; user-select: none; }
+.machine-head .device { flex: none; color: var(--muted); }
+.machine-head .machine-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .machine-head .link { margin-left: auto; }
-.machine-head.off { font-weight: normal; color: var(--muted); }
-.machine-head.off .muted { margin-left: auto; font-size: calc(11.5px * var(--fs, 1)); }
+.machine.off { background: none; border-style: dashed; padding-bottom: 0; }
+.machine.off .machine-head { font-weight: normal; color: var(--muted); background: none; border-bottom: none; cursor: default; }
+.machine.off .muted { margin-left: auto; font-size: calc(11.5px * var(--fs, 1)); }
 .remote-panel p { margin: 0 0 10px; }
 .remote-panel label input { margin-left: 6px; }
 .remote-code { font: 600 calc(22px * var(--fs, 1)) var(--mono, monospace); letter-spacing: .15em; }
