@@ -23,7 +23,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { Readable, type Duplex } from 'node:stream'
 import WebSocket, { WebSocketServer } from 'ws'
-import { machineName, PART_BYTES, PARTS_AHEAD, REQ_HEADERS, RES_HEADERS, type HubMsg, type MachineMsg } from '../shared/remote.ts'
+import { machineName, PART_BYTES, PARTS_AHEAD, PING, PONG, REQ_HEADERS, RES_HEADERS, type HubMsg, type MachineMsg } from '../shared/remote.ts'
 import type { RemoteStatus } from '../shared/types.ts'
 import { DATA } from './store.ts'
 
@@ -147,21 +147,22 @@ function connect() {
   let outs: Map<string, Out> | null = null
   const send = (m: MachineMsg) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m)) }
   // A socket can die with no close on either end (a dropped route): both still say connected,
-  // and requests for this machine wait at the hub until they time out. The hub answers pings itself.
+  // and requests for this machine wait at the hub until they time out. The hub's runtime answers
+  // PING only on a socket the hub still holds; a WebSocket ping got answers where it held none.
   let alive = true
   let beat: NodeJS.Timeout | null = null
 
   ws.on('open', () => {
     wait = 1000; connected = true; tell()
-    beat = setInterval(() => { if (!alive) return ws.terminate(); alive = false; ws.ping() }, PING_MS)
+    beat = setInterval(() => { if (!alive) return ws.terminate(); alive = false; ws.send(PING) }, PING_MS)
     beat.unref()
   })
-  ws.on('pong', () => { alive = true })
   ws.on('unexpected-response', (_req, res) => {
     // The hub does not know this token any more: forgotten on the web.
     if (res.statusCode === 403) { unlink(); save() }
   })
   ws.on('message', (raw) => {
+    if (String(raw) === PONG) { alive = true; return }
     let m: HubMsg
     try { m = JSON.parse(String(raw)) } catch { return }
     // The hub says who this machine is there (a rename or a new display name, from anywhere).

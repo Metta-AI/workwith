@@ -16,6 +16,7 @@ export type HubMsg =
   | { t: 'bye'; why: 'renamed' | 'forgotten' }      // connect again under the new name, or forget the token
   | { t: 'ack'; id: string }                        // a part went on to the browser: send another
   | { t: 'cancel'; id: string }                     // the browser stopped reading: send no more
+  | { t: 'pong' }                                   // to the machine's ping (PING, PONG below)
 
 // From a machine to the hub. A channel's messages come in batches.
 export type MachineMsg =
@@ -23,6 +24,12 @@ export type MachineMsg =
   | { t: 'part'; id: string; data: string; end?: boolean; failed?: boolean } // data: base64
   | { t: 'msgs'; chan: string; data: string[] }
   | { t: 'close'; chan: string }
+  | { t: 'ping' }
+
+// The machine's heartbeat. The hub's runtime answers it for any socket the hub still holds, without
+// waking the hub; a WebSocket ping is not enough, as it gets an answer where the hub has lost the socket.
+export const PING = JSON.stringify({ t: 'ping' } satisfies MachineMsg)
+export const PONG = JSON.stringify({ t: 'pong' } satisfies HubMsg)
 
 // A message over 32 MiB closes the socket, so a big answer comes in parts of PART_BYTES, with
 // at most PARTS_AHEAD of them sent and not yet passed on (each `ack` lets one more go).

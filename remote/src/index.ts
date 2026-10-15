@@ -13,7 +13,7 @@
 
 import { DurableObject } from 'cloudflare:workers'
 import { EmailMessage } from 'cloudflare:email'
-import { REQ_HEADERS, RES_HEADERS, type HubMsg, type MachineMsg, type RemoteMachine } from '../../shared/remote.ts'
+import { PING, PONG, REQ_HEADERS, RES_HEADERS, type HubMsg, type MachineMsg, type RemoteMachine } from '../../shared/remote.ts'
 import { mediaKind, mediaType } from '../../shared/media.ts'
 
 type Env = {
@@ -54,6 +54,12 @@ export class Hub extends DurableObject<Env> {
   private pending = new Map<string, (m: Extract<MachineMsg, { t: 'res' }>) => void>()
   // Answers coming in parts (shared/remote.ts), by request id.
   private streams = new Map<string, Stream>()
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env)
+    // A machine's heartbeat, answered without waking the hub.
+    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG))
+  }
 
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url)
@@ -274,12 +280,16 @@ ${again ? `<p>A machine with this name is connected already. It will be disconne
     for (const old of this.ctx.getWebSockets(`m:${m.name}`)) { this.dropMachine(m.name); old.close(1012, 'Connected again') }
     const [client, server] = Object.values(new WebSocketPair())
     this.ctx.acceptWebSocket(server, ['m', `m:${m.name}`])
+    server.serializeAttachment({ at: Date.now() })
     send(server, { t: 'hello', name: m.name, parts: true, ...(m.label ? { label: m.label } : {}) })
     return new Response(null, { status: 101, webSocket: client })
   }
 
+  // The newest open one: a socket closed here can stay listed until the other end answers, so
+  // the first listed can be a dead one, and the machine gets none of its requests.
   private socket(name: string): WebSocket | undefined {
-    return this.ctx.getWebSockets(`m:${name}`)[0]
+    const at = (ws: WebSocket) => (ws.deserializeAttachment() as { at?: number } | null)?.at ?? 0
+    return this.ctx.getWebSockets(`m:${name}`).filter((ws) => ws.readyState === WebSocket.READY_STATE_OPEN).sort((a, b) => at(b) - at(a))[0]
   }
 
   // ---- published transcripts ------------------------------------------------------
@@ -418,7 +428,8 @@ ${again ? `<p>A machine with this name is connected already. It will be disconne
   async webSocketClose(ws: WebSocket) {
     try { ws.close(1000, 'Closed') } catch { /* closed */ }
     const tags = this.ctx.getTags(ws)
-    if (tags[0] === 'm') return this.dropMachine(tags[1].slice(2))
+    // An old socket of a machine that connected again: its browsers are on the new one.
+    if (tags[0] === 'm') return this.socket(tags[1].slice(2)) ? undefined : this.dropMachine(tags[1].slice(2))
     const name = tags.find((t) => t.startsWith('b:'))!.slice(2)
     const chan = tags.find((t) => t.startsWith('c:'))!.slice(2)
     const machine = this.socket(name)
