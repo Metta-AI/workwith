@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import { useEffect } from 'react'
-import { api, changed, connect, select, state, useStore } from './store.ts'
+import { api, changed, select, start, state, useStore } from './store.ts'
 import { useState } from 'react'
 import { Sidebar } from './components/Sidebar.tsx'
 import { SessionView } from './components/SessionView.tsx'
@@ -96,6 +96,6 @@ document.addEventListener('click', (e) => {
 })
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && state.lightbox) { state.lightbox = null; changed() } })
 
-connect()
+void start()
 initTooltips()
 createRoot(document.getElementById('root')!).render(<App />)

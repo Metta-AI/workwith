@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useEscape } from '../escape.ts'
 import type { ImageRef, PermissionMode, SessionMeta } from '../../../shared/types.ts'
-import { api, select, setComposer, state } from '../store.ts'
+import { api, currentMachine, globalId, localId, LOCAL, machineList, machineOf, select, setComposer, state } from '../store.ts'
 import { DirPicker } from './DirPicker.tsx'
 import { RichInput } from './Inputs.tsx'
 
-export function NewSession({ cwd: initial, onClose }: { cwd: string; onClose(): void }) {
+// machine: where it runs; the current session's by default.
+export function NewSession({ cwd: initial, machine: start = currentMachine(), onClose }: { cwd: string; machine?: string; onClose(): void }) {
   useEscape(onClose)
+  const [machine, setMachine] = useState(start)
   const [cwd, setCwd] = useState(initial)
   const [title, setTitle] = useState('')
   const [model, setModel] = useState('')
@@ -23,19 +25,20 @@ export function NewSession({ cwd: initial, onClose }: { cwd: string; onClose(): 
     if (!cwd.trim()) { setMissing(false); return }
     let live = true
     const t = setTimeout(() => {
-      void api<{ kind: 'dir' | 'file' | 'missing' }>(`/api/fs/stat?path=${encodeURIComponent(cwd)}`, 'GET')
+      void api<{ kind: 'dir' | 'file' | 'missing' }>(`/api/fs/stat?path=${encodeURIComponent(cwd)}`, 'GET', undefined, machine)
         .then((r) => { if (live) setMissing(r.kind === 'missing') }).catch(() => {})
     }, 200)
     return () => { live = false; clearTimeout(t) }
-  }, [cwd])
+  }, [cwd, machine])
 
   const create = async () => {
     setBusy(true); setErr(null)
     try {
-      const m = await api<SessionMeta>('/api/sessions', 'POST', { cwd, title, model: model || null, permissionMode: mode, parentId: parentId || null, mkdir: missing })
-      if (prompt.trim() || images.length) await api(`/api/sessions/${m.id}/send`, 'POST', { parts: [{ kind: 'text', text: prompt, images }] })
-      else setComposer(m.id, { text: '' })
-      select(m.id)
+      const meta = await api<SessionMeta>('/api/sessions', 'POST', { cwd, title, model: model || null, permissionMode: mode, parentId: parentId ? localId(parentId) : null, mkdir: missing }, machine)
+      const id = globalId(machine, meta.id)
+      if (prompt.trim() || images.length) await api(`/api/sessions/${id}/send`, 'POST', { parts: [{ kind: 'text', text: prompt, images }] })
+      else setComposer(id, { text: '' })
+      select(id)
       onClose()
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
@@ -47,8 +50,15 @@ export function NewSession({ cwd: initial, onClose }: { cwd: string; onClose(): 
     <div className="modal-back top" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <form className="modal wide" onSubmit={(e) => { e.preventDefault(); void create() }}>
         <h2>New session</h2>
+        {machineList().length > 1 && (
+          <label>Machine
+            <select value={machine} onChange={(e) => { setMachine(e.target.value); setCwd(''); setParentId(''); setImages([]) }}>
+              {machineList().map((m) => <option key={m.name} value={m.name}>{m.name === LOCAL ? `This machine${state.self ? ` (${state.self})` : ''}` : m.name}</option>)}
+            </select>
+          </label>
+        )}
         <div className="field">Directory
-          <DirPicker value={cwd} onChange={setCwd} autoFocus />
+          <DirPicker value={cwd} onChange={setCwd} autoFocus machine={machine} />
         </div>
         <label>Title <input value={title} placeholder="Defaults to the folder name" onChange={(e) => setTitle(e.target.value)} /></label>
         <div className="two">
@@ -66,11 +76,11 @@ export function NewSession({ cwd: initial, onClose }: { cwd: string; onClose(): 
         <label>Sub-task of
           <select value={parentId} onChange={(e) => setParentId(e.target.value)}>
             <option value="">(none)</option>
-            {state.sessions.filter((s) => s.kind === 'worker' && !s.archived).map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
+            {state.sessions.filter((s) => s.kind === 'worker' && !s.archived && machineOf(s.id) === machine).map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
           </select>
         </label>
         <div className="field">First message (optional)
-          <RichInput value={prompt} onChange={setPrompt} images={images} onImages={setImages} onSubmit={() => void create()} minRows={4} />
+          <RichInput value={prompt} onChange={setPrompt} images={images} onImages={setImages} onSubmit={() => void create()} minRows={4} machine={machine} />
         </div>
         {err && <div className="notice error">{err}</div>}
         <div className="modal-actions">

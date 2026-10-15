@@ -6,6 +6,7 @@
 // offsets into the text, where an image counts as its whole image link.
 
 import { imageToken, splitImages } from '../../shared/images.ts'
+import { media } from './store.ts'
 
 // ---- text ↔ DOM ---------------------------------------------------------------
 
@@ -114,7 +115,7 @@ function line(text: string, list: boolean): { nodes: Node[]; list: boolean } {
 export function render(el: HTMLElement, value: string) {
   const nodes: Node[] = []
   for (const r of splitImages(value)) {
-    if ('url' in r) { nodes.push(imgNode(r.url, r.url)); continue }
+    if ('url' in r) { nodes.push(imgNode(media(r.url), r.url)); continue }
     let list = false
     r.text.split('\n').forEach((l, i) => {
       if (i) nodes.push(document.createTextNode('\n'))

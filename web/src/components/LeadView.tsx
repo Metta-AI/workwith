@@ -2,7 +2,7 @@
 // with the lead agent that can read them and route messages to them.
 
 import { useState } from 'react'
-import { api, select, useStore } from '../store.ts'
+import { api, machineOf, select, useStore } from '../store.ts'
 import { fatigue } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { CachePill, ContextGauge, SessionView } from './SessionView.tsx'
@@ -13,8 +13,10 @@ import { shortPath } from './DirPicker.tsx'
 export function LeadView({ id }: { id: string }) {
   const st = useStore()
   const [board, setBoard] = useWidth('board', 420)
-  const groups = groupSessions(st.sessions, false, st.settings.groupOrder)
-  const drafts = st.sessions.filter((s) => s.kind === 'worker' && !s.archived).reduce((n, s) => n + s.inbox.length, 0)
+  // The lead's own machine: its sessions only.
+  const sessions = st.sessions.filter((s) => machineOf(s.id) === machineOf(id))
+  const groups = groupSessions(sessions, false, st.settings.groupOrder)
+  const drafts = sessions.filter((s) => s.kind === 'worker' && !s.archived).reduce((n, s) => n + s.inbox.length, 0)
   const [sentNote, setSentNote] = useState<{ text: string; title: string } | null>(null)
   const sendDrafts = async () => {
     const r = await api<{ sent: string[]; held: { id: string; title: string; why: string[] }[] }>('/api/lead/send-drafts')
@@ -24,7 +26,7 @@ export function LeadView({ id }: { id: string }) {
     })
     setTimeout(() => setSentNote(null), 8000)
   }
-  const needsYou = st.sessions.filter((s) => s.kind === 'worker' && !s.archived && ['permission', 'asking', 'waiting', 'error'].includes(s.status))
+  const needsYou = sessions.filter((s) => s.kind === 'worker' && !s.archived && ['permission', 'asking', 'waiting', 'error'].includes(s.status))
 
   return (
     <div className="lead">

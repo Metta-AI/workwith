@@ -2,7 +2,8 @@
 // Components re-render on any change; at this scale that's plenty.
 
 import { useSyncExternalStore } from 'react'
-import type { Anchor, AuthState, Event, ImageRef, InboxItem, Part, ServerMsg, SessionMeta, Settings, Task, Usage } from '../../shared/types.ts'
+import type { Anchor, AuthState, Event, ImageRef, InboxItem, Part, RemoteStatus, ServerMsg, SessionMeta, Settings, Task, Usage } from '../../shared/types.ts'
+import type { RemoteMachine } from '../../shared/remote.ts'
 import { inboxParts } from '../../shared/inbox.ts'
 import { itemsOf } from '../../shared/blocks.ts'
 import { applyAppearance, holdingAppearance } from './appearance.ts'
@@ -22,7 +23,26 @@ export type Run = { sid: string; card: string; command: string; item?: { key: st
 export type Draft = NoteDraft | AnswerDraft | DismissDraft | DoneDraft
 export type Composer = { text: string; images: ImageRef[] }
 
+// One Codinger server: this page's own (LOCAL), or another machine through
+// web.codinger.app (server/remote.ts). On web.codinger.app every machine is remote.
+export type Machine = {
+  name: string
+  connected: boolean
+  loaded: boolean          // its hello came
+  sessions: SessionMeta[]  // ids made global (globalId)
+  settings: Settings
+  usage: Usage
+  tasks: Task[]
+  platform: string
+  home: string
+  auth: AuthState
+  stale: boolean
+  remote?: RemoteStatus    // its own remote access
+}
+
 type State = {
+  // These belong to a machine: the current one (the selected session's), or for
+  // sessions, all of them. Set on the state, they go to that machine.
   connected: boolean
   sessions: SessionMeta[]
   settings: Settings
@@ -52,16 +72,16 @@ type State = {
   artifactsPort: number              // where the server that runs artifacts listens
   prolifica: ProlificaState
   preview: Record<string, { target: PreviewTarget; at: number }>   // what each session's preview pane shows
+  machines: Record<string, Machine>
+  web: boolean                       // this page is web.codinger.app
+  email: string | null               // signed in there as
+  self: string                       // this machine's name on web.codinger.app, once connected
+  remoteOpen: boolean                // the Remote sessions section is open
 }
 
 const saved = <T,>(k: string, d: T): T => { try { return JSON.parse(localStorage.getItem(k) ?? '') ?? d } catch { return d } }
 
-export const state: State = {
-  connected: false,
-  loaded: false,
-  sessions: [],
-  settings: { leadAutoSend: false },
-  usage: {},
+export const state = {
   events: {},
   streaming: {},
   selected: saved('codinger.selected', 'lead'),
@@ -70,24 +90,71 @@ export const state: State = {
   focus: null,
   showArchived: false,
   error: null,
-  platform: '',
-  home: '',
-  auth: { state: 'ok' },
   lightbox: null,
   showSteps: saved('codinger.showSteps', false),
   // 'both' was a choice until October 2026.
   money: (['usd', 'pct', 'week'] as const).find((x) => x === saved('codinger.money', 'pct')) ?? 'pct',
   runs: {},
-  tasks: [],
   fileTick: {},
-  stale: false,
   restarting: false,
   page: null,
   artifacts: [],
   artifactsPort: 0,
   prolifica: null,
   preview: saved('codinger.preview', {}),
+  machines: {},
+  web: false,
+  email: null,
+  self: '',
+  remoteOpen: saved('codinger.remoteOpen', true),
+} as Partial<State> as State
+
+// ---- machines -------------------------------------------------------------------
+
+export const LOCAL = ''
+// A remote session's id is "<machine>~<its id there>".
+const SEP = '~'
+export const machineOf = (id: string) => id.includes(SEP) ? id.slice(0, id.indexOf(SEP)) : LOCAL
+export const localId = (id: string) => id.includes(SEP) ? id.slice(id.indexOf(SEP) + 1) : id
+export const globalId = (machine: string, id: string) => machine ? `${machine}${SEP}${id}` : id
+export const leadOf = (machine: string) => globalId(machine, 'lead')
+
+const blank = (name: string): Machine => ({ name, connected: false, loaded: false, sessions: [], settings: { leadAutoSend: false }, usage: {}, tasks: [], platform: '', home: '', auth: { state: 'ok' }, stale: false })
+
+// The machines in sidebar order: this page's own first, then the others by name.
+export const machineList = () => Object.values(state.machines).sort((a, b) => (a.name === LOCAL ? -1 : b.name === LOCAL ? 1 : a.name.localeCompare(b.name)))
+
+// The machine of the selected session; what Settings, usage and tasks show.
+export function currentMachine(): string {
+  const m = machineOf(state.selected)
+  return state.machines[m] ? m : machineList()[0]?.name ?? LOCAL
 }
+const cur = () => state.machines[currentMachine()] ?? blank(LOCAL)
+
+// Where a machine's server is, from this page.
+export const baseOf = (machine: string) => !machine ? '' : state.web ? `/m/${machine}` : `/api/remote/m/${machine}`
+export const urlOf = (path: string, machine = currentMachine()) => baseOf(machine) + path
+// An image or file the server keeps (/api/images/…), from the current session's machine.
+export const media = (url: string, machine = currentMachine()) => url.startsWith('/api/') ? urlOf(url, machine) : url
+
+Object.defineProperties(state, {
+  sessions: {
+    get: () => machineList().flatMap((m) => m.sessions),
+    set: (list: SessionMeta[]) => { for (const m of Object.values(state.machines)) m.sessions = list.filter((s) => machineOf(s.id) === m.name) },
+  },
+  connected: { get: () => cur().connected },
+  loaded: { get: () => cur().loaded },
+  settings: { get: () => cur().settings, set: (v: Settings) => { cur().settings = v } },
+  usage: { get: () => cur().usage },
+  tasks: { get: () => cur().tasks },
+  platform: { get: () => cur().platform },
+  home: { get: () => cur().home },
+  auth: { get: () => cur().auth },
+  stale: { get: () => cur().stale },
+})
+
+// The machine whose appearance this page wears: its own, or on the web the first one.
+const looksFrom = () => state.web ? machineList()[0]?.name : LOCAL
 
 let version = 0
 const listeners = new Set<() => void>()
@@ -103,6 +170,7 @@ export function changed() {
     localStorage.setItem('codinger.selected', JSON.stringify(state.selected))
     localStorage.setItem('codinger.showSteps', JSON.stringify(state.showSteps))
     localStorage.setItem('codinger.preview', JSON.stringify(state.preview))
+    localStorage.setItem('codinger.remoteOpen', JSON.stringify(state.remoteOpen))
   }, 300)
 }
 // Tell the server which sessions you are writing a reply in, so the lead's
@@ -132,8 +200,12 @@ export function useStore(): State {
 
 // ---- server ---------------------------------------------------------------------
 
-export async function api<T = any>(path: string, method = 'POST', body?: unknown): Promise<T> {
-  const r = await fetch(path, {
+// A call to a Codinger server: a session's own machine for /api/sessions/<id>/…,
+// else `machine`, else the current one.
+export async function api<T = any>(path: string, method = 'POST', body?: unknown, machine?: string): Promise<T> {
+  const sid = /^\/api\/sessions\/([^/?]+)/.exec(path)?.[1]
+  if (sid?.includes(SEP)) { machine = machineOf(sid); path = path.replace(sid, localId(sid)) }
+  const r = await fetch(urlOf(path, machine ?? currentMachine()), {
     method,
     headers: body === undefined ? {} : { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -150,36 +222,96 @@ export async function api<T = any>(path: string, method = 'POST', body?: unknown
   return j
 }
 
-export function connect() {
-  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`)
-  ws.onmessage = (m) => onServer(JSON.parse(m.data))
-  ws.onopen = () => {
-    state.connected = true
-    // Anything that happened while we were away: reload what we had open.
-    for (const id of Object.keys(state.events)) void loadEvents(id, true)
-    changed()
+// Start: on web.codinger.app, sign in and find your machines; on a machine, its own server
+// (and, once it is connected to web.codinger.app, the other machines).
+export async function start() {
+  const who = await fetch('/_remote/whoami').then((r) => r.json()).catch(() => ({ web: false }))
+  if (who.web) {
+    if (!who.email) { location.href = '/_remote/login'; return }
+    state.web = true
+    state.email = who.email
+  } else {
+    state.machines[LOCAL] = blank(LOCAL)
+    connect(LOCAL)
   }
-  ws.onclose = () => { state.connected = false; changed(); setTimeout(connect, 1000) }
+  void refreshMachines()
+  setInterval(() => void refreshMachines(), 30_000)
 }
 
-function onServer(m: ServerMsg) {
+const sockets = new Map<string, WebSocket>()
+function connect(machine: string) {
+  if (sockets.has(machine)) return
+  const base = baseOf(machine)
+  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${base}/ws`)
+  sockets.set(machine, ws)
+  ws.onmessage = (m) => onServer(JSON.parse(m.data), machine)
+  ws.onopen = () => {
+    const m = state.machines[machine]
+    if (m) m.connected = true
+    // Anything that happened while we were away: reload what we had open.
+    for (const id of Object.keys(state.events)) if (machineOf(id) === machine) void loadEvents(id, true)
+    changed()
+  }
+  ws.onclose = () => {
+    sockets.delete(machine)
+    const m = state.machines[machine]
+    if (m) m.connected = false
+    changed()
+    // A machine that is gone from the list stays gone (refreshMachines).
+    if (m) setTimeout(() => { if (state.machines[machine]) connect(machine) }, machine ? 3000 : 1000)
+  }
+}
+
+// The other machines on web.codinger.app: connect to the new ones, let go of the gone ones.
+let known: RemoteMachine[] = []
+export async function refreshMachines() {
+  if (!state.web && !state.machines[LOCAL]?.remote?.linked) known = []
+  else {
+    const r = await fetch(state.web ? '/_remote/machines' : '/api/remote/machines').catch(() => null)
+    if (r?.status === 401 && state.web) { location.href = '/_remote/login'; return }
+    if (!r?.ok) return
+    known = await r.json()
+  }
+  const live = new Set(known.filter((m) => m.connected && m.name !== state.self).map((m) => m.name))
+  for (const name of Object.keys(state.machines)) {
+    if (name === LOCAL || live.has(name)) continue
+    delete state.machines[name]
+    sockets.get(name)?.close()
+  }
+  for (const name of live) { state.machines[name] ??= blank(name); connect(name) }
+  changed()
+}
+// Machines you connected that are not on line now.
+export const offline = () => known.filter((m) => !m.connected && m.name !== state.self).map((m) => m.name)
+
+function onServer(m: ServerMsg, machine: string) {
+  const M = state.machines[machine]
+  if (!M) return
+  const g = (id: string) => globalId(machine, id)
+  const own = (list: SessionMeta[]) => machine ? list.map((s) => ({ ...s, id: g(s.id), parentId: s.parentId && g(s.parentId) })) : list
+  const looks = looksFrom() === machine
   switch (m.type) {
     case 'hello':
-      state.sessions = m.sessions; state.settings = m.settings; state.usage = m.usage; state.loaded = true
-      applyAppearance(m.settings.appearance)
-      state.platform = m.platform; state.home = m.home; state.auth = m.auth ?? { state: 'ok' }; state.stale = !!m.stale; state.restarting = false
-      if (!m.sessions.some((s) => s.id === state.selected)) state.selected = 'lead'
+      Object.assign(M, { sessions: own(m.sessions), settings: m.settings, usage: m.usage, loaded: true, platform: m.platform, home: m.home, auth: m.auth ?? { state: 'ok' }, stale: !!m.stale, remote: m.remote })
+      if (looks) applyAppearance(m.settings.appearance)
+      if (!machine) { state.restarting = false; onRemote(m.remote) }
+      // A selected session this machine does not have (any more): its lead.
+      if (machineOf(state.selected) === machine ? !M.sessions.some((s) => s.id === state.selected) : !state.machines[machineOf(state.selected)]) state.selected = leadOf(machine)
       break
-    case 'sessions': state.sessions = m.sessions; break
+    case 'sessions': M.sessions = own(m.sessions); break
     case 'settings':
-      if (holdingAppearance()) { state.settings = { ...m.settings, appearance: state.settings.appearance }; break }
-      state.settings = m.settings; applyAppearance(m.settings.appearance); break
-    case 'usage': state.usage = m.usage; break
-    case 'tasks': state.tasks = m.tasks; break
-    case 'artifacts': state.artifacts = m.artifacts; state.artifactsPort = m.port; state.prolifica = m.prolifica; break
-    case 'preview': state.preview = { ...state.preview, [m.sessionId]: { target: m.target, at: m.at } }; break
-    case 'auth': state.auth = m.auth; break
-    case 'stale': state.stale = m.stale; break
+      if (looks && holdingAppearance()) { M.settings = { ...m.settings, appearance: M.settings.appearance }; break }
+      M.settings = m.settings
+      if (looks) applyAppearance(m.settings.appearance)
+      break
+    case 'usage': M.usage = m.usage; break
+    case 'tasks': M.tasks = m.tasks; break
+    // Artifacts run on this page's own machine (on the web, the first one).
+    case 'artifacts': if (looks) { state.artifacts = m.artifacts; state.artifactsPort = m.port; state.prolifica = m.prolifica }; break
+    case 'preview': state.preview = { ...state.preview, [g(m.sessionId)]: { target: m.target, at: m.at } }; break
+    case 'auth': M.auth = m.auth; break
+    case 'stale': M.stale = m.stale; break
+    case 'remote': M.remote = m.remote; if (!machine) onRemote(m.remote); break
     case 'file': state.fileTick = { ...state.fileTick, [m.path]: (state.fileTick[m.path] ?? 0) + 1 }; break
     case 'run': {
       const run = state.runs[m.token]
@@ -194,25 +326,35 @@ function onServer(m: ServerMsg) {
       break
     }
     case 'event': {
-      const list = state.events[m.sessionId]
-      if (list && (!list.length || list[list.length - 1].seq < m.event.seq)) state.events[m.sessionId] = [...list, m.event]
-      if (m.sessionId === state.selected && document.visibilityState === 'visible' && m.event.t === 'result') void api(`/api/sessions/${m.sessionId}/seen`).catch(() => {})
+      const sid = g(m.sessionId)
+      const list = state.events[sid]
+      if (list && (!list.length || list[list.length - 1].seq < m.event.seq)) state.events[sid] = [...list, m.event]
+      if (sid === state.selected && document.visibilityState === 'visible' && m.event.t === 'result') void api(`/api/sessions/${sid}/seen`).catch(() => {})
       break
     }
-    case 'delta':
-      state.streaming[m.sessionId] = m.reset ? '' : (state.streaming[m.sessionId] ?? '') + m.text
+    case 'delta': {
+      const sid = g(m.sessionId)
+      state.streaming[sid] = m.reset ? '' : (state.streaming[sid] ?? '') + m.text
       break
+    }
     case 'truncate': {
-      const list = state.events[m.sessionId]
-      if (list) state.events[m.sessionId] = list.filter((e) => e.seq < m.seq)
-      state.streaming[m.sessionId] = ''
+      const sid = g(m.sessionId)
+      const list = state.events[sid]
+      if (list) state.events[sid] = list.filter((e) => e.seq < m.seq)
+      state.streaming[sid] = ''
       // Comments and answers on messages that are gone go with them.
       const gone = (msg: string) => Number(msg.split(/[.:]/)[0]) >= m.seq
-      state.drafts[m.sessionId] = draftsOf(m.sessionId).filter((d) => !gone(d.kind === 'note' ? d.anchor.msg : d.kind === 'answer' ? d.askKey : d.key))
+      state.drafts[sid] = draftsOf(sid).filter((d) => !gone(d.kind === 'note' ? d.anchor.msg : d.kind === 'answer' ? d.askKey : d.key))
       break
     }
   }
   changed()
+}
+
+// This machine's own remote access changed: who it is there, and whom it can reach.
+function onRemote(r: RemoteStatus | undefined) {
+  state.self = r?.connected ? r.name : ''
+  void refreshMachines()
 }
 
 const loading = new Set<string>()
@@ -254,7 +396,7 @@ export function revealEvent(sid: string, seq: number) {
 // Closing archives the session (its process ends; Reopen brings it back).
 export async function closeSession(id: string) {
   await api(`/api/sessions/${id}`, 'PATCH', { archived: true })
-  if (state.selected === id) select('lead')
+  if (state.selected === id) select(leadOf(machineOf(id)))
 }
 
 // ---- drafts -------------------------------------------------------------------------

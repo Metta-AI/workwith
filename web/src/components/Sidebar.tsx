@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SessionMeta, Usage } from '../../../shared/types.ts'
-import { api, changed, closeSession, select, state, useStore } from '../store.ts'
+import { api, changed, closeSession, currentMachine, LOCAL, localId, machineList, machineOf, offline, select, state, useStore } from '../store.ts'
 import { HistoryDialog } from './HistoryDialog.tsx'
 import { fatigue, timeAgo } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { NewSession } from './NewSession.tsx'
-import { ArchiveIcon, GearIcon, TerminalIcon, XIcon } from './Icons.tsx'
+import { ArchiveIcon, ChevronIcon, GearIcon, GlobeIcon, TerminalIcon, XIcon } from './Icons.tsx'
 import { TasksDialog } from './TasksDialog.tsx'
 import { ArtifactIcon } from './Artifacts.tsx'
 import { SettingsDialog } from './SettingsDialog.tsx'
@@ -105,28 +105,19 @@ const short = shortPath
 
 export function Sidebar({ width }: { width: number }) {
   const st = useStore()
-  const [newIn, setNewIn] = useState<string | null>(null)
+  const [newIn, setNewIn] = useState<{ cwd: string; machine?: string } | null>(null)
   const [history, setHistory] = useState(false)
   const [settings, setSettings] = useState<Page | true | false>(false)
   const [tasks, setTasks] = useState(false)
   const [menu, setMenu] = useState<RowMenuAt | null>(null)
   const openMenu = (s: SessionMeta, e: React.MouseEvent) => { e.preventDefault(); setMenu({ s, x: e.clientX, y: e.clientY }) }
-  const lead = st.sessions.find((s) => s.kind === 'lead')
-  const groups = groupSessions(st.sessions, st.showArchived, st.settings.groupOrder)
-  const { start, sortable } = useDragSort((key, ids) => {
-    if (key === 'groups') {
-      // Folders not on screen (the other of active and archived) keep their place after these.
-      const groupOrder = [...ids, ...(st.settings.groupOrder ?? []).filter((c) => !ids.includes(c))]
-      state.settings = { ...state.settings, groupOrder }
-      void api('/api/settings', 'PUT', { groupOrder })
-    } else {
-      state.sessions = state.sessions.map((s) => ids.includes(s.id) ? { ...s, order: ids.indexOf(s.id) } : s)
-      void api('/api/sessions/order', 'PUT', { ids })
-    }
-    changed()
-  })
+  const local = st.machines[LOCAL]
+  const lead = local?.sessions.find((s) => s.kind === 'lead')
+  const others = machineList().filter((m) => m.name !== LOCAL)
+  const away = offline()
   const custom = !!st.settings.groupOrder?.length || st.sessions.some((x) => x.order != null)
   const u = st.usage
+  const tree = (machine: string) => <MachineTree machine={machine} onNew={(cwd) => setNewIn({ cwd, machine })} onMenu={openMenu} />
   return (
     <aside className="sidebar" style={{ width }}>
       <div className="brand">
@@ -135,43 +126,46 @@ export function Sidebar({ width }: { width: number }) {
       </div>
       {lead && <Row s={lead} label="Lead" active={st.selected === lead.id} onMenu={openMenu} />}
       <div className="side-actions">
-        <button className="primary" onClick={() => setNewIn('')}>+ New session</button>
-        <button onClick={() => setHistory(true)} title="Continue any Claude Code conversation on this machine, including terminal ones">Resume…</button>
+        <button className="primary" onClick={() => setNewIn({ cwd: '' })}>+ New session</button>
+        <button onClick={() => setHistory(true)} title={`Continue any Claude Code conversation on ${st.web ? currentMachine() : 'this machine'}, including terminal ones`}>Resume…</button>
       </div>
       <nav className={`tree${st.showArchived ? ' archived' : ''}`}>
         {st.showArchived && <div className="archive-banner"><ArchiveIcon size={13} /> Archived sessions<button className="icon-btn" title="Back to active sessions" onClick={() => { state.showArchived = false; changed() }}><XIcon size={12} /></button></div>}
-        {groups.map(([cwd, list]) => {
-          const g = sortable('groups', cwd)
-          // A session and those nested under it move as one.
-          const ids = new Set(list.map((x) => x.id))
-          const kids = (parent: string | null) => list.filter((x) => (x.parentId && ids.has(x.parentId) ? x.parentId : null) === parent)
-          const branch = (x: SessionMeta, depth: number): React.ReactNode => {
-            const key = `${cwd}|${x.parentId && ids.has(x.parentId) ? x.parentId : ''}`
-            const b = sortable(key, x.id)
-            return (
-              <div key={x.id} {...b} className={`branch${b.className}`}>
-                <Row s={x} depth={depth} active={st.selected === x.id} onPointerDown={(e) => start(e, key, x.id)} onMenu={openMenu} />
-                {kids(x.id).map((k) => branch(k, depth + 1))}
-              </div>
-            )
-          }
-          return (
-            <div key={cwd} {...g} className={`group${g.className}`}>
-              <div className="group-head" title={`${cwd}\nDrag to move`} onPointerDown={(e) => start(e, 'groups', cwd)}>
-                <span>{cwd.split(/[\\/]/).pop()}</span>
-                <button className="link" title={`New session in ${short(cwd)}`} onClick={() => setNewIn(cwd)}>+</button>
-              </div>
-              {kids(null).map((x) => branch(x, 0))}
-            </div>
-          )
-        })}
-        {!groups.length && <div className="muted pad">{st.showArchived ? 'No archived sessions.' : 'No sessions yet.'}</div>}
+        {local && tree(LOCAL)}
+        {/* On web.codinger.app every machine is here; on a machine, the others, under one head you can close. */}
+        {(others.length > 0 || away.length > 0) && (
+          <div className="remote-machines">
+            {!st.web && (
+              <button className={`remote-head${st.remoteOpen ? ' open' : ''}`} onClick={() => { state.remoteOpen = !state.remoteOpen; changed() }}>
+                <ChevronIcon size={12} /> <GlobeIcon size={13} /> Remote sessions
+              </button>
+            )}
+            {(st.web || st.remoteOpen) && <>
+              {others.map((m) => {
+                const mlead = m.sessions.find((s) => s.kind === 'lead')
+                return (
+                  <div key={m.name} className="machine">
+                    <div className="machine-head" title={m.connected ? `${m.name}: connected through web.codinger.app` : `${m.name}: reconnecting…`}>
+                      <span className={`conn ${m.connected ? 'on' : 'off'}`} />
+                      <span>{m.name}</span>
+                      <button className="link" title={`New session on ${m.name}`} onClick={() => setNewIn({ cwd: '', machine: m.name })}>+</button>
+                    </div>
+                    {mlead && <Row s={mlead} label="Lead" active={st.selected === mlead.id} onMenu={openMenu} />}
+                    {tree(m.name)}
+                  </div>
+                )
+              })}
+              {away.map((name) => <div key={name} className="machine-head off" title={`${name} is not connected. Turn on remote access in its Codinger.`}><span className="conn off" /><span>{name}</span><span className="muted">not connected</span></div>)}
+            </>}
+          </div>
+        )}
+        {!st.sessions.some((s) => s.kind === 'worker' && s.archived === st.showArchived) && <div className="muted pad">{st.showArchived ? 'No archived sessions.' : 'No sessions yet.'}</div>}
       </nav>
       <CostBanner open={() => setSettings('cost')} />
       <div className="side-foot">
         {/* Floats above the line, so it takes no room from the footer. */}
         {custom && <button className="reset-order" title="Sort folders by latest activity, sessions oldest first" onClick={() => void api('/api/sessions/order', 'DELETE')}>Reset order</button>}
-        <button className="link" title="Settings" onClick={() => setSettings(true)}><GearIcon size={14} /></button>
+        <button className="link" title={st.web ? `Settings of ${currentMachine()}` : 'Settings'} onClick={() => setSettings(true)}><GearIcon size={14} /></button>
         <div className="side-foot-mid">
           {(u.fiveHour != null || u.sevenDay != null) && (
             <div className="usage" data-tip={limitsTip(u)} onClick={() => setSettings('cost')}>
@@ -189,7 +183,7 @@ export function Sidebar({ width }: { width: number }) {
         {/* One toggle: pressed while the list shows archived sessions. */}
         <button className={`link archive-toggle${st.showArchived ? ' on' : ''}`} title={st.showArchived ? 'Show active sessions' : 'Show archived sessions'} onClick={() => { state.showArchived = !state.showArchived; changed() }}><ArchiveIcon size={14} /></button>
       </div>
-      {newIn !== null && <NewSession cwd={newIn} onClose={() => setNewIn(null)} />}
+      {newIn !== null && <NewSession cwd={newIn.cwd} machine={newIn.machine} onClose={() => setNewIn(null)} />}
       {history && <HistoryDialog onClose={() => setHistory(false)} />}
       {settings && <SettingsDialog page={settings === true ? undefined : settings} onClose={() => setSettings(false)} />}
       {tasks && <TasksDialog onClose={() => setTasks(false)} />}
@@ -198,13 +192,59 @@ export function Sidebar({ width }: { width: number }) {
   )
 }
 
+// One machine's sessions, by folder. Its folder order and session order are its own.
+function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: string): void; onMenu(s: SessionMeta, e: React.MouseEvent): void }) {
+  const st = useStore()
+  const m = st.machines[machine]
+  const groupOrder = m?.settings.groupOrder
+  const groups = groupSessions(m?.sessions ?? [], st.showArchived, groupOrder)
+  const { start, sortable } = useDragSort((key, ids) => {
+    if (!m) return
+    if (key === `${machine}|groups`) {
+      // Folders not on screen (the other of active and archived) keep their place after these.
+      const order = [...ids, ...(groupOrder ?? []).filter((c) => !ids.includes(c))]
+      m.settings = { ...m.settings, groupOrder: order }
+      void api('/api/settings', 'PUT', { groupOrder: order }, machine)
+    } else {
+      m.sessions = m.sessions.map((s) => ids.includes(s.id) ? { ...s, order: ids.indexOf(s.id) } : s)
+      void api('/api/sessions/order', 'PUT', { ids: ids.map(localId) }, machine)
+    }
+    changed()
+  })
+  return <>{groups.map(([cwd, list]) => {
+    const g = sortable(`${machine}|groups`, cwd)
+    // A session and those nested under it move as one.
+    const ids = new Set(list.map((x) => x.id))
+    const kids = (parent: string | null) => list.filter((x) => (x.parentId && ids.has(x.parentId) ? x.parentId : null) === parent)
+    const branch = (x: SessionMeta, depth: number): React.ReactNode => {
+      const key = `${machine}|${cwd}|${x.parentId && ids.has(x.parentId) ? x.parentId : ''}`
+      const b = sortable(key, x.id)
+      return (
+        <div key={x.id} {...b} className={`branch${b.className}`}>
+          <Row s={x} depth={depth} active={st.selected === x.id} onPointerDown={(e) => start(e, key, x.id)} onMenu={onMenu} />
+          {kids(x.id).map((k) => branch(k, depth + 1))}
+        </div>
+      )
+    }
+    return (
+      <div key={cwd} {...g} className={`group${g.className}`}>
+        <div className="group-head" title={`${cwd}\nDrag to move`} onPointerDown={(e) => start(e, `${machine}|groups`, cwd)}>
+          <span>{cwd.split(/[\\/]/).pop()}</span>
+          <button className="link" title={`New session in ${machine ? cwd : short(cwd)}`} onClick={() => onNew(cwd)}>+</button>
+        </div>
+        {kids(null).map((x) => branch(x, 0))}
+      </div>
+    )
+  })}</>
+}
+
 function Row({ s, depth = 0, active, label, onPointerDown, onMenu }: { s: SessionMeta; depth?: number; active: boolean; label?: string; onPointerDown?(e: React.PointerEvent): void; onMenu?(s: SessionMeta, e: React.MouseEvent): void }) {
   const parent = useStore().sessions.find((x) => x.id === s.parentId)
   return (
     <button className={`row${active ? ' active' : ''}${s.unread ? ' unread' : ''}`} style={{ paddingLeft: 10 + depth * 16 }} onClick={() => select(s.id)} onPointerDown={onPointerDown} onContextMenu={onMenu && ((e) => onMenu(s, e))}>
       <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={26} title={STATUS_LABEL[s.status]} child={!!s.parentId} />
       <span className="row-main">
-        <span className="row-title">{label ?? s.title}{parent && <span className="row-from"> (from {parent.title})</span>}</span>
+        <span className="row-title">{machineOf(s.id) !== LOCAL && <GlobeIcon size={11} className="row-remote" title={`On ${machineOf(s.id)}`} />}{label ?? s.title}{parent && <span className="row-from"> (from {parent.title})</span>}</span>
         <span className="row-sub">{s.compacting ? 'compacting' : STATUS_LABEL[s.status]} · {timeAgo(s.lastActivity)}<SpendHint s={s} /><CacheHint s={s} /></span>
       </span>
       {s.inbox.length > 0 && <span className="count" title="Drafts from the lead">{s.inbox.length}</span>}

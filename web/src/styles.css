@@ -114,6 +114,20 @@ body.resizing { cursor: col-resize; user-select: none; }
 .archive-toggle.on { color: var(--text); }
 .archive-banner { display: flex; align-items: center; gap: 6px; padding: 6px 12px; margin-bottom: 4px; background: color-mix(in srgb, var(--text) 6%, transparent); border-bottom: 1px solid var(--line); color: var(--muted); font-size: calc(12px * var(--fs, 1)); }
 .archive-banner .icon-btn { margin-left: auto; }
+/* Other machines' sessions (web/src/store.ts machines): a head you can close, then one per machine. */
+.remote-machines { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 4px; }
+.remote-head { display: flex; align-items: center; gap: 6px; width: 100%; border: none; background: none; padding: 6px 12px; color: var(--muted); font-size: calc(12px * var(--fs, 1)); text-align: left; }
+.remote-head:hover { color: var(--text); }
+.remote-head > .icon:first-child { transition: transform .15s; }
+.remote-head.open > .icon:first-child { transform: rotate(90deg); }
+.machine-head { display: flex; align-items: center; gap: 6px; padding: 8px 12px 2px; font-weight: 600; font-size: calc(12.5px * var(--fs, 1)); }
+.machine-head .link { margin-left: auto; }
+.machine-head.off { font-weight: normal; color: var(--muted); }
+.machine-head.off .muted { margin-left: auto; font-size: calc(11.5px * var(--fs, 1)); }
+.remote-panel p { margin: 0 0 10px; }
+.remote-panel label input { margin-left: 6px; }
+.remote-code { font: 600 calc(22px * var(--fs, 1)) var(--mono, monospace); letter-spacing: .15em; }
+.row-remote { vertical-align: -1px; margin-right: 4px; color: var(--muted); }
 .side-foot-mid { flex: 1; display: flex; justify-content: center; min-width: 0; }
 .reset-order { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 2; white-space: nowrap; font-size: calc(12px * var(--fs, 1)); padding: 0 4px; border: none; background: none; box-shadow: none; color: var(--muted); }
 .reset-order:hover { color: var(--text); text-decoration: underline; background: none; }

@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { DirListing, RecentDir } from '../../../shared/types.ts'
-import { api, state } from '../store.ts'
+import { api, currentMachine, LOCAL, state, urlOf } from '../store.ts'
 import { timeAgo } from '../util.ts'
 import { FolderIcon, UpIcon } from './Icons.tsx'
 
@@ -16,7 +16,8 @@ export const shortPath = (p: string) => {
   return at && (p.length === h.length || '/\\'.includes(p[h.length])) ? '~' + p.slice(h.length) : p
 }
 
-export function DirPicker({ value, onChange, autoFocus }: { value: string; onChange(v: string): void; autoFocus?: boolean }) {
+// machine: whose folders; the current session's by default.
+export function DirPicker({ value, onChange, autoFocus, machine = currentMachine() }: { value: string; onChange(v: string): void; autoFocus?: boolean; machine?: string }) {
   const [recent, setRecent] = useState<RecentDir[]>([])
   const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState<string | null>(null) // null until you type
@@ -25,7 +26,7 @@ export function DirPicker({ value, onChange, autoFocus }: { value: string; onCha
   const [picking, setPicking] = useState(false)
   const input = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { void api<RecentDir[]>('/api/recent-dirs', 'GET').then(setRecent).catch(() => {}) }, [])
+  useEffect(() => { void api<RecentDir[]>('/api/recent-dirs', 'GET', undefined, machine).then(setRecent).catch(() => {}) }, [machine])
 
   const q = (filter ?? '').toLowerCase().replace(/^~/, '')
   const shown = recent.filter((d) => !q || d.path.toLowerCase().includes(q)).slice(0, 30)
@@ -33,7 +34,7 @@ export function DirPicker({ value, onChange, autoFocus }: { value: string; onCha
 
   const finder = async () => {
     setPicking(true)
-    try { const r = await api<{ path: string | null }>('/api/fs/pick', 'POST', { path: value }); if (r.path) choose(r.path) } finally { setPicking(false) }
+    try { const r = await api<{ path: string | null }>('/api/fs/pick', 'POST', { path: value }, LOCAL); if (r.path) choose(r.path) } finally { setPicking(false) }
   }
 
   return (
@@ -57,7 +58,7 @@ export function DirPicker({ value, onChange, autoFocus }: { value: string; onCha
           }}
         />
         <button type="button" onClick={() => { setBrowsing(!browsing); setOpen(false) }}>{browsing ? 'Close' : 'Browse…'}</button>
-        {state.platform === 'darwin' && <button type="button" disabled={picking} onClick={finder} title="Choose a folder in Finder">{picking ? 'Waiting…' : 'Finder…'}</button>}
+        {!state.web && machine === LOCAL && state.machines[LOCAL]?.platform === 'darwin' && <button type="button" disabled={picking} onClick={finder} title="Choose a folder in Finder">{picking ? 'Waiting…' : 'Finder…'}</button>}
       </div>
       {open && !browsing && shown.length > 0 && (
         <div className="dir-menu" onMouseDown={(e) => e.preventDefault()}>
@@ -70,18 +71,18 @@ export function DirPicker({ value, onChange, autoFocus }: { value: string; onCha
           ))}
         </div>
       )}
-      {browsing && <DirBrowser start={value} onChoose={choose} />}
+      {browsing && <DirBrowser key={machine} start={value} onChoose={choose} machine={machine} />}
     </div>
   )
 }
 
-function DirBrowser({ start, onChoose }: { start: string; onChoose(p: string): void }) {
+function DirBrowser({ start, onChoose, machine }: { start: string; onChoose(p: string): void; machine: string }) {
   const [listing, setListing] = useState<DirListing | null>(null)
   const [hidden, setHidden] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const go = async (p: string, h = hidden) => {
     try {
-      const r = await fetch(`/api/fs/dirs?path=${encodeURIComponent(p)}${h ? '&hidden=1' : ''}`)
+      const r = await fetch(urlOf(`/api/fs/dirs?path=${encodeURIComponent(p)}${h ? '&hidden=1' : ''}`, machine))
       const j = await r.json()
       if (!r.ok) throw new Error(j.error)
       setListing(j); setErr(null)

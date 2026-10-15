@@ -8,9 +8,11 @@ import type { ImageRef } from '../../../shared/types.ts'
 import { htmlToMarkdown } from '../htmlmd.ts'
 import { activate, enterKey, fromDom, imageCaret, imgNode, rangeAt, render, select, selectionOffsets, snapCaret, wrapKey } from '../mdlive.ts'
 import { imagesFrom, uploadImage } from '../util.ts'
+import { media } from '../store.ts'
 import { ImageIcon, XIcon } from './Icons.tsx'
 
 type Props = {
+  machine?: string   // the machine its images go to; the current one by default
   value: string
   onChange(v: string): void
   // Images attached the older way, beside the text rather than in it.
@@ -39,7 +41,7 @@ function caretAt(x: number, y: number): Range | null {
 
 type Snap = { v: string; s: number; e: number; t: number }
 
-export function RichInput({ value, onChange, images, onImages, placeholder, autoFocus, onSubmit, onEscape, minRows = 2, onKey }: Props) {
+export function RichInput({ value, onChange, images, onImages, placeholder, autoFocus, onSubmit, onEscape, minRows = 2, onKey, machine }: Props) {
   const ed = useRef<HTMLDivElement>(null)
   const fake = useRef<HTMLSpanElement>(null)       // the caret beside an image (mdlive.ts imageCaret)
   const last = useRef<string | null>(null)        // what this field last reported
@@ -142,8 +144,8 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
       at = r
       el.removeAttribute('data-empty')
       try {
-        const ref = await uploadImage(f)
-        img.src = ref.url
+        const ref = await uploadImage(f, machine)
+        img.src = media(ref.url, machine)
         img.dataset.url = ref.url
         img.classList.remove('loading')
       } catch { img.remove() /* the store shows the error */ }
@@ -204,7 +206,7 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
         <div className="thumbs">
           {images.map((im, i) => (
             <span className="thumb" key={im.url + i}>
-              <img src={im.url} alt="" />
+              <img src={media(im.url, machine)} alt="" />
               <button type="button" title="Remove image" onClick={() => onImages(images.filter((_, j) => j !== i))}><XIcon size={10} /></button>
             </span>
           ))}
@@ -292,5 +294,5 @@ function endOf(el: HTMLElement): Range {
 
 export function Thumbs({ images }: { images?: ImageRef[] }) {
   if (!images?.length) return null
-  return <div className="thumbs sent">{images.map((im, i) => <a key={i} href={im.url} target="_blank" rel="noreferrer"><img src={im.url} alt="" /></a>)}</div>
+  return <div className="thumbs sent">{images.map((im, i) => <a key={i} href={media(im.url)} target="_blank" rel="noreferrer"><img src={media(im.url)} alt="" /></a>)}</div>
 }
