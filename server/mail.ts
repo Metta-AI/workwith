@@ -1,7 +1,7 @@
 // Sessions that work together: a worker can start child sessions, see the other sessions,
 // and send them messages. A message goes in at once, or when the receiver's turn ends.
-// A parent and its children may always write to each other; other sessions only as the
-// receiver's filter allows. A parent's message to its archived child takes the child out of
+// A parent and its children may always write to each other; other sessions too, unless the
+// receiver narrowed its inbox with set_inbox. A parent can archive its children. A parent's message to its archived child takes the child out of
 // the archive, so a parent can reuse a child that has the context. A child's parent hears
 // when the child goes idle after work the parent sent it. A child's message to its parent waits for the child's next tool call: if
 // its turn ends first, the parent gets one message that says so, and no separate idle note. Past MAX_RUN messages in a row from one sender, with no word from you in
@@ -38,7 +38,7 @@ export function startMail(c: Ctx) {
   })
 }
 
-export const MAIL_TOOLS = ['list_sessions', 'spawn_session', 'send_message', 'reply', 'set_inbox', 'read_session', 'stop_session']
+export const MAIL_TOOLS = ['list_sessions', 'spawn_session', 'send_message', 'reply', 'set_inbox', 'read_session', 'stop_session', 'archive_session']
 const isMailTool = (name: string) => MAIL_TOOLS.some((t) => name === `mcp__codinger__${t}`)
 
 const busy = (m: SessionMeta) => m.status === 'working' || m.status === 'permission' || m.compacting
@@ -304,6 +304,21 @@ export function mailTools(id: string): Tool[] {
         if (!String(message ?? '').trim()) return done
         const why = refusal(me().meta, s.meta)
         return `${done} ${why ? `The message did not go: ${why}` : sent(s, post(s, { from: id, title: me().meta.title, text: String(message) }))}`
+      },
+    },
+    {
+      name: 'archive_session',
+      description: "Archive one of your children (or their children), as the user does in the sidebar: its process ends, and it keeps its whole context. When a child's task is done, archive it, to keep the sidebar clean. If it left real questions for the user, leave it open. If it left only a routine question (for example \"may I restart?\"), ask the user that question in your own conversation, then archive the child. A message from you takes your archived child out of the archive again.",
+      inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } },
+      run: ({ id: target }) => {
+        const s = session(target)
+        if (!isAncestor(id, s.meta)) throw new Error('You can archive only your own children and their children.')
+        if (s.meta.archived) return `"${s.meta.title}" is already archived.`
+        if (busy(s.meta)) throw new Error(`"${s.meta.title}" is in a turn. Wait until it is idle, or stop it with stop_session first.`)
+        s.meta.archived = true
+        s.stop()
+        ctx.changed()
+        return `Archived "${s.meta.title}". A message from its parent takes it out of the archive again.`
       },
     },
   ]
