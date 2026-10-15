@@ -184,6 +184,9 @@ function pull(x: number | null) {
 let edge: { x0: number; y0: number; x: number; t: number; v: number; drag: boolean; shut: boolean } | null = null
 document.addEventListener('touchstart', (e) => {
   const t = e.touches[0], el = e.target as Element
+  // A reaction button keeps its press and drag: no pull, and no back swipe from Safari (which opens
+  // the sessions, below), however near the edge it is. It works by pointer events, which still come.
+  if (phone.matches && el.closest?.('.ack-btn, .react-mark')) { edge = null; e.preventDefault(); return }
   const shut = state.sideOpen && !!el.closest?.('.sidebar')
   edge = phone.matches && e.touches.length === 1 && (shut || (!state.sideOpen && t.clientX < 20 && !el.closest?.('button, a, input, textarea, select, .ack-pop, .emoji-picker')))
     ? { x0: t.clientX, y0: t.clientY, x: t.clientX, t: e.timeStamp, v: 0, drag: false, shut } : null

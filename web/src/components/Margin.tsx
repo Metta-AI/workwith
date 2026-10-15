@@ -232,7 +232,7 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
     <div className="margin" ref={layer}>
       {notes.map((n) => n.kind === 'draft' ? (
         <NoteCard
-          key={n.id} sid={sid} note={n.draft!}
+          key={n.id} sid={sid} note={n.draft!} onOpen={() => setOpen(n.id)}
           onFocus={() => { if (state.focus === n.id) state.focus = null; focused.current = n.id; setOpen(n.id); layout(); keepInView(); focusPassage(sid, n) }}
           onBlur={() => {
             if (focused.current === n.id) focused.current = null
@@ -257,10 +257,24 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
   )
 }
 
-function NoteCard({ sid, note, onFocus, onBlur }: { sid: string; note: NoteDraft; onFocus(): void; onBlur(): void }) {
+function NoteCard({ sid, note, onOpen, onFocus, onBlur }: { sid: string; note: NoteDraft; onOpen(): void; onFocus(): void; onBlur(): void }) {
   const [focus] = useState(() => state.focus === note.id)
-  useEffect(() => { if (state.focus === note.id) state.focus = null }, [note.id])
   const card = useRef<HTMLDivElement>(null)
+  // A new card stays open even if the focus misses it, as a phone allows a focus only in a touch
+  // handler (a selection can end with none). Then a touch elsewhere takes it away while empty.
+  useEffect(() => {
+    if (state.focus !== note.id) return
+    state.focus = null
+    onOpen()
+    const away = (e: PointerEvent) => {
+      if (card.current?.contains(e.target as Node) || card.current?.contains(document.activeElement)) return
+      document.removeEventListener('pointerdown', away)
+      const d = draftsOf(sid).find((x) => x.id === note.id) as NoteDraft | undefined
+      if (d && isEmpty(d)) removeDraft(sid, note.id)
+    }
+    document.addEventListener('pointerdown', away)
+    return () => document.removeEventListener('pointerdown', away)
+  }, [note.id])
   const [picking, setPicking] = useState(false)
   // The passage's reactions (not sent yet), which the emoji row shows as on.
   const k = JSON.stringify(note.anchor)
