@@ -2,7 +2,8 @@
 // The shape is Prolifica's, so one can be published there as it is.
 
 // A tool call that wrote an artifact's files, or showed it: where in which session.
-export type ArtifactTouch = { sid: string; seq: number; ts: number }
+// tool: the tool call's id; v: the version of the artifact it left; show: a show_artifact call.
+export type ArtifactTouch = { sid: string; seq: number; ts: number; tool?: string; v?: number; show?: boolean }
 
 export type Artifact = {
   name: string            // its folder under ~/.codinger/artifacts
@@ -12,6 +13,7 @@ export type Artifact = {
   created?: ArtifactTouch // the first tool call Codinger saw write it
   edits: ArtifactTouch[]  // every one since, oldest first (the last 100)
   published?: ArtifactPublished
+  latest?: number         // its newest version
   error?: string          // its artifact.json could not be read
 }
 
@@ -23,7 +25,8 @@ export type ArtifactPublished = {
 export type Visibility = 'public' | 'unlisted' | 'private'
 
 // What the preview pane of a session shows: an artifact, or a page a dev server serves.
-export type PreviewTarget = { artifact: string } | { url: string }
+// v: one of its versions; without, the artifact as it is now.
+export type PreviewTarget = { artifact: string; v?: number } | { url: string }
 
 // The Prolifica account Codinger publishes with, once connected.
 export type ProlificaState = { handle: string | null; origin: string } | null

@@ -23,10 +23,14 @@ import type { Artifact, ArtifactPublished, ArtifactTouch, Visibility } from '../
 
 export const ARTIFACTS = path.join(DATA, 'artifacts')
 const RECORD = path.join(DATA, 'artifacts.json')
+const BLOBS = path.join(DATA, 'artifact-versions')
 const BRIDGE = path.join(DATA, 'bridge.js')
 fs.mkdirSync(ARTIFACTS, { recursive: true })
+fs.mkdirSync(BLOBS, { recursive: true })
 
-type Rec = { created?: ArtifactTouch; edits: ArtifactTouch[]; published?: ArtifactPublished }
+// versions: what its files were (path -> sha256 of a blob in artifact-versions/) at each change.
+type Version = { n: number; at: number; files: Record<string, string> }
+type Rec = { created?: ArtifactTouch; edits: ArtifactTouch[]; published?: ArtifactPublished; versions?: Version[] }
 let record: Record<string, Rec> = (() => { try { return JSON.parse(fs.readFileSync(RECORD, 'utf8')) } catch { return {} } })()
 const saveRecord = () => fs.writeFile(RECORD, JSON.stringify(record, null, 1), () => {})
 const recOf = (name: string) => (record[name] ??= { edits: [] })
@@ -41,6 +45,52 @@ type Manifest = {
 }
 function manifest(name: string): Manifest {
   return JSON.parse(fs.readFileSync(path.join(dirOf(name), 'artifact.json'), 'utf8'))
+}
+
+// An artifact's files, as they are now or as one version had them. rel: a path inside its folder.
+type Source = { name: string; v?: number; read(rel: string): Buffer | null; hash(rel: string): string | undefined; manifest(): Manifest }
+function sourceOf(name: string, v?: number): Source | null {
+  if (!NAME_RE.test(name) || !fs.existsSync(dirOf(name))) return null
+  const dir = dirOf(name)
+  if (v == null) return {
+    name,
+    read: (rel) => { const f = path.resolve(dir, rel); return f.startsWith(dir + path.sep) && fs.existsSync(f) && fs.statSync(f).isFile() ? fs.readFileSync(f) : null },
+    hash: (rel) => { const f = path.join(dir, rel); return fs.existsSync(f) ? String(Math.round(fs.statSync(f).mtimeMs)) : undefined },
+    manifest: () => manifest(name),
+  }
+  const ver = record[name]?.versions?.find((x) => x.n === v)
+  if (!ver) return null
+  const read = (rel: string) => { const h = ver.files[path.posix.normalize(rel.split(path.sep).join('/'))]; return h ? fs.readFileSync(path.join(BLOBS, h)) : null }
+  return { name, v, read, hash: (rel) => ver.files[rel]?.slice(0, 16), manifest: () => JSON.parse(read('artifact.json')?.toString('utf8') ?? '{}') }
+}
+
+// Its files, top level and one folder down (data/), dot files left out.
+function filesOf(dir: string): string[] {
+  const out: string[] = []
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (e.name.startsWith('.')) continue
+    if (e.isDirectory()) { for (const f of fs.readdirSync(path.join(dir, e.name), { withFileTypes: true })) if (f.isFile() && !f.name.startsWith('.')) out.push(`${e.name}/${f.name}`) }
+    else if (e.isFile()) out.push(e.name)
+  }
+  return out.sort()
+}
+
+// Keep what the artifact's files are now as a version, unless the last one is the same. Its number.
+function snapshot(name: string): number {
+  const dir = dirOf(name)
+  const files: Record<string, string> = {}
+  for (const rel of filesOf(dir)) {
+    const bytes = fs.readFileSync(path.join(dir, rel))
+    const h = sha(bytes)
+    if (!fs.existsSync(path.join(BLOBS, h))) fs.writeFileSync(path.join(BLOBS, h), bytes)
+    files[rel] = h
+  }
+  const r = recOf(name)
+  const last = r.versions?.at(-1)
+  if (last && JSON.stringify(last.files) === JSON.stringify(files)) return last.n
+  const n = (last?.n ?? 0) + 1
+  r.versions = [...(r.versions ?? []), { n, at: Date.now(), files }]
+  return n
 }
 
 // The latest change to any file in the folder (one level of subfolders: data/).
@@ -59,7 +109,7 @@ export function listArtifacts(): Artifact[] {
   for (const e of fs.readdirSync(ARTIFACTS, { withFileTypes: true })) {
     if (!e.isDirectory() || !NAME_RE.test(e.name) || !fs.existsSync(path.join(dirOf(e.name), 'index.html'))) continue
     const r = record[e.name] ?? { edits: [] }
-    const a: Artifact = { name: e.name, title: e.name, mtime: mtimeOf(dirOf(e.name)), created: r.created, edits: r.edits, published: r.published }
+    const a: Artifact = { name: e.name, title: e.name, mtime: mtimeOf(dirOf(e.name)), created: r.created, edits: r.edits, published: r.published, latest: r.versions?.at(-1)?.n }
     try { const m = manifest(e.name); a.title = m.title || e.name; a.description = m.description } catch (err) { a.error = `artifact.json: ${(err as Error).message}` }
     out.push(a)
   }
@@ -76,13 +126,15 @@ function artifactOfPath(file: unknown): string | null {
 
 function touch(name: string, t: ArtifactTouch) {
   const r = recOf(name)
-  if (r.edits.some((e) => e.sid === t.sid && e.seq === t.seq)) return
+  t = { ...t, v: snapshot(name) }
+  if (r.edits.some((e) => t.tool ? e.tool === t.tool : e.sid === t.sid && e.seq === t.seq)) return saveRecord()
   r.created ??= t
   r.edits = [...r.edits, t].slice(-100)
   saveRecord()
 }
 
-// A tool call finished: if it wrote into an artifact's folder, note which session and message did.
+// A tool call finished: if it wrote into an artifact's folder, note which session and message did,
+// and keep the files as a version.
 export function noteTool(tool: string, input: any, t: ArtifactTouch): boolean {
   if (!['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(tool)) return false
   const name = artifactOfPath(input?.file_path ?? input?.notebook_path)
@@ -185,21 +237,20 @@ function inject(html: string, tags: string): string {
   return tags + html
 }
 
-function page(name: string, app: string): string {
-  const dir = dirOf(name)
-  const m = manifest(name)
+function page(src: Source, app: string): string {
+  const m = src.manifest()
   const bindings: Record<string, unknown> = {}
   for (const [slot, file] of Object.entries(m.bindings ?? {})) {
     const local = !file.startsWith('prolifica:')
     const [kind, contentType] = KINDS[path.extname(file).toLowerCase()] ?? ['text', 'text/plain']
     const declared = m.slots?.[slot]?.kind
-    bindings[slot] = {
-      id: local ? file : file.slice(10), path: file, kind: declared && declared !== 'any' ? declared : kind, contentType,
-      hash: local && fs.existsSync(path.join(dir, file)) ? String(Math.round(fs.statSync(path.join(dir, file)).mtimeMs)) : undefined,
-    }
+    bindings[slot] = { id: local ? file : file.slice(10), path: file, kind: declared && declared !== 'any' ? declared : kind, contentType, hash: local ? src.hash(file) : undefined }
   }
-  const config = { isle: { id: name, title: m.title ?? name, version: 0 }, slots: m.slots ?? {}, bindings, app, origin: '' }
-  return inject(fs.readFileSync(path.join(dir, 'index.html'), 'utf8'), `${reporter(name)}<script>window.__PROLIFICA__=${esc(config)}</script><script src="/bridge.js"></script>`)
+  // isle.id names the folder the bridge fetches data from: "<name>@<version>" for an old version.
+  const id = src.v == null ? src.name : `${src.name}@${src.v}`
+  const config = { isle: { id, title: m.title ?? src.name, version: src.v ?? 0 }, slots: m.slots ?? {}, bindings, app, origin: '' }
+  // Only the page as it is now reports its errors (to show_artifact); an old version is for looking at.
+  return inject(src.read('index.html')?.toString('utf8') ?? '', `${src.v == null ? reporter(src.name) : ''}<script>window.__PROLIFICA__=${esc(config)}</script><script src="/bridge.js"></script>`)
 }
 
 export function startHost(port: number, uiOrigins: () => string[]): Promise<number> {
@@ -210,10 +261,10 @@ export function startHost(port: number, uiOrigins: () => string[]): Promise<numb
     if (!allowed.has(req.headers.host ?? '')) { res.writeHead(403).end(); return }
     const url = new URL(req.url ?? '/', 'http://x')
     const base = { 'x-content-type-options': 'nosniff', 'cache-control': 'no-store' }
-    const [, name, ...rest] = url.pathname.split('/').map((p) => { try { return decodeURIComponent(p) } catch { return '' } })
+    const [, first, ...rest] = url.pathname.split('/').map((p) => { try { return decodeURIComponent(p) } catch { return '' } })
     try {
       if (url.pathname === '/bridge.js') { res.writeHead(200, { ...base, 'content-type': 'text/javascript' }).end(await bridge()); return }
-      if (name === '_report' && req.method === 'POST' && NAME_RE.test(rest[0] ?? '')) {
+      if (first === '_report' && req.method === 'POST' && NAME_RE.test(rest[0] ?? '')) {
         let s = ''
         for await (const c of req) { s += c; if (s.length > 20_000) break }
         const m = JSON.parse(s)
@@ -224,26 +275,32 @@ export function startHost(port: number, uiOrigins: () => string[]): Promise<numb
         res.writeHead(204).end()
         return
       }
-      if (!name || !NAME_RE.test(name) || !fs.existsSync(dirOf(name))) { res.writeHead(404, base).end('No such artifact'); return }
-      if (!rest.length) { res.writeHead(301, { location: `/${name}/${url.search}` }).end(); return }
+      // "<name>" is the artifact as it is now; "<name>@3" its version 3.
+      const [name, v] = (first ?? '').split('@')
+      const src = sourceOf(name, v ? Number(v) : undefined)
+      if (!src) { res.writeHead(404, base).end('No such artifact'); return }
+      if (!rest.length) { res.writeHead(301, { location: `/${first}/${url.search}` }).end(); return }
       if (rest.length === 1 && rest[0] === '') {
         // The pane says which window holds it, so the bridge's messages go there and nowhere else.
         const app = url.searchParams.get('app') ?? ''
-        res.writeHead(200, { ...base, 'content-type': 'text/html; charset=utf-8' }).end(page(name, uiOrigins().includes(app) ? app : uiOrigins()[0]))
+        res.writeHead(200, { ...base, 'content-type': 'text/html; charset=utf-8' }).end(page(src, uiOrigins().includes(app) ? app : uiOrigins()[0]))
         return
       }
       const cors = { 'access-control-allow-origin': '*' }
       // What prolifica.data(slot) fetches: the bound file, or the dataset on Prolifica it names.
+      let rel = rest.join('/')
       if (rest[0] === 'data' && rest.length === 2) {
-        const file = manifest(name).bindings?.[rest[1]]
+        const file = src.manifest().bindings?.[rest[1]]
         if (file?.startsWith('prolifica:')) {
           const r = await call(`/api/data/${encodeURIComponent(file.slice(10))}/raw`).catch((e) => { throw Object.assign(e, { status: 502 }) })
           res.writeHead(200, { ...base, ...cors, 'content-type': typeof r === 'string' ? 'text/plain; charset=utf-8' : 'application/json' }).end(typeof r === 'string' ? r : JSON.stringify(r))
           return
         }
-        if (file) return serveFile(path.join(dirOf(name), file), name, res, { ...base, ...cors })
+        if (file) rel = file
       }
-      serveFile(path.join(dirOf(name), ...rest), name, res, { ...base, ...cors })
+      const bytes = src.read(rel)
+      if (!bytes) { res.writeHead(404, { ...base, ...cors }).end('No such file'); return }
+      res.writeHead(200, { ...base, ...cors, 'content-type': typeOf(rel) }).end(bytes)
     } catch (e) {
       if (!res.headersSent) res.writeHead((e as { status?: number }).status ?? 500, base).end((e as Error).message)
     }
@@ -253,14 +310,6 @@ export function startHost(port: number, uiOrigins: () => string[]): Promise<numb
     server.on('listening', () => { const p = (server.address() as { port: number }).port; allowed = hosts(p); resolve(p) })
     server.listen(port, '127.0.0.1')
   })
-}
-
-function serveFile(file: string, name: string, res: http.ServerResponse, headers: Record<string, string>) {
-  const dir = dirOf(name)
-  const real = path.resolve(file)
-  if (!real.startsWith(dir + path.sep) || !fs.existsSync(real) || fs.statSync(real).isDirectory()) { res.writeHead(404, headers).end('No such file'); return }
-  res.writeHead(200, { ...headers, 'content-type': typeOf(real) })
-  fs.createReadStream(real).pipe(res)
 }
 
 // Something about the artifacts changed: tell the listener once, a moment later.

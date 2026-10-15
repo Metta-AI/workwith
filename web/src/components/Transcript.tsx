@@ -15,6 +15,7 @@ import { StateMark, TasksDialog, lastDraw, stateLabel } from './TasksDialog.tsx'
 import { minutes } from '../cache.ts'
 import { AgentsIcon, MailIcon, BlockIcon, CheckIcon, ChevronIcon, DashIcon, XIcon, FileIcon, GlobeIcon, ListIcon, PencilIcon, SearchIcon, OpenIcon, TerminalIcon, TimerIcon, ToolIcon, TrashIcon } from './Icons.tsx'
 import { shortPath } from './DirPicker.tsx'
+import { ArtifactLine, SHOW_ARTIFACT } from './Artifacts.tsx'
 
 type PermEvent = Extract<Event, { t: 'permission' }>
 type Folded = {
@@ -244,7 +245,7 @@ function items(events: Event[], f: Folded, steps: Set<string>): Item[] {
     switch (e.t) {
       case 'assistant':
         // Messages to other sessions stay in view, out of the folded activity.
-        e.blocks.forEach((b, i) => out.push({ key: `${e.seq}.${i}`, e, block: b, i, activity: b.type === 'tool_use' ? !MAIL_TOOL[b.name] : b.type !== 'text' || steps.has(`${e.seq}.${i}`) }))
+        e.blocks.forEach((b, i) => out.push({ key: `${e.seq}.${i}`, e, block: b, i, activity: b.type === 'tool_use' ? !MAIL_TOOL[b.name] && b.name !== SHOW_ARTIFACT : b.type !== 'text' || steps.has(`${e.seq}.${i}`) }))
         break
       case 'permission': {
         const resolved = f.resolved.has(e.requestId)
@@ -402,6 +403,8 @@ function BlockView({ sid, b, msg, f, synthetic }: { sid: string; b: Block; msg: 
   }
   if (b.type === 'thinking') return <details className="thinking" open><summary>Thinking</summary><div className="md" dangerouslySetInnerHTML={{ __html: renderMd(b.text) }} /></details>
   const perm = f.permOf.get(b.id)
+  // Where an artifact was shown: a line of its own, which shows that version again.
+  if (b.name === SHOW_ARTIFACT && !perm) return <ArtifactLine sid={sid} b={b} result={f.results.get(b.id)} />
   return <ToolCall b={b} result={f.results.get(b.id)} resolution={perm ? f.resolved.get(perm.requestId) : undefined} />
 }
 

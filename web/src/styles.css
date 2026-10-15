@@ -881,10 +881,20 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 /* ---- artifacts (components/Artifacts.tsx) ---- */
 .artifact-pane { flex: none; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); background: var(--panel); }
 .artifact-top { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
-.artifact-top select { min-width: 0; max-width: 60%; }
+/* Its own caret, with room on the right: the native one sits against the edge. */
+.artifact-top select { min-width: 0; max-width: 45%; appearance: none; -webkit-appearance: none; padding: 4px 26px 4px 9px; text-overflow: ellipsis;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: right 13px center, right 9px center; background-size: 4px 4px, 4px 4px; background-repeat: no-repeat; }
+.artifact-top .icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 5px; }
+.artifact-top .publish button { padding: 3px 10px; }
+.artifact-pane.wide { flex: 1; min-width: 0; }
+.session-body.preview-wide > .session-main { display: none; }
+.artifact-version { display: flex; align-items: center; gap: 8px; padding: 5px 10px; font-size: calc(12.5px * var(--fs, 1)); background: color-mix(in srgb, var(--warn) 14%, transparent); border-bottom: 1px solid var(--line); }
+.artifact-line .tool-sum .muted { color: inherit; opacity: .75; }
+.artifact-history li.on .version { font-weight: 600; }
+.artifact-history .version { padding: 0; margin-right: 4px; }
 .artifact-top .grow { flex: 1; }
 .artifact-url { font-family: var(--mono); font-size: calc(12px * var(--fs, 1)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.artifact-bar { display: flex; justify-content: flex-end; padding: 6px 8px; border-bottom: 1px solid var(--line); }
 .artifact-frame { flex: 1; min-height: 0; width: 100%; border: none; background: var(--bg); }
 .artifact-check { position: fixed; left: -10000px; top: 0; width: 1280px; height: 800px; border: none; visibility: hidden; }
 .artifact-missing { padding: 24px; text-align: center; }
@@ -892,7 +902,8 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .publish-link { display: inline-flex; align-items: center; gap: 3px; font-size: calc(12.5px * var(--fs, 1)); }
 .publish-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: 280px; display: flex; flex-direction: column; gap: 8px; padding: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, .18); text-align: left; }
 .publish-pop label { display: flex; flex-direction: column; gap: 4px; font-size: calc(12.5px * var(--fs, 1)); }
-.publish-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.publish-foot { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+.publish-foot .muted { flex: 1; }
 .small { font-size: calc(12px * var(--fs, 1)); }
 .prolifica-conn { display: inline-flex; align-items: center; gap: 4px; font-size: calc(12.5px * var(--fs, 1)); }
 .side-artifacts.on { color: var(--accent); }

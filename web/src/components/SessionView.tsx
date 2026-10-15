@@ -455,6 +455,9 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
   const shownAt = st.preview[id]?.at
   useEffect(() => { if (shownAt && Date.now() - shownAt < 5000) { localStorage.setItem('codinger.previewPane', '1'); setPreview(true) } }, [shownAt])
   if (!m) return <div className="empty">No such session.</div>
+  // wide: the pane takes the conversation's place too (the conversation stays mounted, hidden).
+  const [wide, setWide] = useState(() => localStorage.getItem('codinger.previewWide') === '1')
+  const toggleWide = () => { localStorage.setItem('codinger.previewWide', wide ? '0' : '1'); setWide(!wide) }
   const open = items.filter((i) => i.status === 'open').length
   const canPreview = hasPreview(id)
   const files = filesOf(id).length
@@ -466,7 +469,7 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
         {files > 0 && <button className={`panel-toggle icon-tall${filesOn ? ' on' : ''}`} title="Attached files" onClick={toggleFiles}><ClipIcon size={15} /></button>}
         {items.length > 0 && <button className={`panel-toggle icon-tall${panel ? ' on' : ''}`} title="Questions and items" onClick={togglePanel}><PanelIcon size={15} />{open > 0 && <span className="count">{open}</span>}</button>}
       </>} />
-      <div className="session-body">
+      <div className={`session-body${preview && canPreview && wide ? ' preview-wide' : ''}`}>
         <DropZone m={m}>
           {(attachRef) => <>
             <Transcript sid={id} />
@@ -474,8 +477,8 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
           </>}
         </DropZone>
         {preview && canPreview && <>
-          <Splitter width={previewW} setWidth={setPreviewW} min={280} max={1400} initial={480} reverse />
-          <ArtifactPane sid={id} width={previewW} onHide={togglePreview} />
+          {!wide && <Splitter width={previewW} setWidth={setPreviewW} min={280} max={1400} initial={480} reverse />}
+          <ArtifactPane sid={id} width={previewW} wide={wide} onWide={toggleWide} onHide={togglePreview} />
         </>}
         {filesOn && files > 0 && <>
           <Splitter width={filesW} setWidth={setFilesW} min={200} max={560} initial={260} reverse />

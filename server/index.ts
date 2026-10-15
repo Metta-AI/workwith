@@ -172,7 +172,7 @@ const hooks: Hooks = {
         const b = a.t === 'assistant' ? a.blocks.find((x) => x.type === 'tool_use' && x.id === event.toolUseId) : undefined
         if (b?.type === 'tool_use') {
           noteEdit(b.name, b.input, { kind: 'session', sid: s.meta.id, title: s.meta.title, seq: a.seq })
-          if (!event.isError && noteTool(b.name, b.input, { sid: s.meta.id, seq: a.seq, ts: event.ts })) artifactsChanged()
+          if (!event.isError && noteTool(b.name, b.input, { sid: s.meta.id, seq: a.seq, ts: event.ts, tool: b.id })) artifactsChanged()
           break
         }
       }
@@ -653,8 +653,10 @@ function artifactTool(id: string): Tool {
       const name = String(args?.name ?? '').trim()
       const bad = checkArtifact(name)
       if (bad) return bad
-      const seq = s.getEvents().findLast((e) => e.t === 'assistant')?.seq ?? 0
-      showArtifact(name, { sid: id, seq, ts: Date.now() })
+      // This call's place in the conversation, for its line there and the artifact's history.
+      const ev = s.getEvents().findLast((e) => e.t === 'assistant' && e.blocks.some((b) => b.type === 'tool_use' && b.name.endsWith('show_artifact')))
+      const call = ev?.t === 'assistant' ? ev.blocks.findLast((b) => b.type === 'tool_use' && b.name.endsWith('show_artifact')) : undefined
+      showArtifact(name, { sid: id, seq: ev?.seq ?? 0, ts: Date.now(), show: true, tool: call?.type === 'tool_use' ? call.id : undefined })
       artifactsChanged()
       broadcast({ type: 'preview', sessionId: id, target: { artifact: name }, at: Date.now() })
       return `Shown in the preview pane (http://127.0.0.1:${artifactsPort}/${name}/). ${await reportOf(name)}`
