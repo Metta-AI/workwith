@@ -4,6 +4,7 @@
 import type { Look } from './looks.ts'
 import type { Appearance } from './appearance.ts'
 import type { Artifact, PreviewTarget, ProlificaState } from './artifacts.ts'
+import type { UpdateStatus } from './update.ts'
 
 export type Status =
   | 'new'        // never sent anything
@@ -189,12 +190,13 @@ export type Settings = {
 }
 
 export type ServerMsg =
-  | { type: 'hello'; sessions: SessionMeta[]; settings: Settings; usage: Usage; platform: string; home: string; auth: AuthState; stale?: boolean; remote?: RemoteStatus; device?: 'laptop' | 'desktop' }
+  | { type: 'hello'; sessions: SessionMeta[]; settings: Settings; usage: Usage; platform: string; home: string; auth: AuthState; stale?: boolean; update?: UpdateStatus; remote?: RemoteStatus; device?: 'laptop' | 'desktop' }
   | { type: 'device'; device: 'laptop' | 'desktop' }
   | { type: 'remote'; remote: RemoteStatus }
   | { type: 'auth'; auth: AuthState }
   // The server's code on disk is newer than the running server.
   | { type: 'stale'; stale: boolean }
+  | { type: 'update'; update: UpdateStatus }
   // A tracked file has a new version.
   | { type: 'file'; path: string }
   // A command run from a <run> block ended.

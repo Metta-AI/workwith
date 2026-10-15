@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client'
 import { useEffect } from 'react'
-import { api, changed, select, start, state, useStore, currentMachine, labelOf, machineOf } from './store.ts'
+import { api, changed, globalId, select, start, state, useStore, currentMachine, labelOf, machineOf } from './store.ts'
+import type { SessionMeta } from '../../shared/types.ts'
 import { useState } from 'react'
 import { Sidebar } from './components/Sidebar.tsx'
 import { SessionView } from './components/SessionView.tsx'
@@ -36,6 +37,7 @@ function App() {
         {/* On a phone the sidebar covers the page; this shows it again. */}
         <button className="icon-btn side-show" aria-label="Sessions" onClick={() => { state.sideOpen = true; changed() }}><MenuIcon size={18} /></button>
         <SignIn />
+        <Update />
         <Restart />
         {!st.connected && !st.sessions.length ? <div className="empty">Connecting to the Codinger server…</div>
           : st.page === 'artifacts' ? <ArtifactsView />
@@ -46,6 +48,31 @@ function App() {
       {welcome && <AppearanceDialog welcome onClose={() => setWelcome(false)} />}
       {st.lightbox && <div className="lightbox" onClick={() => { state.lightbox = null; changed() }}><img src={st.lightbox} alt="" /></div>}
       {st.error && <div className="toast" onClick={() => { state.error = null; changed() }}>{st.error}</div>}
+    </div>
+  )
+}
+
+// An update from origin/main (server/update.ts) that waits, runs or stopped. When it
+// installs, the server restarts and the page comes back by itself.
+function Update() {
+  const { update: u } = useStore()
+  const [closed, setClosed] = useState(() => localStorage.getItem('codinger.updateClosed'))
+  if (!u || u.state === 'current' || (closed === u.head && u.state !== 'updating')) return null
+  const subject = u.subject.length > 90 ? u.subject.slice(0, 88) + '…' : u.subject
+  const what = `A Codinger update is ready (${u.behind === 1 ? '1 new commit' : `${u.behind} new commits`}, latest: “${subject}”).`
+  const close = () => { localStorage.setItem('codinger.updateClosed', u.head); setClosed(u.head) }
+  const agent = () => { const m = currentMachine(); void api<SessionMeta>('/api/update/agent', 'POST', undefined, m).then((s) => select(globalId(m, s.id))) }
+  return (
+    <div className="signin restart">
+      {u.state === 'updating' ? <span>Updating Codinger to “{subject}”…</span>
+        : u.state === 'waiting' ? <>
+          <span>{what} It installs when no session is working.</span>
+          <button className="primary" onClick={() => void api('/api/update/now', 'POST')}>Update now</button>
+        </> : <>
+          <span>{u.state === 'failed' ? `The Codinger update failed: ${u.why}` : `${what} It cannot install by itself: ${u.why}`}</span>
+          <button className="primary" onClick={agent}>Ask an agent to update</button>
+        </>}
+      {u.state !== 'updating' && <button className="link" onClick={close}>Not now</button>}
     </div>
   )
 }

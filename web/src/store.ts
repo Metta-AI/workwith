@@ -4,6 +4,7 @@
 import { useSyncExternalStore } from 'react'
 import type { Anchor, AuthState, Event, ImageRef, InboxItem, Part, RemoteStatus, ServerMsg, SessionMeta, Settings, Task, Usage } from '../../shared/types.ts'
 import type { RemoteMachine } from '../../shared/remote.ts'
+import type { UpdateStatus } from '../../shared/update.ts'
 import { inboxParts } from '../../shared/inbox.ts'
 import { itemsOf } from '../../shared/blocks.ts'
 import { applyAppearance, holdingAppearance } from './appearance.ts'
@@ -37,6 +38,7 @@ export type Machine = {
   home: string
   auth: AuthState
   stale: boolean
+  update?: UpdateStatus    // its update from origin/main (server/update.ts)
   remote?: RemoteStatus    // its own remote access
   device?: 'laptop' | 'desktop'
 }
@@ -66,6 +68,7 @@ type State = {
   tasks: Task[]   // long-running commands agents started (server/tasks.ts)
   fileTick: Record<string, number>   // bumped when a tracked file gets a new version
   stale: boolean                     // the server's code on disk is newer than the server
+  update?: UpdateStatus              // an update from origin/main that waits, runs or stopped
   restarting: boolean
   loaded: boolean                    // the server's hello came: sessions and settings are real
   page: 'artifacts' | null           // a page in place of the selected session
@@ -167,6 +170,7 @@ Object.defineProperties(state, {
   home: { get: () => cur().home },
   auth: { get: () => cur().auth },
   stale: { get: () => cur().stale },
+  update: { get: () => cur().update },
 })
 
 // The machine whose appearance this page wears: its own, or on the web the first one.
@@ -324,7 +328,7 @@ function onServer(m: ServerMsg, machine: string) {
   const looks = looksFrom() === machine
   switch (m.type) {
     case 'hello':
-      Object.assign(M, { sessions: own(m.sessions), settings: m.settings, usage: m.usage, loaded: true, platform: m.platform, home: m.home, auth: m.auth ?? { state: 'ok' }, stale: !!m.stale, remote: m.remote, device: m.device })
+      Object.assign(M, { sessions: own(m.sessions), settings: m.settings, usage: m.usage, loaded: true, platform: m.platform, home: m.home, auth: m.auth ?? { state: 'ok' }, stale: !!m.stale, update: m.update, remote: m.remote, device: m.device })
       if (looks) applyAppearance(m.settings.appearance)
       if (!machine) { state.restarting = false; onRemote(m.remote) }
       // A selected session that is gone, or a lead: the latest one instead.
@@ -343,6 +347,7 @@ function onServer(m: ServerMsg, machine: string) {
     case 'preview': state.preview = { ...state.preview, [g(m.sessionId)]: { target: m.target, at: m.at } }; break
     case 'auth': M.auth = m.auth; break
     case 'stale': M.stale = m.stale; break
+    case 'update': M.update = m.update; break
     case 'device': M.device = m.device; break
     case 'remote': M.remote = m.remote; if (!machine) onRemote(m.remote); break
     case 'file': state.fileTick = { ...state.fileTick, [m.path]: (state.fileTick[m.path] ?? 0) + 1 }; break

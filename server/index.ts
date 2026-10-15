@@ -38,6 +38,7 @@ import { blame, initFileHistory, moveHistory, noteEdit, record as recordVersion,
 import { CLAUDE, authState, cancelLogin, childEnv, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
 import { deviceType, findDevice } from './device.ts'
 import { remoteCancelLink, remoteForget, remoteHub, remoteLink, remoteOn, remoteProxy, remoteStatus, remoteUpgrade, startRemote } from './remote.ts'
+import { startUpdates, updateNow, updatePrompt, updateStatus } from './update.ts'
 import {
   DATA, LEAD_DIR, LEAD_NOTES, OLD_LEAD_NOTES, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, leadRenamed, resolveModel, loadSessions, promptFile, loadSettings, saveImage, saveSessions, saveSettings,
 } from './store.ts'
@@ -916,6 +917,13 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     setTimeout(restart, 100)
     return
   }
+  // The update from origin/main (server/update.ts): now, or by an agent in Codinger's own checkout.
+  if (a === 'update' && method === 'POST' && id === 'now') return send(res, 200, await updateNow())
+  if (a === 'update' && method === 'POST' && id === 'agent') {
+    const s = createSession({ cwd: ROOT, title: 'Update Codinger' })
+    deliver(s, [{ kind: 'text', text: updatePrompt() }])
+    return send(res, 200, s.meta)
+  }
   if (a === 'files') {
     const p = url.searchParams.get('path') ?? ''
     const known = trackedFiles().includes(p)
@@ -1346,7 +1354,7 @@ server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => {
     sockets.add(ws)
     ws.on('close', () => sockets.delete(ws))
-    ws.send(JSON.stringify({ type: 'hello', sessions: metas(), settings, usage, platform: process.platform, home: os.homedir(), auth: authState(), stale, remote: remoteStatus(), device: deviceType() } satisfies ServerMsg))
+    ws.send(JSON.stringify({ type: 'hello', sessions: metas(), settings, usage, platform: process.platform, home: os.homedir(), auth: authState(), stale, update: updateStatus(), remote: remoteStatus(), device: deviceType() } satisfies ServerMsg))
     ws.send(JSON.stringify({ type: 'tasks', tasks: allTasks() } satisfies ServerMsg))
     ws.send(JSON.stringify(artifactsMsg()))
   })
@@ -1384,6 +1392,7 @@ initAuth({
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Codinger on http://localhost:${PORT}${DEV ? ' (dev)' : ''}`)
   startRemote(PORT, (remote) => broadcast({ type: 'remote', remote }))
+  startUpdates({ root: ROOT, busy: () => [...sessions.values()].some(busy), restart, onChange: (update) => broadcast({ type: 'update', update }) })
   findDevice((device) => broadcast({ type: 'device', device }))
 })
 
