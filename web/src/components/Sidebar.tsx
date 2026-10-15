@@ -125,6 +125,7 @@ export function Sidebar({ width }: { width: number }) {
       <div className="brand">
         <span>Codinger</span>
         <span className={`conn ${st.connected ? 'on' : 'off'}`} title={st.connected ? 'Connected' : 'Reconnecting…'} />
+        <button className="icon-btn side-hide" aria-label="Hide sessions" onClick={() => { state.sideOpen = false; changed() }}><XIcon size={18} /></button>
       </div>
       <div className="side-actions">
         <button className="primary" onClick={() => setNewIn({ cwd: '', machine: tab === 'local' ? LOCAL : others[0]?.name })}>+ New session</button>
@@ -176,7 +177,7 @@ export function Sidebar({ width }: { width: number }) {
             </div>
           )}
         </div>
-        {st.artifacts.length > 0 && <button className={`link side-artifacts${st.page === 'artifacts' ? ' on' : ''}`} title={`Artifacts: ${st.artifacts.length}`} onClick={() => { state.page = state.page === 'artifacts' ? null : 'artifacts'; changed() }}><ArtifactIcon size={14} /></button>}
+        {st.artifacts.length > 0 && <button className={`link side-artifacts${st.page === 'artifacts' ? ' on' : ''}`} title={`Artifacts: ${st.artifacts.length}`} onClick={() => { state.page = state.page === 'artifacts' ? null : 'artifacts'; state.sideOpen = false; changed() }}><ArtifactIcon size={14} /></button>}
         {st.tasks.length > 0 && (() => {
           const running = st.tasks.filter((t) => !t.ended).length
           return <button className="link side-tasks" title={`Tasks: ${running} running`} onClick={() => setTasks(true)}><TerminalIcon size={14} />{running > 0 && <span>{running}</span>}</button>

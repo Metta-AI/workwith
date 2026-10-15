@@ -927,3 +927,50 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .artifact-history ul { list-style: none; margin: 0 0 6px; padding: 0; font-size: calc(13px * var(--fs, 1)); }
 .artifact-history li { padding: 2px 0; }
 .artifact-history button.link { padding: 0; color: var(--accent); }
+
+/* ---- phone ---- */
+/* The page never zooms (web/index.html viewport, main.tsx gestures); this stops the double-tap zoom and the text inflation. */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+.side-show, .side-hide, .head-actions .head-more { display: none; }
+.head-mode { display: contents; }
+@media (max-width: 720px) {
+  /* The sidebar covers the whole page; picking a session hides it (store.ts select). */
+  .app > .splitter { display: none; }
+  .sidebar { position: fixed; inset: 0; z-index: 25; width: auto !important; border-right: none; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); transform: translateX(-100%); visibility: hidden; transition: transform .2s ease-out, visibility 0s .2s; }
+  .app.side-open .sidebar { transform: none; visibility: visible; transition: transform .2s ease-out; }
+  .brand { justify-content: flex-start; gap: 8px; }
+  .side-hide { display: inline-flex; margin-left: auto; padding: 6px; }
+  .side-show { display: inline-flex; position: fixed; top: calc(12px + env(safe-area-inset-top)); left: calc(6px + env(safe-area-inset-left)); z-index: 6; padding: 8px; color: var(--text); }
+  .row { padding-top: 9px; padding-bottom: 9px; }
+  .row-close { visibility: visible; }
+  main { padding-top: env(safe-area-inset-top); }
+
+  /* Banners and the head leave room for the button that shows the sidebar. */
+  .signin { padding-left: 48px; }
+  .signin ~ .session .session-head, .signin ~ .artifacts-view .artifacts-head { padding-left: 12px; }
+  /* The head is one line: title, status, panels. The chevron (.head-more) shows the gauges and the mode below. */
+  .session-head { flex-wrap: wrap; align-items: flex-start; gap: 6px; padding: 8px 10px 8px 48px; }
+  .session-head .mascot { width: 30px; height: 33px; }
+  .head-main h1 { font-size: calc(15.5px * var(--fs, 1)); }
+  .head-sub { flex-wrap: wrap; row-gap: 2px; }
+  .session-head:not(.head-open) .head-sub > :not(.status-pill) { display: none; }
+  /* The buttons stay on the first line; the gauges and the mode open on lines below. */
+  .head-side, .head-actions { display: contents; }
+  .head-gauges { order: 3; flex-basis: 100%; flex-wrap: wrap; gap: 6px; }
+  .session-head.head-open .head-mode { display: flex; order: 4; flex-basis: 100%; gap: 6px; }
+  .session-head:not(.head-open) .head-gauges, .session-head:not(.head-open) .head-mode { display: none; }
+  .head-actions .head-more { display: inline-flex; }
+  .head-more .icon { transform: rotate(90deg); transition: transform .15s; }
+  .session-head.head-open .head-more .icon { transform: rotate(-90deg); }
+  .transcript-inner, .transcript-inner.gutter { padding: 14px 12px 30px 40px; }
+  .composer { padding: 8px 10px calc(10px + env(safe-area-inset-bottom)); }
+  .composer .slash-menu { left: 10px; width: calc(100% - 20px); }
+
+  /* The panels at the side of a session cover it. */
+  .session-body > .splitter { display: none; }
+  .session-body > .attention, .session-body > .artifact-pane { position: fixed; inset: 0; z-index: 20; width: auto !important; border-left: none; padding-top: env(safe-area-inset-top); }
+  .artifacts-view { flex-direction: column; }
+  .artifacts-list { width: auto; max-height: 40%; border-right: none; border-bottom: 1px solid var(--line); }
+  .artifacts-head { padding-left: 38px; }
+  .modal { width: 94vw; max-height: 92vh; overflow-y: auto; }
+}

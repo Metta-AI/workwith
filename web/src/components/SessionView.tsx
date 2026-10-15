@@ -10,7 +10,7 @@ import { AttentionPanel } from './AttentionPanel.tsx'
 import { ArtifactIcon, ArtifactPane, hasPreview } from './Artifacts.tsx'
 import { FilesPanel, filesOf } from './FilesPanel.tsx'
 import { revealItem, useItems } from '../items.ts'
-import { ClipIcon, MailIcon, MoreIcon, PanelIcon, UndoIcon, XIcon } from './Icons.tsx'
+import { ChevronIcon, ClipIcon, MailIcon, MoreIcon, PanelIcon, UndoIcon, XIcon } from './Icons.tsx'
 import { inboxLabel } from '../../../shared/inbox.ts'
 import { renderInline } from '../util.ts'
 import { isReaction } from '../emoji.ts'
@@ -97,8 +97,10 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
   // An alias or the default shows what it ran last time until Claude Code reports.
   const model = m.model?.includes('-') ? m.model : m.expectedModel ?? m.model
   const parent = useStore().sessions.find((x) => x.id === m.parentId)
+  // On a phone the head is one line; this button shows the gauges and the mode (styles.css).
+  const [more, setMore] = useState(false)
   return (
-    <header className="session-head">
+    <header className={`session-head${more ? ' head-open' : ''}`}>
       <Mascot status={m.status} look={m.look} fatigue={fatigue(m.context.used, m.context.window)} size={44} title={STATUS_LABEL[m.status]} child={!!m.parentId} />
       <div className="head-main">
         {editing
@@ -128,13 +130,16 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
           }} />
         </div>
         <div className="head-actions">
-          {m.kind === 'worker' && (
-            <select value={m.permissionMode} onChange={(e) => void api(`/api/sessions/${m.id}`, 'PATCH', { permissionMode: e.target.value })}>
-              {MODES.map((x) => <option key={x.v} value={x.v}>{x.label}</option>)}
-            </select>
-          )}
-          {m.kind === 'worker' && <AutopilotButton m={m} />}
+          <span className="head-mode">
+            {m.kind === 'worker' && (
+              <select value={m.permissionMode} onChange={(e) => void api(`/api/sessions/${m.id}`, 'PATCH', { permissionMode: e.target.value })}>
+                {MODES.map((x) => <option key={x.v} value={x.v}>{x.label}</option>)}
+              </select>
+            )}
+            {m.kind === 'worker' && <AutopilotButton m={m} />}
+          </span>
           {extra}
+          <button className="icon-tall head-more" aria-label={more ? 'Fewer details' : 'More details'} onClick={() => setMore(!more)}><ChevronIcon size={15} /></button>
           <SessionMenu m={m} />
         </div>
       </div>
@@ -441,23 +446,25 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
   const m = st.sessions.find((s) => s.id === id)
   useEffect(() => { void loadEvents(id) }, [id])
   const items = useItems(id)
-  const [panel, setPanel] = useState(() => localStorage.getItem('codinger.panel') !== '0')
+  // On a phone the panels cover the session (styles.css), so they start closed there.
+  const phone = matchMedia('(max-width: 720px)').matches
+  const [panel, setPanel] = useState(() => !phone && localStorage.getItem('codinger.panel') !== '0')
   const togglePanel = () => { localStorage.setItem('codinger.panel', panel ? '0' : '1'); setPanel(!panel) }
   const [panelW, setPanelW] = useWidth('attention', 300)
   // The preview pane (Artifacts.tsx): open while you leave it open, and whenever the agent shows something.
-  const [preview, setPreview] = useState(() => localStorage.getItem('codinger.previewPane') !== '0')
+  const [preview, setPreview] = useState(() => !phone && localStorage.getItem('codinger.previewPane') !== '0')
   const togglePreview = () => { localStorage.setItem('codinger.previewPane', preview ? '0' : '1'); setPreview(!preview) }
   const [previewW, setPreviewW] = useWidth('preview', 480)
+  // wide: the pane takes the conversation's place too (the conversation stays mounted, hidden).
+  const [wide, setWide] = useState(() => localStorage.getItem('codinger.previewWide') === '1')
+  const toggleWide = () => { localStorage.setItem('codinger.previewWide', wide ? '0' : '1'); setWide(!wide) }
   // The files attached to its messages (FilesPanel.tsx).
-  const [filesOn, setFilesOn] = useState(() => localStorage.getItem('codinger.filesPane') === '1')
+  const [filesOn, setFilesOn] = useState(() => !phone && localStorage.getItem('codinger.filesPane') === '1')
   const toggleFiles = () => { localStorage.setItem('codinger.filesPane', filesOn ? '0' : '1'); setFilesOn(!filesOn) }
   const [filesW, setFilesW] = useWidth('files', 260)
   const shownAt = st.preview[id]?.at
   useEffect(() => { if (shownAt && Date.now() - shownAt < 5000) { localStorage.setItem('codinger.previewPane', '1'); setPreview(true) } }, [shownAt])
   if (!m) return <div className="empty">No such session.</div>
-  // wide: the pane takes the conversation's place too (the conversation stays mounted, hidden).
-  const [wide, setWide] = useState(() => localStorage.getItem('codinger.previewWide') === '1')
-  const toggleWide = () => { localStorage.setItem('codinger.previewWide', wide ? '0' : '1'); setWide(!wide) }
   const open = items.filter((i) => i.status === 'open').length
   const canPreview = hasPreview(id)
   const files = filesOf(id).length

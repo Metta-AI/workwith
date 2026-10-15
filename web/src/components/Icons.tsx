@@ -12,6 +12,7 @@ function Svg({ size = 14, className, title, children }: P & { children: React.Re
   )
 }
 
+export const MenuIcon = (p: P) => <Svg {...p}><path d="M2.5 4h11M2.5 8h11M2.5 12h11" /></Svg>
 export const XIcon = (p: P) => <Svg {...p}><path d="M4 4l8 8M12 4l-8 8" /></Svg>
 export const ImageIcon = (p: P) => <Svg {...p}><rect x="2" y="3" width="12" height="10" rx="1.5" /><circle cx="6" cy="6.5" r="1.1" /><path d="M2.5 12l3.5-3.5 2.5 2.5 2-2 3 3" /></Svg>
 export const ClipIcon = (p: P) => <Svg {...p}><path d="M13 7.5l-5.3 5.3a3.2 3.2 0 01-4.5-4.5L8.6 2.9a2.1 2.1 0 013 3L6.3 11.2a1 1 0 01-1.5-1.5L9.5 5" /></Svg>

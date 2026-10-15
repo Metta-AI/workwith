@@ -78,6 +78,7 @@ type State = {
   email: string | null               // signed in there as
   self: string                       // this machine's name on web.codinger.app, once connected
   sideTab: 'local' | 'remote'        // the sidebar's tab, on a machine's own page
+  sideOpen: boolean                  // on a phone the sidebar covers the page: is it showing
   collapsed: string[]                // machines whose sessions you hid in the sidebar
   machineOrder: string[]             // other machines, in the order you dragged them to
 }
@@ -92,6 +93,7 @@ export const state = {
   composer: saved('codinger.composer', {}),
   focus: null,
   showArchived: false,
+  sideOpen: true,
   error: null,
   lightbox: null,
   showSteps: saved('codinger.showSteps', false),
@@ -404,6 +406,7 @@ export async function loadEvents(id: string, force = false) {
 export function select(id: string) {
   state.selected = id
   state.page = null
+  state.sideOpen = false
   changed()
   if (!id) return
   void loadEvents(id)

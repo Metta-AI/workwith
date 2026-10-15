@@ -8,6 +8,7 @@ import { Splitter, useWidth } from './components/Splitter.tsx'
 import { AppearanceDialog } from './components/AppearanceDialog.tsx'
 import { ArtifactCheck, ArtifactsView } from './components/Artifacts.tsx'
 import { useFavicon } from './favicon.tsx'
+import { MenuIcon } from './components/Icons.tsx'
 import { initTooltips } from './tooltip.ts'
 import './styles.css'
 
@@ -28,10 +29,12 @@ function App() {
   useEffect(() => { if (st.loaded && !st.settings.appearance) setWelcome(true) }, [st.loaded])
 
   return (
-    <div className="app">
+    <div className={`app${st.sideOpen ? ' side-open' : ''}`}>
       <Sidebar width={side} />
       <Splitter width={side} setWidth={setSide} min={180} max={560} initial={260} />
       <main>
+        {/* On a phone the sidebar covers the page; this shows it again. */}
+        <button className="icon-btn side-show" aria-label="Sessions" onClick={() => { state.sideOpen = true; changed() }}><MenuIcon size={18} /></button>
         <SignIn />
         <Restart />
         {!st.connected && !st.sessions.length ? <div className="empty">Connecting to the Codinger server…</div>
@@ -94,6 +97,9 @@ document.addEventListener('click', (e) => {
   changed()
 })
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && state.lightbox) { state.lightbox = null; changed() } })
+// No zoom on a phone: iOS Safari ignores user-scalable=no in the viewport tag, so stop the pinch here.
+for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false })
+document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault() }, { passive: false })
 
 void start()
 initTooltips()
