@@ -117,7 +117,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 /* The sidebar's tabs on a machine's own page: Local and Remote. */
 .side-tabs { display: flex; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .side-tabs button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: none; border-radius: 0; background: none; padding: 7px 0; color: var(--muted); font-size: calc(12.5px * var(--fs, 1)); }
-.side-tabs button + button { border-left: 1px solid var(--line); }
 .side-tabs button.on { background: color-mix(in srgb, var(--text) 9%, transparent); color: var(--text); font-weight: 600; }
 /* Other machines' sessions (web/src/store.ts machines): one full-width section each, its head shaded. */
 .machine { border-top: 1px solid var(--line); }
@@ -127,14 +126,14 @@ body.resizing { cursor: col-resize; user-select: none; }
 .machine-head:hover { background: color-mix(in srgb, var(--text) 9%, transparent); }
 .machine-chevron { flex: none; color: var(--muted); transform: rotate(90deg); transition: transform .15s; }
 .machine.shut .machine-chevron { transform: none; }
+.device { display: inline-flex; line-height: 0; }
 .machine-head .device { flex: none; color: var(--muted); }
 .machine-head .machine-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .machine-head .link { margin-left: auto; }
 .machine.off .machine-head { font-weight: normal; color: var(--muted); background: none; cursor: default; }
 .machine.off .muted { margin-left: auto; font-size: calc(11.5px * var(--fs, 1)); }
-/* A machine you drag: see-through, and the other machines blurred while it moves. */
-.machine.dragged { position: relative; z-index: 3; background: color-mix(in srgb, var(--panel) 70%, transparent); box-shadow: 0 6px 18px rgba(0, 0, 0, .2); }
-.tree:has(.machine.dragged) .machine:not(.dragged) { filter: blur(2px); opacity: .7; transition: filter .15s, opacity .15s; }
+/* A machine you drag: see-through, what it passes over shows through it blurred. */
+.machine.dragged { position: relative; z-index: 3; background: color-mix(in srgb, var(--panel) 35%, transparent); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); box-shadow: 0 6px 18px rgba(0, 0, 0, .2); }
 .machine.dragged .machine-head { background: color-mix(in srgb, var(--text) 10%, transparent); }
 .machine.sliding { transition: transform .18s ease; }
 .remote-panel p { margin: 0 0 10px; }

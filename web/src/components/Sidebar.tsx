@@ -133,7 +133,7 @@ export function Sidebar({ width }: { width: number }) {
       {/* On a machine's own page: its sessions, and the other machines'. On the web, every machine is remote. */}
       {!st.web && (others.length > 0 || away.length > 0 || !!local?.remote?.linked) && (
         <div className="side-tabs">
-          {(['local', 'remote'] as const).map((t) => <button key={t} className={tab === t ? 'on' : ''} onClick={() => { state.sideTab = t; changed() }}>{t === 'local' ? 'Local' : <><GlobeIcon size={12} /> Remote</>}</button>)}
+          {(['local', 'remote'] as const).map((t) => <button key={t} className={tab === t ? 'on' : ''} onClick={() => { state.sideTab = t; changed() }}>{t === 'local' ? <>{local && <DeviceIcon m={local} tip={false} />} Local</> : <><GlobeIcon size={13} /> Remote</>}</button>)}
         </div>
       )}
       <nav className={`tree${st.showArchived ? ' archived' : ''}`}>
@@ -195,10 +195,11 @@ export function Sidebar({ width }: { width: number }) {
 
 // A machine's icon: laptop or desktop, and what it runs.
 const OS: Record<string, string> = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }
-function DeviceIcon({ m }: { m: Machine }) {
+function DeviceIcon({ m, tip = true }: { m: Machine; tip?: boolean }) {
   // The only tooltip on a machine's head: on its icon, not on the head you click and drag.
   const title = `${m.name}: ${m.device === 'laptop' ? 'laptop' : m.device === 'desktop' ? 'desktop' : 'computer'}${OS[m.platform] ? `, ${OS[m.platform]}` : ''}, ${m.connected ? 'connected through web.codinger.app' : 'reconnecting…'}`
-  return m.device === 'desktop' ? <DesktopIcon os={m.platform} size={18} className="device" title={title} /> : <LaptopIcon os={m.platform} size={18} className="device" title={title} />
+  const Icon = m.device === 'desktop' ? DesktopIcon : LaptopIcon
+  return <span className="device" data-tip={tip ? title : undefined}><Icon os={m.platform} size={tip ? 18 : 15} /></span>
 }
 
 // One machine's sessions, by folder. Its folder order and session order are its own.
