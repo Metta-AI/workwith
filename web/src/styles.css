@@ -563,6 +563,9 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .ri-edit { --col: .55em; }
 .ri-edit .md-hang { display: inline-block; width: 100%; box-sizing: border-box; vertical-align: top; padding-left: calc(var(--n) * var(--col)); text-indent: calc(var(--n) * var(--col) * -1); }
 .ri-edit .md-cols { display: inline-block; width: calc(var(--n) * var(--col)); text-indent: 0; white-space: pre; overflow: hidden; vertical-align: top; }
+/* A number is narrower than its columns: it sits at their right, as in a list on
+   the page, so the gap before the text is one space and the rest indents it. */
+.ri-edit .md-ol { text-align: right; }
 .ri-edit .md-li:not(.md-active) > .md-ul { position: relative; color: transparent; }
 .ri-edit .md-li:not(.md-active) > .md-ul::before { content: '•'; position: absolute; left: .1em; color: var(--muted); }
 /* A quote shows its bar, or, while the caret is at its "> " (mdlive.ts), the "> " in the bar's place. */

@@ -14,17 +14,37 @@ import { CostBanner } from './CostPanel.tsx'
 import type { Page } from './SettingsDialog.tsx'
 import { shortPath } from './DirPicker.tsx'
 
+// Sessions that need you come first, then the ones at work, then the finished ones.
+// A session nested under another lifts it to its own tier.
+const own = (s: SessionMeta) => s.status === 'working' ? 1 : s.status === 'idle' || s.status === 'new' ? 2 : 0
+function tiers(list: SessionMeta[]) {
+  const t = new Map(list.map((s) => [s.id, own(s)]))
+  const byId = new Map(list.map((s) => [s.id, s]))
+  for (const s of list) {
+    const seen = new Set<string>()
+    const up = (x: SessionMeta) => x.parentId ? byId.get(x.parentId) : undefined
+    for (let p = up(s); p && p.cwd === s.cwd && !seen.has(p.id); p = up(p)) {
+      seen.add(p.id)
+      t.set(p.id, Math.min(t.get(p.id)!, own(s)))
+    }
+  }
+  return (s: SessionMeta) => t.get(s.id)!
+}
+
 // Sessions grouped by directory; sessions spawned for another one nest under it.
-// You can drag both into place; until you do, both go by latest activity, newest
-// on top. Folders and sessions you have not placed yet come first.
+// Each tier keeps the order you dragged them into, then the newest on top; folders
+// go by the order you dragged them into, then by their most urgent session. Neither
+// goes by latest activity, so a busy session does not move the others about.
 export function groupSessions(sessions: SessionMeta[], archived: boolean, groupOrder: string[] = []) {
   const workers = sessions.filter((s) => s.kind === 'worker' && s.archived === archived)
   const groups = new Map<string, SessionMeta[]>()
+  const tier = tiers(workers)
   const place = (s: SessionMeta) => s.order ?? -1
-  for (const s of workers.sort((a, b) => place(a) - place(b) || b.lastActivity - a.lastActivity)) groups.set(s.cwd, [...(groups.get(s.cwd) ?? []), s])
+  for (const s of workers.sort((a, b) => tier(a) - tier(b) || place(a) - place(b) || b.createdAt - a.createdAt)) groups.set(s.cwd, [...(groups.get(s.cwd) ?? []), s])
   const rank = (cwd: string) => { const i = groupOrder.indexOf(cwd); return i < 0 ? -1 : i }
-  const recent = (list: SessionMeta[]) => Math.max(...list.map((s) => s.lastActivity))
-  return [...groups.entries()].sort((a, b) => rank(a[0]) - rank(b[0]) || recent(b[1]) - recent(a[1]))
+  const top = (list: SessionMeta[]) => Math.min(...list.map(tier))
+  const newest = (list: SessionMeta[]) => Math.max(...list.map((s) => s.createdAt))
+  return [...groups.entries()].sort((a, b) => rank(a[0]) - rank(b[0]) || top(a[1]) - top(b[1]) || newest(b[1]) - newest(a[1]))
 }
 
 export function treeOf(list: SessionMeta[]): { s: SessionMeta; depth: number; parent: string | null }[] {

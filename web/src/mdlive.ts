@@ -133,7 +133,7 @@ function line(text: string, list: boolean): { nodes: Node[]; list: boolean } {
   if ((m = /^(\s*)([-*+] )(.*)$/.exec(text)))
     return { nodes: [hang('md-x md-li', m[1].length + 2, ...(m[1] ? [cols('', m[1])] : []), cols('md-bullet md-ul', m[2]), ...inline(m[3]))], list: true }
   if ((m = /^(\s*)(\d+[.)] )(.*)$/.exec(text)))
-    return { nodes: [hang('md-li', m[1].length + m[2].length, ...(m[1] ? [cols('', m[1])] : []), cols('md-bullet', m[2]), ...inline(m[3]))], list: true }
+    return { nodes: [hang('md-li', m[1].length + m[2].length, ...(m[1] ? [cols('', m[1])] : []), cols('md-bullet md-ol', m[2]), ...inline(m[3]))], list: true }
   if (list && (m = /^([ \t]+)(\S.*)$/.exec(text))) return { nodes: [hang('md-cont', m[1].length, cols('', m[1]), ...inline(m[2]))], list: true }
   if ((m = /^(> ?)(.*)$/.exec(text))) return { nodes: [span('md-x md-line md-quote', mark(m[1], true), ...inline(m[2]))], list: false }
   return { nodes: inline(text), list: false }
