@@ -895,6 +895,14 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 
 /* Autopilot (components/Autopilot.tsx) */
 .head-actions button.autopilot-on { border-color: var(--accent); color: var(--accent); }
+/* The children list (SessionView.tsx): its ::before fills the gap under the button, so the
+   pointer can go down to it and the hover holds. */
+.children-pop { min-width: 220px; max-width: 360px; }
+.head-actions button.pinned { background: rgba(127, 127, 127, .14); }
+.children-pop::before { content: ''; position: absolute; left: 0; right: 0; top: -6px; height: 6px; }
+.head-actions .children-pop button { display: flex; align-items: center; gap: 8px; }
+.children-pop .child-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.children-pop button.archived .child-title { opacity: .6; }
 .autopilot-pop { width: 320px; gap: 8px; padding: 10px; font-size: calc(12.5px * var(--fs, 1)); }
 .autopilot-pop textarea { width: 100%; box-sizing: border-box; font: inherit; resize: vertical; }
 .autopilot-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }

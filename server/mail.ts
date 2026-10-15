@@ -1,14 +1,16 @@
 // Sessions that work together: a worker can start child sessions, see the other sessions,
 // and send them messages. A message goes in at once, or when the receiver's turn ends.
 // A parent and its children may always write to each other; other sessions only as the
-// receiver's filter allows. A child's parent hears when the child goes idle after work the
-// parent sent it. A child's message to its parent waits for the child's next tool call: if
+// receiver's filter allows. A parent's message to its archived child takes the child out of
+// the archive, so a parent can reuse a child that has the context. A child's parent hears
+// when the child goes idle after work the parent sent it. A child's message to its parent waits for the child's next tool call: if
 // its turn ends first, the parent gets one message that says so, and no separate idle note. Past MAX_RUN messages in a row from one sender, with no word from you in
 // either session, a message waits for your OK.
 
 import { randomUUID } from 'node:crypto'
 import type { Mail, Part, PermissionMode, SessionMeta } from '../shared/types.ts'
 import { MAX_RUN, excerpt } from '../shared/mail.ts'
+import { cacheLeft, knownTtl } from '../shared/cache.ts'
 import type { Session } from './session.ts'
 import type { Tool } from './mcp.ts'
 
@@ -70,7 +72,11 @@ function session(id: unknown): Session {
 // the receiver wrote first.
 function refusal(from: SessionMeta, to: SessionMeta, reply = false): string | null {
   if (to.id === from.id) return 'That is your own session.'
-  if (to.archived) return `"${to.title}" is archived.`
+  if (to.archived) {
+    if (relation(from, to) !== 'child') return `"${to.title}" is archived. Only its parent can take it out of the archive.`
+    if (childrenOf(from.id).filter((c) => !c.archived).length >= MAX_CHILDREN) return `"${to.title}" is archived, and you have ${MAX_CHILDREN} children that are not archived, the most there can be. Ask the user to archive the ones that are done.`
+    return null
+  }
   if (reply || relation(from, to)) return null
   const f = to.mailFilter
   if (f?.mode === 'any' || (f?.mode === 'only' && f.ids?.includes(from.id))) return null
@@ -79,6 +85,8 @@ function refusal(from: SessionMeta, to: SessionMeta, reply = false): string | nu
 
 function post(to: Session, m: Omit<Mail, 'id' | 'ts'>): Mail {
   const mail: Mail = { ...m, id: `m${randomUUID().slice(0, 7)}`, ts: Date.now() }
+  // A parent's message reopens its archived child (refusal() checked the limit).
+  if (to.meta.archived && to.meta.parentId === m.from) to.meta.archived = false
   if (!m.idle && (to.meta.mailRun?.[m.from] ?? 0) >= MAX_RUN) mail.held = true
   if (!m.idle && metaOf(m.from)?.parentId === to.meta.id) mail.step = true
   to.meta.mail = [...to.meta.mail ?? [], mail]
@@ -88,12 +96,20 @@ function post(to: Session, m: Omit<Mail, 'id' | 'ts'>): Mail {
 }
 
 // What the sender hears of its message.
-function sent(to: Session, m: Mail): string {
+// A child's prompt cache: a message after it expires writes the whole context to the cache again.
+function cacheOf(m: SessionMeta): string {
+  const left = cacheLeft(m, Date.now(), knownTtl(workers()))
+  return left == null ? 'empty' : left > 0 ? `warm for ${Math.ceil(left / 60_000)} more min` : 'expired'
+}
+
+// reopened: the message took it out of the archive.
+function sent(to: Session, m: Mail, reopened = false): string {
   const t = `"${to.meta.title}"`
-  if (m.held) return `Held for the user's OK as \`${m.id}\`: ${t} got ${MAX_RUN} messages in a row from you, and the user wrote in neither session since. Ask the user to press Send on it in ${t}.`
-  if (m.step) return `Sent to ${t} as \`${m.id}\`. It goes in at your next tool call, or when your turn ends: then it also tells ${t} that you are idle.`
-  if (to.meta.mail?.some((x) => x.id === m.id)) return `Queued as \`${m.id}\`: ${t} is in the middle of a turn, and gets it when the turn ends.`
-  return `Delivered to ${t} as \`${m.id}\`.`
+  return (reopened ? `Took ${t} out of the archive: it resumes with its whole context. ` : '') + (
+    m.held ? `Held for the user's OK as \`${m.id}\`: ${t} got ${MAX_RUN} messages in a row from you, and the user wrote in neither session since. Ask the user to press Send on it in ${t}.`
+    : m.step ? `Sent to ${t} as \`${m.id}\`. It goes in at your next tool call, or when your turn ends: then it also tells ${t} that you are idle.`
+    : to.meta.mail?.some((x) => x.id === m.id) ? `Queued as \`${m.id}\`: ${t} is in the middle of a turn, and gets it when the turn ends.`
+    : `Delivered to ${t} as \`${m.id}\`.`)
 }
 
 // Send the messages waiting for a session, in one turn, if it is between turns.
@@ -178,13 +194,15 @@ export function mailTools(id: string): Tool[] {
   return [
     {
       name: 'list_sessions',
-      description: 'The other Codinger sessions (each a full Claude Code session with a name): id, title, directory, status, parent and children, what each is to you, and whether it takes messages from you.',
+      description: 'The other Codinger sessions (each a full Claude Code session with a name): id, title, directory, status, parent and children, what each is to you, and whether it takes messages from you. It also lists your archived children, and for each child its context use and its prompt cache: a message to a child whose cache expired writes its whole context to the cache again, at full price.',
       inputSchema: { type: 'object', properties: {} },
       run: () => {
         const m = me().meta
-        return workers().filter((x) => !x.archived).map((x) => ({
+        return workers().filter((x) => !x.archived || x.parentId === m.id).map((x) => ({
           id: x.id, title: x.title, cwd: x.cwd, status: x.status,
+          ...(x.archived ? { archived: true } : {}),
           ...(x.id === m.id ? { you: true } : { is: relation(m, x) ?? (x.parentId && x.parentId === m.parentId ? 'sibling' : 'other') }),
+          ...(x.parentId === m.id ? { context: `${Math.round(x.context.used / 1000)}k of ${Math.round(x.context.window / 1000)}k tokens`, cache: cacheOf(x) } : {}),
           parent: x.parentId, children: childrenOf(x.id).filter((c) => !c.archived).map((c) => c.id),
           inbox: x.mailFilter?.mode === 'any' ? 'any' : x.mailFilter?.mode === 'only' ? `parent, children and ${x.mailFilter.ids?.join(', ')}` : 'parent and children',
           ...(x.id === m.id ? {} : { takes_messages_from_you: !refusal(m, x) }),
@@ -193,7 +211,7 @@ export function mailTools(id: string): Tool[] {
     },
     {
       name: 'spawn_session',
-      description: `Start a child session: a full Claude Code session with its own name, which the user can see and talk to in Codinger, and which you can message. Use it to delegate a large, separate piece of work (not for a quick search: use your own subagents for that). It gets your prompt as a message from you, and you hear when it ends its turn and is idle. For children that work in the same git repository at the same time, make a git worktree for each one and start it there. At most ${MAX_CHILDREN} children; a child's child cannot start children.`,
+      description: `Start a child session: a full Claude Code session with its own name, which the user can see and talk to in Codinger, and which you can message. Use it to delegate a large, separate piece of work (not for a quick search: use your own subagents for that). It gets your prompt as a message from you, and you hear when it ends its turn and is idle. Before you start one, look in list_sessions for a child of yours that already has the context for the work, archived or not, and send it a message instead; start a new one when that child's context is large or the work is unrelated. For children that work in the same git repository at the same time, make a git worktree for each one and start it there. At most ${MAX_CHILDREN} children; a child's child cannot start children.`,
       inputSchema: {
         type: 'object', required: ['title', 'prompt'],
         properties: {
@@ -215,14 +233,15 @@ export function mailTools(id: string): Tool[] {
     },
     {
       name: 'send_message',
-      description: 'Send a message to another session. It goes in at once if the session is between turns, or when its turn ends. Your parent and your children always take your messages; other sessions only if they opened their inbox to you (see list_sessions). To answer a message you got, use reply.',
+      description: 'Send a message to another session. It goes in at once if the session is between turns, or when its turn ends. Your parent and your children always take your messages; other sessions only if they opened their inbox to you (see list_sessions). A message to your archived child takes it out of the archive. To answer a message you got, use reply.',
       inputSchema: { type: 'object', required: ['to', 'message'], properties: { to: { type: 'string', description: 'The session id' }, message: { type: 'string' } } },
       run: ({ to, message }) => {
         const m = me().meta, s = session(to)
         const why = refusal(m, s.meta)
         if (why) throw new Error(why)
         if (!String(message ?? '').trim()) throw new Error('Give a message')
-        return sent(s, post(s, { from: id, title: m.title, text: String(message) }))
+        const reopened = s.meta.archived
+        return sent(s, post(s, { from: id, title: m.title, text: String(message) }), reopened)
       },
     },
     {
@@ -239,7 +258,8 @@ export function mailTools(id: string): Tool[] {
         const why = refusal(m, s.meta, true)
         if (why) throw new Error(why)
         if (!String(message ?? '').trim()) throw new Error('Give a message')
-        return sent(s, post(s, { from: id, title: m.title, text: String(message), replyTo: { id: mid, text: excerpt(orig.text) } }))
+        const reopened = s.meta.archived
+        return sent(s, post(s, { from: id, title: m.title, text: String(message), replyTo: { id: mid, text: excerpt(orig.text) } }), reopened)
       },
     },
     {

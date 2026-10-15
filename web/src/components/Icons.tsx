@@ -40,6 +40,7 @@ export const PanelIcon = (p: P) => <Svg {...p}><rect x="2" y="3" width="12" heig
 export const TimerIcon = (p: P) => <Svg {...p}><circle cx="8" cy="9" r="5" /><path d="M8 9V6.5M6.5 2h3M12 4.5l1 -1" /></Svg>
 export const OpenIcon = (p: P) => <Svg {...p}><path d="M9.5 2.5h4v4M13.5 2.5L8 8" /><path d="M11.5 9.5v3a1 1 0 01-1 1h-7a1 1 0 01-1-1v-7a1 1 0 011-1h3" /></Svg>
 export const MoreIcon = (p: P) => <Svg {...p}><path d="M3.5 8h.01M8 8h.01M12.5 8h.01" strokeWidth="2.2" /></Svg>
+export const ChildrenIcon = (p: P) => <Svg {...p}><circle cx="8" cy="3.5" r="1.8" /><circle cx="3.8" cy="12.5" r="1.8" /><circle cx="12.2" cy="12.5" r="1.8" /><path d="M8 5.3V8M3.8 10.7V8h8.4v2.7" /></Svg>
 export const MailIcon = (p: P) => <Svg {...p}><rect x="2" y="3.5" width="12" height="9" rx="1.5" /><path d="M2.5 4.5L8 9l5.5-4.5" /></Svg>
 // Machines: a laptop or a desktop with its system's logo on the screen.
 // The logos are Simple Icons (simpleicons.org, CC0), drawn on a 24px grid.

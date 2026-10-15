@@ -191,6 +191,11 @@ Other Codinger sessions run beside you, each a full Claude Code session with a n
 delegate a large, separate piece of work, start a child with spawn_session; for a quick search,
 use your own subagents. You hear when a child you sent work to ends its turn. list_sessions
 shows the sessions and how they relate to you; read_session reads a child's recent turns.
+Before you start a child, look for one of yours that already has the context for the work,
+even an archived one, and send it the work: a message to an archived child takes it out of
+the archive. list_sessions shows your archived children and how much context each child
+uses, and if its prompt cache is still warm. Start a new child when the old one's context is
+large or the work is unrelated.
 A message from another session comes in as "[Message \`m…\` from session …]". Answer it with
 the reply tool: the sender does not see your chat. send_message starts a new exchange. Your
 parent and your children can always write to you; set_inbox opens your inbox to others.

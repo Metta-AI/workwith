@@ -10,7 +10,7 @@ import { AttentionPanel } from './AttentionPanel.tsx'
 import { ArtifactIcon, ArtifactPane, hasPreview } from './Artifacts.tsx'
 import { FilesPanel, filesOf } from './FilesPanel.tsx'
 import { revealItem, useItems } from '../items.ts'
-import { ChevronIcon, ClipIcon, MailIcon, MoreIcon, PanelIcon, UndoIcon, XIcon } from './Icons.tsx'
+import { ChevronIcon, ChildrenIcon, ClipIcon, MailIcon, MoreIcon, PanelIcon, UndoIcon, XIcon } from './Icons.tsx'
 import { inboxLabel } from '../../../shared/inbox.ts'
 import { renderInline } from '../util.ts'
 import { isReaction } from '../emoji.ts'
@@ -141,6 +141,7 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
               </select>
             )}
             {m.kind === 'worker' && <AutopilotButton m={m} />}
+            <ChildrenButton m={m} />
           </span>
           {extra}
           <button className="icon-tall head-more" aria-label={more ? 'Fewer details' : 'More details'} onClick={() => setMore(!more)}><ChevronIcon size={15} /></button>
@@ -149,6 +150,43 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
       </div>
       {publishing && <PublishDialog m={m} onClose={() => setPublishing(false)} />}
     </header>
+  )
+}
+
+// The sessions this one started, archived ones last. Hover shows them, a click keeps them open,
+// and a click on one shows it.
+function ChildrenButton({ m }: { m: SessionMeta }) {
+  const kids = useStore().sessions.filter((x) => x.parentId === m.id)
+    .sort((a, b) => Number(a.archived) - Number(b.archived) || a.createdAt - b.createdAt)
+  const [hover, setHover] = useState(false)
+  const [pinned, setPinned] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!pinned) return
+    const down = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setPinned(false) }
+    document.addEventListener('mousedown', down)
+    return () => document.removeEventListener('mousedown', down)
+  }, [pinned])
+  if (!kids.length) return null
+  const open = hover || pinned
+  const go = (id: string) => { setPinned(false); setHover(false); select(id) }
+  return (
+    <div className="menu-wrap" ref={box} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+      <button className={`icon-tall${pinned ? ' pinned' : ''}`} aria-label={`Children: ${kids.length}`} aria-expanded={open} onClick={() => setPinned(!pinned)}>
+        <ChildrenIcon size={15} />{kids.length}
+      </button>
+      {open && (
+        <div className="menu children-pop">
+          {kids.map((k) => (
+            <button key={k.id} className={k.archived ? 'archived' : ''} onClick={() => go(k.id)}>
+              <Mascot status={k.status} look={k.look} fatigue={fatigue(k.context.used, k.context.window)} size={18} child />
+              <span className="child-title">{k.title}</span>
+              <span className="muted">{k.archived ? 'archived' : STATUS_LABEL[k.status]}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
