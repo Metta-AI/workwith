@@ -1,6 +1,7 @@
 import { describeLook, type Look } from '../shared/looks.ts'
 
 const WIN = process.platform === 'win32'
+const PORT = Number(process.env.PORT ?? 4545)
 
 // Appended to Claude Code's own system prompt. Sessions learn what this UI adds:
 // the kinds of content they mark (shared/blocks.ts), and replies that
@@ -70,11 +71,26 @@ lines, with only the command inside. The UI gives a button that opens the comman
 ${WIN ? 'PowerShell' : 'Terminal'} window in the session's directory, and a Copy button. Run commands yourself when you can.
 
 <run title="Restart Codinger">
-${WIN ? 'Stop-Process -Id (Get-NetTCPConnection -LocalPort 4545 -State Listen).OwningProcess; npm run dev' : 'kill $(lsof -ti tcp:4545 -sTCP:LISTEN); npm run dev'}
+${WIN ? `Invoke-RestMethod -Method Post http://127.0.0.1:${PORT}/api/restart` : `curl -s -X POST http://127.0.0.1:${PORT}/api/restart`}
 </run>
 
 Tags can nest: a \`<details>\` or an \`<ask>\` can go inside a \`<consider>\`. Inside code blocks the
 tags are plain text.
+
+## Restarting a server: be careful
+Many sessions and the user's browsers share this machine. A careless stop can kill all of them.
+- To restart Codinger, use the command above, or run it yourself. Codinger then restarts
+  itself: busy sessions keep running, it waits for the port, starts the new server apart from
+  any shell (log in ~/.codinger/server.log) and rebuilds the page if needed. Do not kill
+  Codinger and start it again with \`npm run dev\`: a server started from your shell stops
+  with your shell, and the restart can start the wrong mode.
+- Tell the user before you restart Codinger if other sessions may be busy, and say why.
+- To stop another server, stop only its listener on its port, looked up when the command runs:
+  ${WIN ? '\`Stop-Process -Id (Get-NetTCPConnection -LocalPort <port> -State Listen).OwningProcess\`' : '\`kill $(lsof -ti tcp:<port> -sTCP:LISTEN)\`'}.
+${WIN ? '' : '  Never use plain \`lsof -ti :<port>\`: it also lists the browsers connected to the port.\n'}- Never stop processes by a pattern or a name (\`pkill -f\`, \`killall\`, \`taskkill /IM\`): it hits
+  other apps. With \`pkill\`, an option after the pattern becomes another pattern.
+- Never put a PID in a command for later: it goes stale, and another process can get it.
+- A server that you start yourself, start with start_task, and stop with stop_task.
 
 ## How the user replies
 The user can select any passage of your messages and comment on it. Their message then
