@@ -187,12 +187,6 @@ export function Sidebar({ width }: { width: number }) {
         {/* Only on a phone, where the sidebar covers the page: its close button. A lost connection shows as a banner (main.tsx: Offline). */}
         <button className="icon-btn side-hide" aria-label="Hide sessions" onClick={() => { state.sideOpen = false; changed() }}><XIcon size={18} /></button>
       </div>
-      {/* On a machine's own page: its sessions, and the other machines'. On the web, every machine is remote. */}
-      {!st.web && (others.length > 0 || away.length > 0 || !!local?.remote?.linked) && (
-        <div className="side-tabs">
-          {(['local', 'remote'] as const).map((t) => <button key={t} className={tab === t ? 'on' : ''} onClick={() => { state.sideTab = t; changed() }}>{t === 'local' ? <>{local && <DeviceIcon m={local} tip={false} />} Local</> : <><GlobeIcon size={13} /> Remote</>}</button>)}
-        </div>
-      )}
       {/* Only the sessions that need you as rows, the rest as critters; or every session as a row. */}
       {!st.showArchived && (
         <div className="side-filter">
@@ -226,9 +220,16 @@ export function Sidebar({ width }: { width: number }) {
         {tab === 'local' && !local?.sessions.some((s) => s.kind === 'worker' && s.archived === st.showArchived) && <div className="muted pad">{st.showArchived ? 'No archived sessions.' : 'No sessions yet.'}</div>}
       </nav>
       <CostBanner open={() => setSettings('cost')} />
+      <div className="side-bottom">
+      {/* Floats above the line, so it takes no room from the footer. */}
+      {custom && <button className="reset-order" title="Sort sessions by status again, newest first" onClick={() => void api('/api/sessions/order', 'DELETE')}>Reset order</button>}
+      {/* On a machine's own page: its sessions, and the other machines'. On the web, every machine is remote. */}
+      {!st.web && (others.length > 0 || away.length > 0 || !!local?.remote?.linked) && (
+        <div className="side-tabs">
+          {(['local', 'remote'] as const).map((t) => <button key={t} className={tab === t ? 'on' : ''} onClick={() => { state.sideTab = t; changed() }}>{t === 'local' ? <>{local && <DeviceIcon m={local} tip={false} />} Local</> : <><GlobeIcon size={13} /> Remote</>}</button>)}
+        </div>
+      )}
       <div className="side-foot">
-        {/* Floats above the line, so it takes no room from the footer. */}
-        {custom && <button className="reset-order" title="Sort sessions by status again, newest first" onClick={() => void api('/api/sessions/order', 'DELETE')}>Reset order</button>}
         <button className="link" title={st.web ? `Settings of ${currentMachine()}` : 'Settings'} onClick={() => setSettings(true)}><GearIcon size={14} /></button>
         <div className="side-foot-mid">
           {(u.fiveHour != null || u.sevenDay != null) && (
@@ -246,6 +247,7 @@ export function Sidebar({ width }: { width: number }) {
         })()}
         {/* One toggle: pressed while the list shows archived sessions. */}
         <button className={`link archive-toggle${st.showArchived ? ' on' : ''}`} title={st.showArchived ? 'Show active sessions' : 'Show archived sessions'} onClick={() => { state.showArchived = !state.showArchived; changed() }}><ArchiveIcon size={14} /></button>
+      </div>
       </div>
       {newIn !== null && <NewSession cwd={newIn.cwd} machine={newIn.machine} group={newIn.group} onClose={() => setNewIn(null)} />}
       {history && <HistoryDialog onClose={() => setHistory(false)} />}
