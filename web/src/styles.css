@@ -449,7 +449,7 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 /* Into the card's right padding (kept clear only for the discard button, above), and narrower
    buttons where the emoji are wider (Windows), so the row fits the card. */
 .reactions { position: relative; display: flex; gap: 1px; margin: 2px -20px 0 1px; }
-.reactions button { flex: 0 1 auto; min-width: 0; border: none; background: none; padding: 1px 4px; font-size: calc(14px * var(--fs, 1)); line-height: 1.3; border-radius: 6px; }
+.reactions button { flex: 0 1 auto; min-width: 0; display: inline-flex; justify-content: center; border: none; background: none; padding: 1px 4px; font-size: calc(14px * var(--fs, 1)); line-height: 1.3; border-radius: 6px; }
 .reactions button:hover { background: rgba(127, 127, 127, .15); }
 .reactions button.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
 .card-x { position: absolute; top: 4px; right: 4px; border: none; background: none; padding: 2px; line-height: 0; color: var(--muted); border-radius: 4px; }
