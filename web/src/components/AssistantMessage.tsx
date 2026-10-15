@@ -322,7 +322,7 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     let held = false
     const y0 = e.clientY
     const open = () => { if (!held) { held = true; setRow(p.id) } }
-    const timer = setTimeout(open, 100)
+    const timer = setTimeout(open, 200)
     const move = (m: PointerEvent) => { if (y0 - m.clientY > 4) open() }
     const up = (u: PointerEvent) => {
       document.removeEventListener('pointerup', up)

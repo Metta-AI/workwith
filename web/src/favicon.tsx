@@ -21,9 +21,11 @@ function icon(props: React.ComponentProps<typeof Mascot>, count: number, up: boo
     .replace(/height="[^"]*"/, 'height="32"')
   if (up) svg = svg.replace('class="m-body"', 'class="m-body" transform="translate(0 -1)"')
   if (count) {
+    // A rounded box in the top right corner, wider for two digits.
     const n = String(Math.min(count, 99))
-    svg = svg.replace(/<\/svg>$/, `<circle cx="12.2" cy="0.8" r="5.4" fill="#e5534b" stroke="#fff" stroke-width=".7" shape-rendering="auto"/>`
-      + `<text x="12.2" y="${n.length > 1 ? 3.3 : 3.7}" font-size="${n.length > 1 ? 7 : 8.4}" font-weight="600" text-anchor="middle" fill="#fff" font-family="system-ui, sans-serif">${n}</text></svg>`)
+    const [w, size, base] = n.length > 1 ? [12.6, 8, 3.2] : [9.6, 9, 3.5]
+    svg = svg.replace(/<\/svg>$/, `<rect x="${18 - w}" y="-5" width="${w}" height="10.6" rx="2.6" fill="#e5534b" shape-rendering="auto"/>`
+      + `<text x="${18 - w / 2}" y="${base}" font-size="${size}" font-weight="500" text-anchor="middle" fill="#fff" font-family="system-ui, sans-serif">${n}</text></svg>`)
   }
   return 'data:image/svg+xml,' + encodeURIComponent(svg)
 }

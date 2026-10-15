@@ -395,6 +395,8 @@ export function Composer({ m, attachRef }: { m: SessionMeta; attachRef?: React.R
           images={c.images}
           onImages={(images) => setComposer(m.id, { images })}
           placeholder={m.kind === 'lead' ? 'Message the lead' : 'Message Claude'}
+          // A session you open is ready to type in; on a touch screen the keyboard would cover it.
+          autoFocus={!matchMedia('(pointer: coarse)').matches}
           onSubmit={() => send()}
           onKey={slash.onKey}
           minRows={1}

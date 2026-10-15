@@ -85,6 +85,9 @@ export class Session {
     meta.running = false
     meta.compacting = false
     if (meta.status === 'working' || meta.status === 'permission') meta.status = 'idle'
+    // A status saved by an older version can disagree with what it rests on (a lead reset once left 'asking' with no asks).
+    if (meta.status === 'asking' && !meta.pendingAsks) meta.status = meta.unread ? 'waiting' : 'idle'
+    if (meta.status === 'waiting' && !meta.unread) meta.status = 'idle'
   }
 
   // Claude Code runs background work (shells, agents) that starts a turn when it ends.
