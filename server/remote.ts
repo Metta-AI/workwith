@@ -28,6 +28,8 @@ import type { RemoteStatus } from '../shared/types.ts'
 import { DATA } from './store.ts'
 
 const BATCH_MS = Number(process.env.CODINGER_REMOTE_BATCH_MS) || 1000
+// A ping to the hub this often; no answer by the next one ends the socket, and it connects again.
+const PING_MS = 30_000
 // The hub's address: web.codinger.app, or the Worker's own workers.dev address where that
 // domain does not resolve. Chosen in Settings (saved), else CODINGER_REMOTE_HUB.
 const DEFAULT_HUB = (process.env.CODINGER_REMOTE_HUB ?? 'https://web.codinger.app').replace(/\/$/, '')
@@ -138,14 +140,23 @@ function connect() {
   if (hub || !saved.token) return
   if (retry) { clearTimeout(retry); retry = null }
   const local = `127.0.0.1:${port}`
-  const ws = new WebSocket(`${hubUrl().replace(/^http/, 'ws')}/_remote/connect`, { headers: { authorization: `Bearer ${saved.token}` } })
+  const ws = new WebSocket(`${hubUrl().replace(/^http/, 'ws')}/_remote/connect`, { headers: { authorization: `Bearer ${saved.token}` }, handshakeTimeout: PING_MS })
   hub = ws
   const chans = new Map<string, Chan>()
   // Answers going in parts; null until the hub says it takes them.
   let outs: Map<string, Out> | null = null
   const send = (m: MachineMsg) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m)) }
+  // A socket can die with no close on either end (a dropped route): both still say connected,
+  // and requests for this machine wait at the hub until they time out. The hub answers pings itself.
+  let alive = true
+  let beat: NodeJS.Timeout | null = null
 
-  ws.on('open', () => { wait = 1000; connected = true; tell() })
+  ws.on('open', () => {
+    wait = 1000; connected = true; tell()
+    beat = setInterval(() => { if (!alive) return ws.terminate(); alive = false; ws.ping() }, PING_MS)
+    beat.unref()
+  })
+  ws.on('pong', () => { alive = true })
   ws.on('unexpected-response', (_req, res) => {
     // The hub does not know this token any more: forgotten on the web.
     if (res.statusCode === 403) { unlink(); save() }
@@ -168,6 +179,7 @@ function connect() {
     else if (m.t === 'close') { chans.get(m.chan)?.end(); chans.delete(m.chan) }
   })
   ws.on('close', (code) => {
+    if (beat) clearInterval(beat)
     for (const c of chans.values()) c.end()
     chans.clear()
     for (const o of outs?.values() ?? []) o.cancel()
