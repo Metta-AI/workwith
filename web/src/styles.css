@@ -98,10 +98,33 @@ body.resizing { cursor: col-resize; user-select: none; }
 .side-actions button.primary { flex: 1; }
 .tree { flex: 1; overflow-y: auto; }
 .group { margin-bottom: 8px; }
-.group-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 12px; font-size: calc(11.5px * var(--fs, 1)); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-/* A long folder name stays on one line and ends in an ellipsis, clear of the "+". */
-.group-head > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-head { display: flex; align-items: center; gap: 6px; padding: 4px 12px; font-size: calc(11.5px * var(--fs, 1)); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.group-head:hover { color: var(--text); }
+/* A long name stays on one line and ends in an ellipsis, clear of the "+". */
+.group-head > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .group-head > button { flex: none; }
+/* The same chevron as a machine's head: down while open. */
+.group-chevron { flex: none; transform: rotate(90deg); transition: transform .15s; }
+.group.shut .group-chevron { transform: none; }
+.group-input { flex: 1; min-width: 0; font-size: calc(12.5px * var(--fs, 1)); padding: 1px 5px; text-transform: none; letter-spacing: 0; }
+.group.drop, .new-group.drop { outline: 2px dashed var(--accent); outline-offset: -2px; border-radius: 6px; }
+.group-empty { padding: 2px 12px 6px; font-size: calc(12px * var(--fs, 1)); }
+/* The sessions that do not need you: one line of critters at the bottom of the group, more if they need it. */
+.dock { display: flex; flex-wrap: wrap; gap: 1px; padding: 2px 8px 4px; }
+.dock .face { position: relative; border: none; background: none; padding: 3px 4px; border-radius: 6px; line-height: 0; }
+.face-close { position: absolute; top: -5px; right: -5px; z-index: 1; width: 15px; height: 15px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--card); border: 1px solid var(--line); color: var(--muted); }
+.face-close:hover { color: var(--text); border-color: var(--muted); }
+.dock .face:hover { background: rgba(127, 127, 127, .12); }
+.dock .face.active { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.dock .face.dragged { position: relative; z-index: 3; }
+.new-group { margin: 2px 10px 10px; padding: 5px; border: 1px dashed var(--line); border-radius: 6px; text-align: center; color: var(--muted); font-size: calc(12px * var(--fs, 1)); cursor: pointer; }
+.new-group:hover { color: var(--text); border-color: var(--muted); }
+/* At the top of the list: only what needs you, or all. */
+.side-filter { display: flex; gap: 2px; margin: 0 10px 8px; padding: 2px; border-radius: 7px; background: color-mix(in srgb, var(--text) 6%, transparent); }
+.side-filter button { flex: 1; border: none; background: none; padding: 3px 0; border-radius: 5px; color: var(--muted); font-size: calc(12px * var(--fs, 1)); }
+.side-filter button.on { background: var(--card); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .1); }
+.ctx-menu hr { border: none; border-top: 1px solid var(--line); margin: 4px 0; }
+.ctx-head { padding: 4px 10px 2px; color: var(--muted); font-size: calc(11.5px * var(--fs, 1)); }
 .row { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; border: none; border-radius: 0; background: none; padding: 6px 10px; }
 .row:hover { background: rgba(127, 127, 127, .08); }
 .row.active { background: var(--accent-soft); }
@@ -775,6 +798,7 @@ h1.rename { cursor: text; border-radius: 5px; } h1.rename:hover { background: rg
 
 /* ---- sidebar order ---- */
 .group-head { cursor: grab; user-select: none; }
+.group-head.fixed { cursor: pointer; }
 .branch.dragged, .group.dragged { position: relative; z-index: 3; background: var(--panel); box-shadow: 0 4px 14px rgba(0, 0, 0, .18); }
 .branch.sliding, .group.sliding { transition: transform .18s ease; }
 body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }

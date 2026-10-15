@@ -15,7 +15,7 @@ type Props = { status: Status; fatigue: number; size?: number; title?: string; l
 // Drawn back to front.
 const LAYERS = ['face', 'hair', 'neck', 'eyewear', 'hat', 'held'] as const
 
-const SHOE = '#e5534b'
+const SHOE = '#ff2a2a'
 
 export function Mascot({ status, fatigue, size = 28, title, look = {}, body, alert, child }: Props) {
   // Looks saved before 'teal' became the default may still say 'classic'.
@@ -46,8 +46,8 @@ export function Mascot({ status, fatigue, size = 28, title, look = {}, body, ale
         {parts.map((p) => p.spin.length > 0 && <g key={`s${p.slot}`} className="m-spin">{rects(p.spin, `s${p.slot}`)}</g>)}
       </g>
       <g className="m-legs" fill={BODY}>
-        <g className="m-leg a"><rect x="4" y="10" width="2" height="2" />{child && <rect x="3" y="11" width="3" height="1" fill={SHOE} />}</g>
-        <g className="m-leg b"><rect x="10" y="10" width="2" height="2" />{child && <rect x="10" y="11" width="3" height="1" fill={SHOE} />}</g>
+        <g className="m-leg a"><rect x="4" y="10" width="2" height="2" />{child && <rect x="3" y="10" width="3" height="2" fill={SHOE} />}</g>
+        <g className="m-leg b"><rect x="10" y="10" width="2" height="2" />{child && <rect x="10" y="10" width="3" height="2" fill={SHOE} />}</g>
       </g>
       {tired && !spent && <rect className="m-sweat" x="14" y="2" width="1" height="2" fill="#7cc4ff" />}
       {spent && status !== 'working' && <text className="m-z" x="14" y="3" fontSize="4" fill="#9aa">z</text>}

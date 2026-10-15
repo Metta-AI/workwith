@@ -84,7 +84,8 @@ type State = {
   self: string                       // this machine's name on web.codinger.app, once connected
   sideTab: 'local' | 'remote'        // the sidebar's tab, on a machine's own page
   sideOpen: boolean                  // on a phone the sidebar covers the page: is it showing
-  collapsed: string[]                // machines whose sessions you hid in the sidebar
+  collapsed: string[]                // machines whose sessions you hid in the sidebar, and groups (group:<machine>:<id>)
+  sideAll: boolean                   // the sidebar shows every session as a row, not only those that need you
   machineOrder: string[]             // other machines, in the order you dragged them to
   // A published transcript, shown read-only (web/src/share.tsx): where its files come from, and
   // whether its tool calls have their input and output or one line each. Null in Codinger itself.
@@ -121,6 +122,7 @@ export const state = {
   self: '',
   sideTab: saved('codinger.sideTab', 'local'),
   collapsed: saved('codinger.collapsed', []),
+  sideAll: saved('codinger.sideAll', false),
   machineOrder: saved('codinger.machineOrder', []),
   share: null,
 } as Partial<State> as State
@@ -200,6 +202,7 @@ export function changed() {
     localStorage.setItem('codinger.preview', JSON.stringify(state.preview))
     localStorage.setItem('codinger.sideTab', JSON.stringify(state.sideTab))
     localStorage.setItem('codinger.collapsed', JSON.stringify(state.collapsed))
+    localStorage.setItem('codinger.sideAll', JSON.stringify(state.sideAll))
     localStorage.setItem('codinger.machineOrder', JSON.stringify(state.machineOrder))
   }, 300)
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { SessionMeta, Usage } from '../../../shared/types.ts'
+import type { SessionGroup, SessionMeta, Usage } from '../../../shared/types.ts'
 import { api, changed, closeSession, currentMachine, LOCAL, localId, machineList, machineOf, offline, select, state, useStore, type Machine, labelOf } from '../store.ts'
 import { HistoryDialog } from './HistoryDialog.tsx'
 import { fatigue, timeAgo } from '../util.ts'
@@ -17,13 +17,13 @@ import { shortPath } from './DirPicker.tsx'
 // Sessions that need you come first, then the ones at work, then the finished ones.
 // A session nested under another lifts it to its own tier.
 const own = (s: SessionMeta) => s.status === 'working' ? 1 : s.status === 'idle' || s.status === 'new' ? 2 : 0
-function tiers(list: SessionMeta[]) {
+function tiers(list: SessionMeta[], same = (a: SessionMeta, b: SessionMeta) => a.cwd === b.cwd) {
   const t = new Map(list.map((s) => [s.id, own(s)]))
   const byId = new Map(list.map((s) => [s.id, s]))
   for (const s of list) {
     const seen = new Set<string>()
     const up = (x: SessionMeta) => x.parentId ? byId.get(x.parentId) : undefined
-    for (let p = up(s); p && p.cwd === s.cwd && !seen.has(p.id); p = up(p)) {
+    for (let p = up(s); p && same(p, s) && !seen.has(p.id); p = up(p)) {
       seen.add(p.id)
       t.set(p.id, Math.min(t.get(p.id)!, own(s)))
     }
@@ -31,7 +31,7 @@ function tiers(list: SessionMeta[]) {
   return (s: SessionMeta) => t.get(s.id)!
 }
 
-// Sessions grouped by directory; sessions spawned for another one nest under it.
+// For the lead's overview: sessions grouped by directory; sessions spawned for another one nest under it.
 // Each tier keeps the order you dragged them into, then the newest on top; folders
 // go by the order you dragged them into, then by their most urgent session. Neither
 // goes by latest activity, so a busy session does not move the others about.
@@ -57,50 +57,65 @@ export function treeOf(list: SessionMeta[]): { s: SessionMeta; depth: number; pa
   return out
 }
 
-// Press and drag a session (with any nested under it) or a folder's name up or
+// Press and drag a session (with any nested under it) or a group's name up or
 // down among its siblings, which share a data-sort-key. The others slide aside
-// to make room; letting go puts it there. A finger holds still a moment first,
-// so that a swipe scrolls the list.
-type Drag = { key: string; id: string; dy: number; shift: Record<string, number> }
-function useDragSort(onDrop: (key: string, ids: string[]) => void) {
+// to make room; letting go puts it there. A session let go over another group
+// (data-group) moves there instead; a free one (a critter in a group's bottom
+// line) only moves between groups. A finger holds still a moment first, so that
+// a swipe scrolls the list.
+type Drag = { key: string; id: string; dx: number; dy: number; shift: Record<string, number>; over: string | null }
+function useDragSort(onDrop: (key: string, ids: string[]) => void, onMove?: (id: string, group: string) => void) {
   const [drag, setDrag] = useState<Drag | null>(null)
   const moved = useRef(false)
-  const start = (e: React.PointerEvent, key: string, id: string) => {
-    if (e.button !== 0 || (e.target as Element).closest('.row-close, .group-head button, .machine-head button')) return
+  // from: the group it is in, if it can move to another; free: it follows the pointer both ways.
+  const start = (e: React.PointerEvent, key: string, id: string, from?: string, free = false) => {
+    if (e.button !== 0 || (e.target as Element).closest('.row-close, .face-close, .group-head button, .group-head input, .machine-head button')) return
     const nav = (e.currentTarget as HTMLElement).closest('nav')
     if (!nav) return
-    const y0 = e.clientY
+    const scope = (e.currentTarget as HTMLElement).closest('.groups')
+    const x0 = e.clientX, y0 = e.clientY
     moved.current = false
     // Where everything was when the drag began: the slots stay put while things slide.
     const els = [...nav.querySelectorAll<HTMLElement>('[data-sort-key]')].filter((el) => el.dataset.sortKey === key)
     const ids = els.map((el) => el.dataset.sortId!)
     const i = ids.indexOf(id)
     const rects = els.map((el) => el.getBoundingClientRect())
-    const size = i + 1 < els.length ? rects[i + 1].top - rects[i].top : rects[i].height + parseFloat(getComputedStyle(els[i]).marginBottom)
+    const size = free ? 0 : i + 1 < els.length ? rects[i + 1].top - rects[i].top : rects[i].height + parseFloat(getComputedStyle(els[i]).marginBottom)
     const others = ids.filter((x) => x !== id)
     // A sibling slides aside once the dragged one covers most of it, whatever their heights.
     const slot = (dy: number) => {
       const top = rects[i].top + dy, bottom = rects[i].bottom + dy
       return rects.filter((r, k) => k < i ? top > r.bottom - 0.6 * r.height : k > i && bottom > r.top + 0.6 * r.height).length
     }
-    const x0 = e.clientX
+    // The other group under the pointer, if any.
+    const groupAt = (x: number, y: number) => {
+      if (from == null || !scope) return null
+      const g = [...scope.querySelectorAll<HTMLElement>('[data-group]')].find((el) => {
+        const r = el.getBoundingClientRect()
+        return x >= r.left && x <= r.right && y >= r.top && y < r.bottom
+      })?.dataset.group
+      return g == null || g === from ? null : g
+    }
     let held = e.pointerType !== 'touch'
     const hold = held ? 0 : window.setTimeout(() => {
       held = moved.current = true
       document.body.classList.add('sorting')
-      setDrag({ key, id, dy: 0, shift: {} })
+      setDrag({ key, id, dx: 0, dy: 0, shift: {}, over: null })
     }, 400)
     // Once it holds, the finger moves the row, not the list.
     const noScroll = (ev: TouchEvent) => { if (held) ev.preventDefault() }
     const move = (ev: PointerEvent) => {
-      const dy = ev.clientY - y0
-      if (!held) { if (Math.hypot(ev.clientX - x0, dy) > 8) end(); return }
-      if (!moved.current && Math.abs(dy) < 5) return
+      const dx = ev.clientX - x0, dy = ev.clientY - y0
+      if (!held) { if (Math.hypot(dx, dy) > 8) end(); return }
+      if (!moved.current && Math.hypot(free ? dx : 0, dy) < 5) return
       if (!moved.current) { moved.current = true; document.body.classList.add('sorting') }
-      const to = slot(dy)
+      const over = groupAt(ev.clientX, ev.clientY)
       const shift: Record<string, number> = {}
-      others.forEach((x, j) => { if (j < i && j >= to) shift[x] = size; else if (j >= i && j < to) shift[x] = -size })
-      setDrag({ key, id, dy, shift })
+      if (!free && over == null) {
+        const to = slot(dy)
+        others.forEach((x, j) => { if (j < i && j >= to) shift[x] = size; else if (j >= i && j < to) shift[x] = -size })
+      }
+      setDrag({ key, id, dx: free ? dx : 0, dy, shift, over })
     }
     const end = () => {
       clearTimeout(hold)
@@ -117,6 +132,9 @@ function useDragSort(onDrop: (key: string, ids: string[]) => void) {
       if (!moved.current) return
       // The click that ends a drag selects nothing.
       setTimeout(() => { moved.current = false })
+      const over = groupAt(ev.clientX, ev.clientY)
+      if (over != null) return onMove?.(id, over)
+      if (free) return
       const order = [...others]
       order.splice(slot(ev.clientY - y0), 0, id)
       if (order.some((x, k) => x !== ids[k])) onDrop(key, order)
@@ -129,37 +147,38 @@ function useDragSort(onDrop: (key: string, ids: string[]) => void) {
   // Props for one sortable element.
   const sortable = (key: string, id: string) => {
     const on = drag?.key === key
+    const dx = on && drag.id === id ? drag.dx : 0
     const dy = !on ? 0 : drag.id === id ? drag.dy : drag.shift[id] ?? 0
     return {
       'data-sort-key': key,
       'data-sort-id': id,
       onClickCapture: (e: React.MouseEvent) => { if (moved.current) { e.stopPropagation(); e.preventDefault() } },
       className: !on ? '' : drag.id === id ? ' dragged' : ' sliding',
-      style: dy ? { transform: `translateY(${dy}px)` } : undefined,
+      style: dx || dy ? { transform: `translate(${dx}px, ${dy}px)` } : undefined,
     }
   }
-  return { start, sortable }
+  return { start, sortable, over: drag?.over ?? null }
 }
 
 const short = shortPath
 
 export function Sidebar({ width }: { width: number }) {
   const st = useStore()
-  const [newIn, setNewIn] = useState<{ cwd: string; machine?: string } | null>(null)
+  const [newIn, setNewIn] = useState<{ cwd: string; machine?: string; group?: string } | null>(null)
   const [history, setHistory] = useState(false)
   const [settings, setSettings] = useState<Page | true | false>(false)
   const [tasks, setTasks] = useState(false)
-  const [menu, setMenu] = useState<RowMenuAt | null>(null)
-  const openMenu = (s: SessionMeta, e: React.MouseEvent) => { e.preventDefault(); setMenu({ s, x: e.clientX, y: e.clientY }) }
+  const [menu, setMenu] = useState<MenuAt | null>(null)
+  const openMenu = (e: React.MouseEvent, items: MenuItem[]) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, items }) }
   const local = st.machines[LOCAL]
   const others = machineList().filter((m) => m.name !== LOCAL)
   const away = offline()
-  const custom = !!st.settings.groupOrder?.length || st.sessions.some((x) => x.order != null)
+  const custom = st.sessions.some((x) => x.order != null)
   const u = st.usage
   const tab = st.web || !local ? 'remote' : st.sideTab
   // Machines move like folders: drag one by its head.
   const drag = useDragSort((_key, names) => { state.machineOrder = names; changed() })
-  const tree = (machine: string) => <MachineTree machine={machine} onNew={(cwd) => setNewIn({ cwd, machine })} onMenu={openMenu} />
+  const tree = (machine: string) => <MachineTree machine={machine} onNew={(cwd, group) => setNewIn({ cwd, machine, group: group || undefined })} onMenu={openMenu} />
   return (
     <aside className="sidebar" style={{ width }}>
       <div className="side-actions">
@@ -172,6 +191,12 @@ export function Sidebar({ width }: { width: number }) {
       {!st.web && (others.length > 0 || away.length > 0 || !!local?.remote?.linked) && (
         <div className="side-tabs">
           {(['local', 'remote'] as const).map((t) => <button key={t} className={tab === t ? 'on' : ''} onClick={() => { state.sideTab = t; changed() }}>{t === 'local' ? <>{local && <DeviceIcon m={local} tip={false} />} Local</> : <><GlobeIcon size={13} /> Remote</>}</button>)}
+        </div>
+      )}
+      {/* Only the sessions that need you as rows, the rest as critters; or every session as a row. */}
+      {!st.showArchived && (
+        <div className="side-filter">
+          {([false, true] as const).map((v) => <button key={String(v)} className={st.sideAll === v ? 'on' : ''} onClick={() => { state.sideAll = v; changed() }}>{v ? 'All sessions' : 'Needs me'}</button>)}
         </div>
       )}
       <nav className={`tree${st.showArchived ? ' archived' : ''}`}>
@@ -203,7 +228,7 @@ export function Sidebar({ width }: { width: number }) {
       <CostBanner open={() => setSettings('cost')} />
       <div className="side-foot">
         {/* Floats above the line, so it takes no room from the footer. */}
-        {custom && <button className="reset-order" title="Sort folders and sessions by latest activity" onClick={() => void api('/api/sessions/order', 'DELETE')}>Reset order</button>}
+        {custom && <button className="reset-order" title="Sort sessions by status again, newest first" onClick={() => void api('/api/sessions/order', 'DELETE')}>Reset order</button>}
         <button className="link" title={st.web ? `Settings of ${currentMachine()}` : 'Settings'} onClick={() => setSettings(true)}><GearIcon size={14} /></button>
         <div className="side-foot-mid">
           {(u.fiveHour != null || u.sevenDay != null) && (
@@ -222,11 +247,11 @@ export function Sidebar({ width }: { width: number }) {
         {/* One toggle: pressed while the list shows archived sessions. */}
         <button className={`link archive-toggle${st.showArchived ? ' on' : ''}`} title={st.showArchived ? 'Show active sessions' : 'Show archived sessions'} onClick={() => { state.showArchived = !state.showArchived; changed() }}><ArchiveIcon size={14} /></button>
       </div>
-      {newIn !== null && <NewSession cwd={newIn.cwd} machine={newIn.machine} onClose={() => setNewIn(null)} />}
+      {newIn !== null && <NewSession cwd={newIn.cwd} machine={newIn.machine} group={newIn.group} onClose={() => setNewIn(null)} />}
       {history && <HistoryDialog onClose={() => setHistory(false)} />}
       {settings && <SettingsDialog page={settings === true ? undefined : settings} onClose={() => setSettings(false)} />}
       {tasks && <TasksDialog onClose={() => setTasks(false)} />}
-      {menu && <RowMenu at={menu} onClose={() => setMenu(null)} />}
+      {menu && <CtxMenu at={menu} onClose={() => setMenu(null)} />}
     </aside>
   )
 }
@@ -240,56 +265,152 @@ function DeviceIcon({ m, tip = true }: { m: Machine; tip?: boolean }) {
   return <span className="device" data-tip={tip ? title : undefined}><Icon os={m.platform} size={tip ? 18 : 15} /></span>
 }
 
-// One machine's sessions, by folder. Its folder order and session order are its own.
-function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: string): void; onMenu(s: SessionMeta, e: React.MouseEvent): void }) {
+// The groups you made on a machine, in your order. A session is in one, or in
+// none: those go last, under "No group".
+const NONE = ''
+const groupsOf = (machine: string): SessionGroup[] => state.machines[machine]?.settings.groups ?? []
+function saveGroups(machine: string, groups: SessionGroup[]) {
+  const m = state.machines[machine]
+  if (!m) return
+  m.settings = { ...m.settings, groups }
+  changed()
+  void api('/api/settings', 'PUT', { groups }, machine)
+}
+// A group you are naming: a new one, or one you double-clicked.
+let naming: string | null = null
+function newGroup(machine: string) {
+  const g = { id: Math.random().toString(36).slice(2, 10), name: 'New group' }
+  naming = g.id
+  saveGroups(machine, [...groupsOf(machine), g])
+  return g.id
+}
+// The server moves the sessions it started along with it.
+function moveToGroup(s: SessionMeta, group: string) {
+  const machine = machineOf(s.id), m = state.machines[machine]
+  if (!m) return
+  m.sessions = m.sessions.map((x) => x.id === s.id ? { ...x, group: group || undefined } : x)
+  changed()
+  void api(`/api/sessions/${s.id}`, 'PATCH', { group: group || null }, machine)
+}
+
+// One machine's sessions, by the groups you made. In a group, the sessions that need
+// you are rows; the others are critters in one line at the bottom, unless you show all.
+// A shut group still shows the ones that need you.
+function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: string, group: string): void; onMenu(e: React.MouseEvent, items: MenuItem[]): void }) {
   const st = useStore()
   const m = st.machines[machine]
-  const groupOrder = m?.settings.groupOrder
-  const groups = groupSessions(m?.sessions ?? [], st.showArchived, groupOrder)
-  const { start, sortable } = useDragSort((key, ids) => {
+  const groups = m?.settings.groups ?? []
+  const known = new Set(groups.map((g) => g.id))
+  const gid = (s: SessionMeta) => s.group && known.has(s.group) ? s.group : NONE
+  const workers = (m?.sessions ?? []).filter((s) => s.kind === 'worker' && s.archived === st.showArchived)
+  const tier = tiers(workers, (a, b) => gid(a) === gid(b))
+  const place = (s: SessionMeta) => s.order ?? -1
+  workers.sort((a, b) => tier(a) - tier(b) || place(a) - place(b) || b.createdAt - a.createdAt)
+  const loose = workers.filter((s) => gid(s) === NONE)
+  // Archived: only the groups with something in them.
+  const sections = [...groups, ...(loose.length ? [{ id: NONE, name: 'No group' }] : [])]
+    .map((g) => ({ g, list: workers.filter((s) => gid(s) === g.id) }))
+    .filter(({ list }) => list.length || !st.showArchived)
+  const all = st.sideAll || st.showArchived
+  const { start, sortable, over } = useDragSort((key, ids) => {
     if (!m) return
     if (key === `${machine}|groups`) {
-      // Folders not on screen (the other of active and archived) keep their place after these.
-      const order = [...ids, ...(groupOrder ?? []).filter((c) => !ids.includes(c))]
-      m.settings = { ...m.settings, groupOrder: order }
-      void api('/api/settings', 'PUT', { groupOrder: order }, machine)
-    } else {
-      m.sessions = m.sessions.map((s) => ids.includes(s.id) ? { ...s, order: ids.indexOf(s.id) } : s)
-      void api('/api/sessions/order', 'PUT', { ids: ids.map(localId) }, machine)
+      saveGroups(machine, ids.map((id) => groups.find((g) => g.id === id)!).filter(Boolean))
+      return
     }
+    m.sessions = m.sessions.map((s) => ids.includes(s.id) ? { ...s, order: ids.indexOf(s.id) } : s)
+    void api('/api/sessions/order', 'PUT', { ids: ids.map(localId) }, machine)
     changed()
+  }, (id, group) => {
+    const s = m?.sessions.find((x) => x.id === id)
+    if (s) moveToGroup(s, group === '+' ? newGroup(machine) : group)
   })
-  return <>{groups.map(([cwd, list]) => {
-    const g = sortable(`${machine}|groups`, cwd)
-    // A session and those nested under it move as one.
-    const ids = new Set(list.map((x) => x.id))
-    const kids = (parent: string | null) => list.filter((x) => (x.parentId && ids.has(x.parentId) ? x.parentId : null) === parent)
+  const rename = (g: SessionGroup, name: string) => {
+    naming = null
+    if (name.trim() && name.trim() !== g.name) saveGroups(machine, groups.map((x) => x.id === g.id ? { ...x, name: name.trim() } : x))
+    else changed()
+  }
+  const groupMenu = (g: SessionGroup) => (e: React.MouseEvent) => onMenu(e, [
+    { label: 'Rename', run: () => { naming = g.id; changed() } },
+    { label: 'Delete group', run: () => saveGroups(machine, groups.filter((x) => x.id !== g.id)) },
+  ])
+  if (!sections.length) return null
+  return <div className="groups">{sections.map(({ g, list }) => {
+    const shutKey = `group:${machine}:${g.id}`
+    const shut = st.collapsed.includes(shutKey)
+    const sg = g.id ? sortable(`${machine}|groups`, g.id) : null
+    const needs = list.filter((s) => own(s) === 0)
+    const rows = shut || !all ? needs : list
+    // The rest in the order they came, so that a critter keeps its place in the line.
+    const rest = all ? [] : list.filter((s) => own(s) !== 0).sort((a, b) => a.createdAt - b.createdAt)
+    // Shown as a tree, a session and those nested under it move as one.
+    const ids = new Set(rows.map((x) => x.id))
+    const nest = all && !shut
+    const kids = (parent: string | null) => rows.filter((x) => (nest && x.parentId && ids.has(x.parentId) ? x.parentId : null) === parent)
     const branch = (x: SessionMeta, depth: number): React.ReactNode => {
-      const key = `${machine}|${cwd}|${x.parentId && ids.has(x.parentId) ? x.parentId : ''}`
+      const key = `${machine}|${g.id}|${nest && x.parentId && ids.has(x.parentId) ? x.parentId : ''}`
       const b = sortable(key, x.id)
       return (
         <div key={x.id} {...b} className={`branch${b.className}`}>
-          <Row s={x} depth={depth} active={st.selected === x.id} onPointerDown={(e) => start(e, key, x.id)} onMenu={onMenu} />
+          <Row s={x} depth={depth} active={st.selected === x.id} onPointerDown={(e) => start(e, key, x.id, g.id)} onMenu={onMenu} />
           {kids(x.id).map((k) => branch(k, depth + 1))}
         </div>
       )
     }
+    const toggle = () => { state.collapsed = shut ? state.collapsed.filter((n) => n !== shutKey) : [...state.collapsed, shutKey]; changed() }
+    // A new session in a group starts in the folder of its latest one.
+    const folder = [...list].sort((a, b) => b.createdAt - a.createdAt)[0]?.cwd ?? ''
     return (
-      <div key={cwd} {...g} className={`group${g.className}`}>
-        <div className="group-head" onPointerDown={(e) => start(e, `${machine}|groups`, cwd)}>
-          <span>{cwd.split(/[\\/]/).pop()}</span>
-          <button className="link" title={`New session in ${machine ? cwd : short(cwd)}`} onClick={() => onNew(cwd)}>+</button>
+      <div key={g.id || '-'} {...sg} data-group={g.id} className={`group${shut ? ' shut' : ''}${over === g.id ? ' drop' : ''}${sg?.className ?? ''}`}>
+        <div className={`group-head${g.id ? '' : ' fixed'}`} onPointerDown={g.id ? (e) => start(e, `${machine}|groups`, g.id) : undefined} onClick={toggle} onContextMenu={g.id ? groupMenu(g) : undefined}>
+          <ChevronIcon size={11} className="group-chevron" />
+          {naming === g.id
+            ? <GroupName name={g.name} onDone={(name) => rename(g, name)} />
+            : <span className="group-name" onDoubleClick={g.id ? (e) => { e.stopPropagation(); naming = g.id; changed() } : undefined}>{g.name}</span>}
+          <button className="link" title={`New session in ${g.id ? g.name : 'no group'}`} onClick={(e) => { e.stopPropagation(); onNew(folder, g.id) }}>+</button>
         </div>
         {kids(null).map((x) => branch(x, 0))}
+        {!shut && rest.length > 0 && (
+          <div className="dock">
+            {rest.map((s) => {
+              const d = sortable(`${machine}|dock`, s.id)
+              const parent = s.parentId && m?.sessions.find((x) => x.id === s.parentId)
+              return (
+                <button key={s.id} {...d} className={`face${st.selected === s.id ? ' active' : ''}${d.className}`}
+                  data-tip={`${s.title}${parent ? ` (from ${parent.title})` : ''} · ${s.compacting ? 'compacting' : STATUS_LABEL[s.status]}`}
+                  onClick={() => select(s.id)} onPointerDown={(e) => start(e, `${machine}|dock`, s.id, g.id, true)} onContextMenu={(e) => onMenu(e, rowItems(s))}>
+                  <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={22} child={!!s.parentId} />
+                  {/* The open one can be archived from here, as a row can. */}
+                  {st.selected === s.id && !s.archived && (
+                    <span className="face-close" role="button" aria-label="Archive session" onClick={(e) => { e.stopPropagation(); void closeSession(s.id) }}><XIcon size={9} /></span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        )}
+        {!shut && !list.length && <div className="muted group-empty">Drag sessions here.</div>}
       </div>
     )
-  })}</>
+  })}
+    {!st.showArchived && <div data-group="+" className={`new-group${over === '+' ? ' drop' : ''}`} role="button" onClick={() => newGroup(machine)}>+ New group</div>}
+  </div>
 }
 
-function Row({ s, depth = 0, active, label, onPointerDown, onMenu }: { s: SessionMeta; depth?: number; active: boolean; label?: string; onPointerDown?(e: React.PointerEvent): void; onMenu?(s: SessionMeta, e: React.MouseEvent): void }) {
+// A group's name as you type it: Enter or a click elsewhere keeps it, Escape does not.
+function GroupName({ name, onDone }: { name: string; onDone(name: string): void }) {
+  const [v, setV] = useState(name)
+  const done = useRef(false)
+  const finish = (x: string) => { if (!done.current) { done.current = true; onDone(x) } }
+  return <input className="group-input" autoFocus value={v} onFocus={(e) => e.target.select()} onChange={(e) => setV(e.target.value)}
+    onClick={(e) => e.stopPropagation()} onBlur={() => finish(v)}
+    onKeyDown={(e) => { if (e.key === 'Enter') finish(v); if (e.key === 'Escape') finish(name) }} />
+}
+
+function Row({ s, depth = 0, active, label, onPointerDown, onMenu }: { s: SessionMeta; depth?: number; active: boolean; label?: string; onPointerDown?(e: React.PointerEvent): void; onMenu?(e: React.MouseEvent, items: MenuItem[]): void }) {
   const parent = useStore().sessions.find((x) => x.id === s.parentId)
   return (
-    <button className={`row${active ? ' active' : ''}${s.unread ? ' unread' : ''}`} style={{ paddingLeft: 10 + depth * 16 }} onClick={() => select(s.id)} onPointerDown={onPointerDown} onContextMenu={onMenu && ((e) => onMenu(s, e))}>
+    <button className={`row${active ? ' active' : ''}${s.unread ? ' unread' : ''}`} style={{ paddingLeft: 10 + depth * 16 }} onClick={() => select(s.id)} onPointerDown={onPointerDown} onContextMenu={onMenu && ((e) => onMenu(e, rowItems(s)))}>
       <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={26} title={STATUS_LABEL[s.status]} child={!!s.parentId} />
       <span className="row-main">
         <span className="row-title">{machineOf(s.id) !== LOCAL && <GlobeIcon size={11} className="row-remote" title={`On ${machineOf(s.id)}`} />}{label ?? s.title}{parent && <span className="row-from"> (from {parent.title})</span>}</span>
@@ -303,10 +424,26 @@ function Row({ s, depth = 0, active, label, onPointerDown, onMenu }: { s: Sessio
   )
 }
 
-type RowMenuAt = { s: SessionMeta; x: number; y: number }
+type MenuItem = { label: string; run(): unknown } | 'line' | { head: string }
+type MenuAt = { x: number; y: number; items: MenuItem[] }
 
-// The menu a right click on a session opens, where the pointer is.
-function RowMenu({ at, onClose }: { at: RowMenuAt; onClose(): void }) {
+// What a right click on a session offers: read or unread, and a group to move it to.
+function rowItems(s: SessionMeta): MenuItem[] {
+  const machine = machineOf(s.id)
+  const read: MenuItem = s.unread
+    ? { label: 'Mark as read', run: () => api(`/api/sessions/${s.id}/seen`) }
+    : { label: 'Mark as unread', run: () => api(`/api/sessions/${s.id}/unread`) }
+  if (s.kind !== 'worker') return [read]
+  const groups = groupsOf(machine).filter((g) => g.id !== s.group)
+  return [read, 'line', { head: 'Move to' },
+    ...groups.map((g) => ({ label: g.name, run: () => moveToGroup(s, g.id) })),
+    { label: 'New group', run: () => moveToGroup(s, newGroup(machine)) },
+    ...(s.group && groupsOf(machine).some((g) => g.id === s.group) ? [{ label: 'No group', run: () => moveToGroup(s, NONE) }] : []),
+  ]
+}
+
+// The menu a right click in the sidebar opens, where the pointer is.
+function CtxMenu({ at, onClose }: { at: MenuAt; onClose(): void }) {
   const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const down = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) onClose() }
@@ -322,13 +459,17 @@ function RowMenu({ at, onClose }: { at: RowMenuAt; onClose(): void }) {
       document.removeEventListener('scroll', onClose, true)
     }
   }, [onClose])
-  const { s } = at
-  const act = (f: () => unknown) => () => { onClose(); void f() }
+  // Inside the window, however long the menu is.
+  const [pos, setPos] = useState({ left: at.x, top: at.y })
+  useEffect(() => {
+    const r = box.current?.getBoundingClientRect()
+    if (r) setPos({ left: Math.min(at.x, innerWidth - r.width - 6), top: Math.max(6, Math.min(at.y, innerHeight - r.height - 6)) })
+  }, [at])
   return (
-    <div className="menu ctx-menu" ref={box} style={{ left: at.x, top: at.y }} onContextMenu={(e) => e.preventDefault()}>
-      {s.unread
-        ? <button onClick={act(() => api(`/api/sessions/${s.id}/seen`))}>Mark as read</button>
-        : <button onClick={act(() => api(`/api/sessions/${s.id}/unread`))}>Mark as unread</button>}
+    <div className="menu ctx-menu" ref={box} style={pos} onContextMenu={(e) => e.preventDefault()}>
+      {at.items.map((x, i) => x === 'line' ? <hr key={i} />
+        : 'head' in x ? <div key={i} className="ctx-head">{x.head}</div>
+        : <button key={i} onClick={() => { onClose(); void x.run() }}>{x.label}</button>)}
     </div>
   )
 }

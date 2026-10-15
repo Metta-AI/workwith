@@ -58,6 +58,7 @@ export type SessionMeta = {
   titleBefore?: string
   titleUndone?: string
   order?: number          // its place among its siblings in the sidebar, once dragged there
+  group?: string          // the sidebar group you put it in (Settings.groups); a child starts in its parent's
   // The prompt cache: when the last API call started (at the latest), and its TTL (ms). See shared/cache.ts.
   cache?: { at: number; ttl: number }
   notes?: NotesState
@@ -177,13 +178,14 @@ export type Usage = { fiveHour?: number; sevenDay?: number; resetsAt?: number; s
 // resumeCut: a turn the server's stop cut short (a crash, a forced stop; not a restart, which keeps it
 // running) goes on when the server starts again; off by default.
 // appearance: unset until you pick one, which the first load asks you to do.
-// groupOrder: the sidebar's folders, once you drag one. cacheGuard: tokens; see shared/cache.ts.
+// groupOrder: the lead's folders, once you drag one. groups: the sidebar's groups you made, top first. cacheGuard: tokens; see shared/cache.ts.
 // notes, keepWarmHours, keepWarmMax, keepWarmUsage: see server/notes.ts.
 // plan: what you pay a month (yearly: you pay for a year, usd is that over 12), for the plan
 // you confirmed it for. reviewSeen: the last weekly and monthly review you closed. See shared/costs.ts.
+export type SessionGroup = { id: string; name: string }
 export type Settings = {
   leadAutoSend: boolean; autoModeMigrated?: boolean; trackedFiles?: string[]; selfRestart?: boolean; resumeCut?: boolean
-  appearance?: Appearance; groupOrder?: string[]; cacheGuard?: number
+  appearance?: Appearance; groupOrder?: string[]; groups?: SessionGroup[]; cacheGuard?: number
   notes?: boolean; keepWarmHours?: number; keepWarmMax?: number; keepWarmUsage?: number
   // MCP servers: new sessions start with them off (default), except those always on;
   // Claude may turn one on itself (default) or must ask you.

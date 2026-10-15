@@ -7,7 +7,7 @@ import { FlagPicker } from './FlagPicker.tsx'
 import { RichInput } from './Inputs.tsx'
 
 // machine: where it runs; the current session's by default.
-export function NewSession({ cwd: initial, machine: start = currentMachine(), onClose }: { cwd: string; machine?: string; onClose(): void }) {
+export function NewSession({ cwd: initial, machine: start = currentMachine(), group, onClose }: { cwd: string; machine?: string; group?: string; onClose(): void }) {
   useEscape(onClose)
   const [machine, setMachine] = useState(start)
   const [cwd, setCwd] = useState(initial)
@@ -36,7 +36,7 @@ export function NewSession({ cwd: initial, machine: start = currentMachine(), on
   const create = async () => {
     setBusy(true); setErr(null)
     try {
-      const meta = await api<SessionMeta>('/api/sessions', 'POST', { cwd, title, model: model || null, permissionMode: mode, flags, parentId: parentId ? localId(parentId) : null, mkdir: missing }, machine)
+      const meta = await api<SessionMeta>('/api/sessions', 'POST', { cwd, title, model: model || null, permissionMode: mode, flags, parentId: parentId ? localId(parentId) : null, group: machine === start ? group : undefined, mkdir: missing }, machine)
       const id = globalId(machine, meta.id)
       if (prompt.trim() || images.length) await api(`/api/sessions/${id}/send`, 'POST', { parts: [{ kind: 'text', text: prompt, images }] })
       else setComposer(id, { text: '' })

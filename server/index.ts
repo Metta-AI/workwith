@@ -299,7 +299,7 @@ function get(id: string): Session {
   return s
 }
 
-function createSession(o: { cwd: string; title?: string; model?: string | null; permissionMode?: PermissionMode; flags?: string[]; parentId?: string | null; mkdir?: boolean }): Session {
+function createSession(o: { cwd: string; title?: string; model?: string | null; permissionMode?: PermissionMode; flags?: string[]; parentId?: string | null; group?: string | null; mkdir?: boolean }): Session {
   const flags = Array.isArray(o.flags) ? o.flags.map((f) => String(f).trim()).filter(Boolean) : []
   for (const f of flags) { const p = flagProblem(f); if (p) throw new HttpError(400, p) }
   const cwd = path.resolve(expandHome(String(o.cwd ?? '').trim()))
@@ -308,10 +308,13 @@ function createSession(o: { cwd: string; title?: string; model?: string | null; 
   }
   if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new HttpError(400, `Not a directory: ${cwd}`)
   const mode = MODES.includes(o.permissionMode as PermissionMode) ? o.permissionMode! : 'auto'
+  const group = o.group ? String(o.group) : o.parentId ? sessions.get(o.parentId)?.meta.group : undefined
   const s = adopt(newMeta({
     cwd, title: o.title?.trim() || path.basename(cwd), model: o.model || null, permissionMode: mode,
     ...(flags.length ? { flags } : {}),
     parentId: o.parentId && sessions.has(o.parentId) ? o.parentId : null,
+    // Its group: the one asked for, else its parent's.
+    ...(group ? { group } : {}),
     // Your MCP servers start off, except the ones you keep always on.
     ...(settings.mcpStartOff !== false ? { mcp: { strict: true as const, on: [...(settings.mcpAlways ?? [])] } } : {}),
   }))
@@ -1046,6 +1049,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       ...(['ask', 'always', 'never'].includes(body.autoUpdate) ? { autoUpdate: body.autoUpdate } : {}),
       ...(body.appearance ? { appearance: cleanAppearance(body.appearance) } : {}),
       ...(Array.isArray(body.groupOrder) ? { groupOrder: body.groupOrder.map(String) } : {}),
+      ...(Array.isArray(body.groups) ? { groups: body.groups.filter((g: any) => g && g.id).map((g: any) => ({ id: String(g.id), name: String(g.name ?? '').trim() || 'Group' })) } : {}),
       ...(Number.isFinite(body.cacheGuard) && body.cacheGuard >= 0 ? { cacheGuard: Math.round(body.cacheGuard) } : {}),
       ...(typeof body.notes === 'boolean' ? { notes: body.notes } : {}),
       ...(Number.isFinite(body.keepWarmHours) && body.keepWarmHours >= 0 ? { keepWarmHours: Math.min(48, body.keepWarmHours) } : {}),
@@ -1237,6 +1241,15 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       s.meta.titleByUser = true
       s.meta.titleBefore = undefined
     }
+    // Into another sidebar group (null: none), with the sessions it started that were in its old one.
+    if ((typeof body.group === 'string' || body.group === null) && s.meta.kind === 'worker') {
+      const from = s.meta.group, to = body.group || undefined
+      const move = (m: SessionMeta) => {
+        m.group = to
+        for (const c of sessions.values()) if (c.meta.parentId === m.id && c.meta.group === from) move(c.meta)
+      }
+      move(s.meta)
+    }
     if (typeof body.archived === 'boolean' && s.meta.kind === 'worker') { s.meta.archived = body.archived; if (body.archived) s.stop() }
     if (MODES.includes(body.permissionMode)) {
       s.setPermissionMode(body.permissionMode)
@@ -1358,7 +1371,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       if (c === 'keep-warm') { resumeKeepWarm(s.meta); return send(res, 200, { ok: true }) }
       if (c === 'continue') {
         if (!readNotes(s.meta)) throw new HttpError(400, 'This session has no notes yet')
-        const n = createSession({ cwd: s.meta.cwd, title: `${s.meta.title} (continued)`, model: s.meta.model, permissionMode: s.meta.permissionMode, flags: s.meta.flags, parentId: s.meta.parentId })
+        const n = createSession({ cwd: s.meta.cwd, title: `${s.meta.title} (continued)`, model: s.meta.model, permissionMode: s.meta.permissionMode, flags: s.meta.flags, parentId: s.meta.parentId, group: s.meta.group })
         return send(res, 200, { meta: n.meta, text: `Read \`${notesFile(s.meta.id)}\`: notes from an earlier session. Continue the work from there.` })
       }
       const err = notesNow(s, !!body.force)
