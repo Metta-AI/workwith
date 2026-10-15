@@ -33,9 +33,10 @@ function App() {
       <Sidebar width={side} />
       <Splitter width={side} setWidth={setSide} min={180} max={560} initial={260} />
       <main>
+        <Offline />
         <SignIn />
         <Restart />
-        {!st.connected && !st.sessions.length ? <div className="empty">Connecting to the Codiner server…</div>
+        {!st.connected && !st.sessions.length ? <div className="empty">Connecting to the {st.agent ? `${st.agent.name}'s` : 'Codiner'} server…</div>
           : sel?.kind === 'lead' ? <LeadView id={sel.id} />
           : sel ? <SessionView key={sel.id} id={sel.id} />
           : <div className="empty">Pick a session.</div>}
@@ -43,6 +44,26 @@ function App() {
       {welcome && <AppearanceDialog welcome onClose={() => setWelcome(false)} />}
       {st.lightbox && <div className="lightbox" onClick={() => { state.lightbox = null; changed() }}><img src={st.lightbox} alt="" /></div>}
       {st.error && <div className="toast" onClick={() => { state.error = null; changed() }}>{st.error}</div>}
+    </div>
+  )
+}
+
+// The server is out of reach: what shows is what was here last time. Replies you write
+// stay in this browser (localStorage) and can go once it is back.
+function Offline() {
+  const st = useStore()
+  const [late, setLate] = useState(false)
+  // A reconnect takes a moment; say nothing for the first few seconds.
+  useEffect(() => {
+    if (st.connected) { setLate(false); return }
+    const t = setTimeout(() => setLate(true), 4000)
+    return () => clearTimeout(t)
+  }, [st.connected])
+  if (st.connected || !late) return null
+  const at = st.seenAt ? new Date(st.seenAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : null
+  return (
+    <div className="signin offline">
+      <span><b>Offline.</b> {at ? `This is how things were at ${at}. ` : ''}You can read and write replies; they wait here until the connection is back.</span>
     </div>
   )
 }
@@ -97,4 +118,6 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && state.li
 
 connect()
 initTooltips()
+// Installable, and readable offline (public/sw.js). Not under Vite's dev server, whose files change.
+if ('serviceWorker' in navigator && !import.meta.env.DEV) void navigator.serviceWorker.register('/sw.js').catch(() => {})
 createRoot(document.getElementById('root')!).render(<App />)

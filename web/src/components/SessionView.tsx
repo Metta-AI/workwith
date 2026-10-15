@@ -276,7 +276,7 @@ function DismissedChip({ sid }: { sid: string }) {
 }
 
 export function Composer({ m }: { m: SessionMeta }) {
-  useStore()
+  const st = useStore()
   const c = composerOf(m.id)
   const drafts = draftsOf(m.id).filter(hasContent)
   const reactions = drafts.filter((d) => d.kind === 'note' && isReaction(d.text) && !d.images.length).length
@@ -358,8 +358,8 @@ export function Composer({ m }: { m: SessionMeta }) {
           onKey={slash.onKey}
           minRows={1}
         />
-        {canHold && <button className="send hold" disabled={sending} onClick={() => void hold()} title="Hold your replies for one joint reply: others see them and add theirs, and the next send takes them all">Hold</button>}
-        <button className="primary send" disabled={!n || sending} onClick={() => send()} title={costly ? 'Prompt cache expired: use Send anyway above' : undefined}>
+        {canHold && <button className="send hold" disabled={sending || !st.connected} onClick={() => void hold()} title="Hold your replies for one joint reply: others see them and add theirs, and the next send takes them all">Hold</button>}
+        <button className="primary send" disabled={!n || sending || !st.connected} onClick={() => send()} title={costly ? 'Prompt cache expired: use Send anyway above' : undefined}>
           {sending ? 'Sending…' : isCommand ? 'Run' : warned && open.length ? 'Send anyway' : n > 1 ? `Send ${n}` : 'Send'}
         </button>
       </div>

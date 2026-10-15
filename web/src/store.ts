@@ -49,6 +49,7 @@ type State = {
   agent: AgentInfo | null            // Codiner is this agent's desk (server/agent.ts)
   me: Person | null                  // who this browser is, as the proxy says
   billing: 'api' | 'plan'            // 'api': billed per token, so no plan limits to show
+  seenAt: number | null              // offline: when the session list shown was last current
 }
 
 const saved = <T,>(k: string, d: T): T => { try { return JSON.parse(localStorage.getItem(k) ?? '') ?? d } catch { return d } }
@@ -82,6 +83,24 @@ export const state: State = {
   agent: null,
   me: null,
   billing: 'plan',
+  seenAt: null,
+}
+
+// Offline, the page shows the sessions as they were last seen (public/sw.js caches
+// the page and each conversation). The real hello replaces it.
+type Seen = { at: number; sessions: SessionMeta[]; settings: Settings; agent: AgentInfo | null; me: Person | null; billing: 'api' | 'plan' }
+{
+  const seen = saved<Seen | null>('codiner.seen', null)
+  if (seen) Object.assign(state, { sessions: seen.sessions, settings: seen.settings, agent: seen.agent, me: seen.me, billing: seen.billing, seenAt: seen.at })
+  if (seen?.billing === 'api') state.money = 'usd'
+}
+let seenTimer = 0
+function keepSeen() {
+  clearTimeout(seenTimer)
+  seenTimer = window.setTimeout(() => {
+    const seen: Seen = { at: Date.now(), sessions: state.sessions, settings: state.settings, agent: state.agent, me: state.me, billing: state.billing }
+    try { localStorage.setItem('codiner.seen', JSON.stringify(seen)) } catch { /* full: offline shows less */ }
+  }, 2000)
 }
 
 let version = 0
@@ -164,9 +183,10 @@ function onServer(m: ServerMsg) {
       state.platform = m.platform; state.home = m.home; state.auth = m.auth ?? { state: 'ok' }; state.stale = !!m.stale; state.restarting = false
       state.agent = m.agent ?? null; state.me = m.me ?? null; state.billing = m.billing ?? 'plan'
       if (state.billing === 'api') state.money = 'usd'
+      state.seenAt = null; keepSeen()
       if (!m.sessions.some((s) => s.id === state.selected)) state.selected = 'lead'
       break
-    case 'sessions': state.sessions = m.sessions; break
+    case 'sessions': state.sessions = m.sessions; keepSeen(); break
     case 'settings':
       if (holdingAppearance()) { state.settings = { ...m.settings, appearance: state.settings.appearance }; break }
       state.settings = m.settings; applyAppearance(m.settings.appearance); break

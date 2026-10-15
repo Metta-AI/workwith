@@ -3,7 +3,8 @@
 //
 //   CODINER_AGENT_NAME     the agent's name: the sidebar, the tab, "Message Synth"
 //   CODINER_AGENT_AVATAR   an image file: its face in the sidebar
-//   CODINER_AGENT_CSS      a CSS file loaded after Codiner's own: its colours (no theme prompt then)
+//   CODINER_AGENT_CSS      a CSS file that sets its colours (no theme prompt then)
+//   CODINER_AGENT_COLOR    the colour of the installed app's title bar, e.g. #0f4a44
 //   CODINER_USER_HEADER    the header the proxy names the signed-in person in
 //   CODINER_PEOPLE         names to show: "ada@example.com=Ada,grace@example.com=Grace"
 //                          (otherwise the login before the @, capitalised)
@@ -15,6 +16,7 @@ import type { AgentInfo, Person } from '../shared/types.ts'
 
 const env = process.env
 const AVATAR = env.CODINER_AGENT_AVATAR && fs.existsSync(env.CODINER_AGENT_AVATAR) ? env.CODINER_AGENT_AVATAR : null
+const AVATAR_TYPE = AVATAR ? { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml' }[path.extname(AVATAR).toLowerCase()] ?? 'application/octet-stream' : ''
 const THEME = env.CODINER_AGENT_CSS && fs.existsSync(env.CODINER_AGENT_CSS) ? env.CODINER_AGENT_CSS : null
 
 export const agentInfo = (): AgentInfo | undefined =>
@@ -45,17 +47,41 @@ export function personOf(req: http.IncomingMessage): Person | null {
   return login ? { login, name: nameOf(login) } : null
 }
 
-// /agent/theme.css and /agent/avatar. The theme is always there (empty without a
-// file), so index.html can link it before the page draws.
+// The avatar's size in pixels, for the manifest (PNG only; others say "any").
+function iconSize(file: string): string {
+  try {
+    const b = fs.readFileSync(file).subarray(0, 24)
+    if (b.toString('latin1', 1, 4) === 'PNG') return `${b.readUInt32BE(16)}x${b.readUInt32BE(20)}`
+  } catch { /* fall through */ }
+  return 'any'
+}
+
+// What makes the page installable as an app: the agent's name and its face as the icon.
+function manifest() {
+  const name = env.CODINER_AGENT_NAME ?? 'Codiner'
+  const color = env.CODINER_AGENT_COLOR ?? '#1d1c1a'
+  return {
+    name: env.CODINER_AGENT_NAME ? `Work with ${name}` : name, short_name: name,
+    start_url: '/', scope: '/', display: 'standalone', background_color: color, theme_color: color,
+    icons: AVATAR ? [{ src: '/agent/avatar', sizes: iconSize(AVATAR), type: AVATAR_TYPE, purpose: 'any' }] : [],
+  }
+}
+
+// /agent/theme.css, /agent/avatar and /manifest.webmanifest. The theme is always there
+// (empty without a file), so index.html can link it before the page draws.
 export function serveAgent(pathname: string, res: http.ServerResponse): boolean {
+  if (pathname === '/manifest.webmanifest') {
+    res.writeHead(200, { 'content-type': 'application/manifest+json', 'cache-control': 'no-cache' })
+    res.end(JSON.stringify(manifest()))
+    return true
+  }
   if (pathname === '/agent/theme.css') {
     res.writeHead(200, { 'content-type': 'text/css', 'cache-control': 'no-cache' })
     res.end(THEME ? fs.readFileSync(THEME) : '')
     return true
   }
   if (pathname === '/agent/avatar' && AVATAR) {
-    const type = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml' }[path.extname(AVATAR).toLowerCase()]
-    res.writeHead(200, { 'content-type': type ?? 'application/octet-stream', 'cache-control': 'max-age=3600' })
+    res.writeHead(200, { 'content-type': AVATAR_TYPE, 'cache-control': 'max-age=3600' })
     fs.createReadStream(AVATAR).pipe(res)
     return true
   }
