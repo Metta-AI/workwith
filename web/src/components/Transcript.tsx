@@ -99,8 +99,8 @@ export function Transcript({ sid }: { sid: string }) {
   }, [!!events])
 
   // Select any of Claude's text and a comment opens on it, focused, as in Marginer.
-  // A touch screen sends no mouseup after a selection, so there the comment opens once the
-  // selection stops changing and no finger is on the screen.
+  // A touch screen sends no mouseup after a selection, so there the comment opens when the
+  // finger lets go, or (for a change the page sees no touch for) once the selection stops changing.
   useEffect(() => {
     if (state.share) return
     const at = (n: Node) => (n.nodeType === 1 ? n as Element : n.parentElement)
@@ -143,8 +143,13 @@ export function Transcript({ sid }: { sid: string }) {
     const up = () => setTimeout(comment, 0)
     const touch = matchMedia('(pointer: coarse)')
     let wait = 0, down = 0
-    const settle = () => { clearTimeout(wait); if (touch.matches && !down) wait = window.setTimeout(comment, 500) }
-    const fingers = (e: TouchEvent) => { down = e.touches.length; if (down) clearTimeout(wait); else settle() }
+    const settle = () => { clearTimeout(wait); if (touch.matches && !down) wait = window.setTimeout(comment, 300) }
+    const fingers = (e: TouchEvent) => {
+      down = e.touches.length
+      clearTimeout(wait)
+      if (down) return
+      if (touch.matches && target()) { holdKeyboard(); comment() } else settle()
+    }
     document.addEventListener('mouseup', up)
     document.addEventListener('selectionchange', settle)
     for (const t of ['touchstart', 'touchend', 'touchcancel'] as const) document.addEventListener(t, fingers, { passive: true })
@@ -181,6 +186,19 @@ export function Transcript({ sid }: { sid: string }) {
     {!st.share && <OpenToast scroller={scroller} keys={[...folded.items.values()].filter((t) => t.status === 'open').map((t) => t.key)} />}
     </div>
   )
+}
+
+// iOS brings up the keyboard only for a focus inside a touch handler, and the comment card's
+// field mounts after it. A hidden field takes the focus now; the card's field takes it over.
+function holdKeyboard() {
+  const f = document.createElement('input')
+  f.setAttribute('aria-hidden', 'true')
+  f.tabIndex = -1
+  f.style.cssText = 'position: fixed; top: 30%; left: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; font-size: 16px'
+  document.body.appendChild(f)
+  f.addEventListener('blur', () => f.remove(), { once: true })
+  f.focus({ preventScroll: true })
+  setTimeout(() => { if (document.activeElement === f) f.blur() }, 1000)
 }
 
 // While open questions or items are out of view, a toast at the bottom of the

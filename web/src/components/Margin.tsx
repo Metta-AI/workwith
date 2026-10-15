@@ -141,12 +141,23 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
   const layoutRef = useRef(layout)
   layoutRef.current = layout
 
+  // The card you write in stays in view as it grows, and when the keyboard comes up: the transcript scrolls to show all of it.
+  const keepInView = () => {
+    const card = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('.note-card')
+    const sc = inner.current?.closest<HTMLElement>('.transcript')
+    if (!card || !sc || !layer.current?.contains(card)) return
+    const vv = visualViewport
+    const over = card.getBoundingClientRect().bottom + 8 - Math.min(sc.getBoundingClientRect().bottom, vv ? vv.offsetTop + vv.height : innerHeight)
+    if (over > 0) sc.scrollTop += over
+  }
+
   useLayoutEffect(() => layout())
   useEffect(() => {
-    const ro = new ResizeObserver(() => layoutRef.current())
+    const ro = new ResizeObserver(() => { layoutRef.current(); keepInView() })
     if (inner.current) ro.observe(inner.current)
     if (layer.current) for (const c of layer.current.children) ro.observe(c)
-    return () => ro.disconnect()
+    visualViewport?.addEventListener('resize', keepInView)
+    return () => { ro.disconnect(); visualViewport?.removeEventListener('resize', keepInView) }
   }, [notes.length, gutter])
   useEffect(() => { layoutRef.current() }, [events, open, peek])
 
@@ -221,7 +232,7 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
       {notes.map((n) => n.kind === 'draft' ? (
         <NoteCard
           key={n.id} sid={sid} note={n.draft!}
-          onFocus={() => { if (state.focus === n.id) state.focus = null; focused.current = n.id; setOpen(n.id); layout(); focusPassage(sid, n) }}
+          onFocus={() => { if (state.focus === n.id) state.focus = null; focused.current = n.id; setOpen(n.id); layout(); keepInView(); focusPassage(sid, n) }}
           onBlur={() => {
             if (focused.current === n.id) focused.current = null
             focusPassage(sid, null)

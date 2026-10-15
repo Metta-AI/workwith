@@ -65,6 +65,7 @@ body { background: var(--bg); color: var(--text); font: 14px/1.55 var(--font); }
 .transcript-wrap, .composer { --fs: var(--read-scale, 1); font-size: calc(14px * var(--fs)); }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; border: 1px solid var(--line); background: var(--card); border-radius: 7px; padding: 4px 10px; }
+button, [role="button"], summary { -webkit-user-select: none; user-select: none; }
 button:hover:not(:disabled) { border-color: var(--muted); }
 button:disabled { opacity: .5; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
