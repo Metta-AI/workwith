@@ -89,6 +89,7 @@ export function PublishControl({ a, v }: { a: Artifact; v?: number }) {
   const [waiting, setWaiting] = useState(false)
   const [vis, setVis] = useState<Visibility>(a.published?.visibility ?? 'public')
   const [note, setNote] = useState('')
+  const [replace, setReplace] = useState(false)
   const [busy, setBusy] = useState(false)
   const [made, setMade] = useState<string[] | null>(null)
   // Back from approving: go on to publishing.
@@ -106,7 +107,7 @@ export function PublishControl({ a, v }: { a: Artifact; v?: number }) {
   const go = async () => {
     setBusy(true)
     try {
-      const r = await api<{ madePublic: string[] }>(`/api/artifacts/${encodeURIComponent(a.name)}/publish`, 'POST', { visibility: vis, note, v })
+      const r = await api<{ madePublic: string[] }>(`/api/artifacts/${encodeURIComponent(a.name)}/publish`, 'POST', { visibility: vis, note, v, replace: replace && !!p })
       setMade(r.madePublic); setNote(''); setOpen(false)
     } finally { setBusy(false) }
   }
@@ -118,6 +119,7 @@ export function PublishControl({ a, v }: { a: Artifact; v?: number }) {
         <div className="publish-pop">
           <div className="small">{upAs != null
             ? `Version ${local} is on Prolifica already, as version ${upAs}.`
+            : p && replace ? `This replaces version ${p.version} of the page on Prolifica with version ${local} here. Earlier versions there stay as they are.`
             : p ? `This makes version ${p.version + 1} of the page on Prolifica, from version ${local} here. Version ${p.version} there stays as it is, with its data.`
             : `This makes a new page on Prolifica, from version ${local} here.`}</div>
           <label>Who can see it
@@ -128,11 +130,12 @@ export function PublishControl({ a, v }: { a: Artifact; v?: number }) {
             </select>
           </label>
           {vis !== 'private' && <div className="muted small">Its data goes up with it and is {vis === 'public' ? 'public' : 'visible to anyone with the link'} too.</div>}
+          {p && upAs == null && <label className="check"><input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} /> Replace version {p.version} instead of adding a version</label>}
           {p && <label>What changed<input value={note} placeholder="For the version history" onChange={(e) => setNote(e.target.value)} /></label>}
           <div className="publish-foot">
             <span className="muted small">{st.prolifica?.handle ? `As @${st.prolifica.handle}` : ''}</span>
             <button className="link" onClick={() => setOpen(false)}>Cancel</button>
-            <button className="primary" disabled={busy || upAs != null} onClick={() => void go()}>{busy ? 'Publishing…' : p ? `Publish version ${p.version + 1}` : 'Publish'}</button>
+            <button className="primary" disabled={busy || upAs != null} onClick={() => void go()}>{busy ? 'Publishing…' : p && replace ? `Replace version ${p.version}` : p ? `Publish version ${p.version + 1}` : 'Publish'}</button>
           </div>
         </div>
       )}

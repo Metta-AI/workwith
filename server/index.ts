@@ -967,7 +967,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     if (id && b === 'publish' && method === 'POST') {
       const body = await json(req)
       const vis = ['public', 'unlisted', 'private'].includes(body.visibility) ? body.visibility : undefined
-      try { return send(res, 200, await publish(id, { visibility: vis, note: typeof body.note === 'string' ? body.note : undefined, v: Number(body.v) || undefined })) }
+      try { return send(res, 200, await publish(id, { visibility: vis, note: typeof body.note === 'string' ? body.note : undefined, v: Number(body.v) || undefined, replace: body.replace === true })) }
       catch (e) { throw new HttpError(400, (e as Error).message) }
       finally { artifactsChanged() }
     }

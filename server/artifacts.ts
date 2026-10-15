@@ -340,7 +340,8 @@ const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex')
 // that changed since the last time, then the page. The first publish makes a new page
 // there; each later one a new version of it. A data file that changed goes up under a
 // new name, so the page's earlier versions there keep showing the data they had.
-export async function publish(name: string, opts: { visibility?: Visibility; note?: string; v?: number }): Promise<{ published: ArtifactPublished; madePublic: string[] }> {
+// replace: the new version takes the place of the last one there (a squash of the two).
+export async function publish(name: string, opts: { visibility?: Visibility; note?: string; v?: number; replace?: boolean }): Promise<{ published: ArtifactPublished; madePublic: string[] }> {
   if (checkArtifact(name)) throw new Error(checkArtifact(name)!)
   const local = opts.v ?? snapshot(name)
   saveRecord()
@@ -374,7 +375,12 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
   const post = (id?: string) => call('/api/isles', { method: 'POST', headers: { 'content-type': 'application/json' }, body: body(id) })
   // Deleted on Prolifica since: publish it as a new page.
   const out = await post(before?.id).catch((e) => { if (before?.id && e.status === 404) return post(); throw e })
-  const history = [...(out.isle.id === before?.id ? before?.history ?? (before ? [{ version: before.version, local: before.local ?? 0, at: before.at }] : []) : []), { version: out.isle.version, local, at: Date.now() }]
+  let history = [...(out.isle.id === before?.id ? before?.history ?? (before ? [{ version: before.version, local: before.local ?? 0, at: before.at }] : []) : []), { version: out.isle.version, local, at: Date.now() }]
+  if (opts.replace && before && out.isle.id === before.id) {
+    const sq = await call(`/api/isles/${encodeURIComponent(before.id)}/squash`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from: before.version, to: out.isle.version, note: opts.note || null }) })
+    out.isle = sq.isle
+    history = [...history.slice(0, -2), { version: sq.isle.version, local, at: Date.now() }]
+  }
   r.published = { id: out.isle.id, url: `${ORIGIN}/i/${out.isle.id}`, version: out.isle.version, at: Date.now(), mtime: mtimeOf(dirOf(name)), visibility, data, local, history }
   saveRecord()
   return { published: r.published, madePublic: (out.madePublic ?? []).map((d: { path?: string; id: string }) => d.path ?? d.id) }
