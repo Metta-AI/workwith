@@ -23,7 +23,7 @@ export type Artifact = {
 // (version: the page's version on Prolifica; local: the artifact's version it was; data: the dataset ids it shows).
 export type ArtifactPublished = {
   id: string; url: string; version: number; at: number; mtime: number
-  visibility: Visibility; data: Record<string, { sha: string; id: string; path?: string }>
+  visibility: Visibility; data: Record<string, { sha: string; id: string; path?: string; source?: true; said?: string; from?: string[] }>
   local?: number; history?: { version: number; local: number; at: number; data?: string[] }[]
 }
 export type Visibility = 'public' | 'unlisted' | 'private'

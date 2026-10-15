@@ -4,7 +4,8 @@
 //   index.html      the page; it reads its data with `await prolifica.data('slot')`
 //   artifact.json   { title, description, slots: {slot: {kind, description}}, bindings: {slot: "data/x.csv"}, parent? }
 //   instructions.md for agents: how to use and rebind this page (optional; published with it)
-//   data/           the files the bindings name
+//   data/           the files the bindings name, and the source data they were made from
+//                   (sources in artifact.json); subfolders are fine
 //
 // A second HTTP server, on a port of its own, runs them: never Codinger's origin,
 // so an artifact's script cannot reach Codinger's API. It injects the bridge
@@ -52,7 +53,12 @@ type Manifest = {
   parent?: string
   slots?: Record<string, { kind?: string; description?: string }>
   bindings?: Record<string, string>
+  /** the data the bound files were made from (a scraper's export, a download), by file, with
+   *  where it came from. It goes up with the page, and the bound data says it was derived from it
+   *  (only the slots named, if slots is given), so Prolifica makes it public when the page is. */
+  sources?: Record<string, SourceMeta>
 }
+type SourceMeta = { url?: string; method?: string; collected_at?: string | number; notes?: string; description?: string; slots?: string[] }
 function manifest(name: string): Manifest {
   return JSON.parse(fs.readFileSync(path.join(dirOf(name), 'artifact.json'), 'utf8'))
 }
@@ -74,14 +80,19 @@ function sourceOf(name: string, v?: number): Source | null {
   return { name, v, read, hash: (rel) => ver.files[rel]?.slice(0, 16), manifest: () => JSON.parse(read('artifact.json')?.toString('utf8') ?? '{}') }
 }
 
-// Its files, top level and one folder down (data/), dot files left out.
+// Its files, in the folder and all its subfolders (data/media/...), dot files left out.
+// Links are not followed, so a link to a folder above can't loop.
+function walk(dir: string, each: (rel: string, abs: string) => void, rel = '') {
+  for (const e of fs.readdirSync(path.join(dir, rel), { withFileTypes: true })) {
+    if (e.name.startsWith('.')) continue
+    const r = rel ? `${rel}/${e.name}` : e.name
+    if (e.isDirectory()) walk(dir, each, r)
+    else if (e.isFile()) each(r, path.join(dir, r))
+  }
+}
 function filesOf(dir: string): string[] {
   const out: string[] = []
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (e.name.startsWith('.')) continue
-    if (e.isDirectory()) { for (const f of fs.readdirSync(path.join(dir, e.name), { withFileTypes: true })) if (f.isFile() && !f.name.startsWith('.')) out.push(`${e.name}/${f.name}`) }
-    else if (e.isFile()) out.push(e.name)
-  }
+  walk(dir, (rel) => out.push(rel))
   return out.sort()
 }
 
@@ -103,14 +114,10 @@ function snapshot(name: string): number {
   return n
 }
 
-// The latest change to any file in the folder (one level of subfolders: data/).
+// The latest change to any file in the folder or its subfolders.
 function mtimeOf(dir: string): number {
   let t = 0
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, e.name)
-    if (e.isDirectory()) { for (const f of fs.readdirSync(p)) t = Math.max(t, fs.statSync(path.join(p, f)).mtimeMs) }
-    else t = Math.max(t, fs.statSync(p).mtimeMs)
-  }
+  walk(dir, (_, abs) => { t = Math.max(t, fs.statSync(abs).mtimeMs) })
   return Math.round(t)
 }
 
@@ -160,8 +167,9 @@ export const artifactsPrompt = () => `
 ## Artifacts
 When the user wants to see something (a chart, a table to explore, a dashboard, a report over data, a small tool), and whenever you analyse data, make an artifact: a page that Codinger shows in a pane next to this session. Each artifact is a folder in \`${ARTIFACTS}/<name>/\`, with a short lowercase name with hyphens:
 - \`index.html\`: one self-contained page. Use \`<script type="module">\` (top-level await works) and libraries from a CDN (https://esm.sh/..., https://cdn.jsdelivr.net/npm/...). There is no build step.
-- \`data/\`: the data, as files (csv, json, md, txt, images). Do not put data in the page.
+- \`data/\`: the data, as files (csv, json, md, txt, images). Do not put data in the page. Subfolders are fine (\`data/media/a.jpg\`).
 - \`artifact.json\`: \`{"title": "...", "description": "Two to four short sentences on what it shows.", "slots": {"rows": {"kind": "csv", "description": "One row per ...: the columns the page uses"}}, "bindings": {"rows": "data/rows.csv"}}\`. When the page came from an isle on Prolifica, add \`"parent": "<isle id>"\`.
+- Source data: copy the data you started from (a scraper's export, a download, a file the user gave you) into \`data/\` as it is, even when no slot uses it, and list it in artifact.json: \`"sources": {"data/source.json": {"url": "...", "method": "...", "collected_at": "...", "notes": "..."}}\` (where it came from; each field optional). It is published with the page, and the bound data says it was made from it, so it goes public when the page does. When a source made only some of the slots' data, add \`"slots": ["..."]\` to it.
 - \`instructions.md\`: instructions for agents about this page, so the next agent does not have to learn it from the HTML. Write them for each artifact. Say which data fields drive the wording, what text is fixed in the page, the limits, and what breaks. Write about the page, not about this data. Update them when you learn something about the page. They are published with the page.
 
 The page reads its data by slot name: \`const rows = await prolifica.data('rows')\` (csv: an array of objects, numbers parsed; json: the parsed value; text and markdown: a string; image: a URL). \`prolifica.dataUrl('rows')\` gives the raw URL. The user can publish an artifact to Prolifica (prolifica.app), where other people run the same page over their own data. So keep what is particular to this data (names, units, dates) in the data, not in the page.
@@ -356,21 +364,49 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
   const before = r.published
   const next = before ? before.version + 1 : 1
   const data: ArtifactPublished['data'] = {}
+  // Send one file, unless it went up as it is already. Its dataset id. It keeps its path under
+  // data/ there, in a folder named after the artifact: data/media/a.jpg is <name>/media/a.jpg.
+  const send = async (file: string, description?: string) => {
+    if (data[file]) return { id: data[file].id, sent: false }   // bound twice, or a source that is bound too
+    const bytes = src.read(file)
+    if (!bytes) throw new Error(`Version ${local} has no ${file}.`)
+    if (bytes.length > 20 * 1024 * 1024) throw new Error(`${file} is ${(bytes.length / 1048576).toFixed(1)} MB; Prolifica takes files of up to 20 MB.`)
+    const hash = sha(bytes)
+    const prev = before?.data[file]
+    if (prev?.sha === hash) { data[file] = { ...prev }; return { id: prev.id, sent: false } }
+    const sub = path.posix.normalize(file).replace(/^data\//, ''), ext = path.posix.extname(sub)
+    const dpath = `${name}/${prev ? `${sub.slice(0, sub.length - ext.length)}.v${next}${ext}` : sub}`
+    const q = new URLSearchParams({ path: dpath })
+    if (description) q.set('description', description)
+    const ds = await call(`/api/data?${q}`, { method: 'POST', headers: { 'content-type': typeOf(file) }, body: new Uint8Array(bytes) })
+    data[file] = { sha: hash, id: ds.id, path: dpath }
+    return { id: ds.id as string, sent: true }
+  }
+  // The source data first, with where it came from, so the bound data can say it was made from it.
+  const sources = Object.entries(m.sources ?? {})
+  const sourceIds: Record<string, string> = {}
+  for (const [file, s] of sources) {
+    const { id, sent } = await send(file, s.description ?? `The source data of "${m.title ?? name}", as it was collected.`)
+    sourceIds[file] = id
+    data[file].source = true
+    const prov = { url: s.url, method: s.method, collectedAt: s.collected_at, notes: s.notes }
+    if (!Object.values(prov).some((x) => x != null)) continue
+    const said = JSON.stringify({ source: prov })
+    if (!sent && before?.data[file]?.said === said) continue
+    await call(`/api/data/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: said })
+    data[file].said = said
+  }
   const bindings: Record<string, string> = {}
   for (const [slot, file] of Object.entries(m.bindings ?? {})) {
     if (file.startsWith('prolifica:')) { bindings[slot] = file.slice(10); continue }
-    const bytes = src.read(file)
-    if (!bytes) throw new Error(`Version ${local} has no ${file}.`)
-    const hash = sha(bytes)
-    const prev = before?.data[file]
-    if (prev?.sha === hash) { bindings[slot] = prev.id; data[file] = prev; continue }
-    const ext = path.extname(file), stem = path.basename(file, ext)
-    const dpath = `${name}/${prev ? `${stem}.v${next}${ext}` : `${stem}${ext}`}`
-    const q = new URLSearchParams({ path: dpath })
-    if (m.slots?.[slot]?.description) q.set('description', m.slots[slot].description!)
-    const ds = await call(`/api/data?${q}`, { method: 'POST', headers: { 'content-type': typeOf(file) }, body: new Uint8Array(bytes) })
-    bindings[slot] = ds.id
-    data[file] = { sha: hash, id: ds.id, path: dpath }
+    bindings[slot] = (await send(file, m.slots?.[slot]?.description)).id
+    if (file in sourceIds) continue
+    // What it was made from. Set again when that changed; Prolifica keeps it apart from the file.
+    const from = sources.filter(([f, s]) => f !== file && (!s.slots || s.slots.includes(slot))).map(([f]) => sourceIds[f]).sort()
+    if (!from.length || JSON.stringify(data[file].from ?? []) === JSON.stringify(from)) continue
+    const ds = await call(`/api/data/${encodeURIComponent(bindings[slot])}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ derived_from: from }) })
+    // A Prolifica that does not take derived_from yet: it is tried again on the next publish.
+    if (Array.isArray(ds?.derivedFrom) && from.every((id) => ds.derivedFrom.some((d: { id: string }) => d.id === id))) data[file].from = from
   }
   const visibility = opts.visibility ?? before?.visibility ?? 'public'
   const body = (id?: string) => JSON.stringify({
