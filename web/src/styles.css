@@ -901,6 +901,12 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .cost-review[open] summary { margin-bottom: 6px; }
 
 /* Autopilot (components/Autopilot.tsx) */
+/* The session menu (SessionView.tsx): the permission modes, with a check on the one in use. */
+.menu .menu-label { padding: 6px 10px 2px; font-size: calc(11.5px * var(--fs, 1)); color: var(--muted); }
+.head-actions .menu button { white-space: nowrap; }
+.head-actions .menu button.menu-check { display: flex; align-items: center; gap: 6px; }
+.menu-check > span { width: 13px; display: inline-flex; }
+.menu hr { border: none; border-top: 1px solid var(--line); margin: 4px 6px; width: auto; }
 .head-actions button.autopilot-on { border-color: var(--accent); color: var(--accent); }
 /* The children list (SessionView.tsx): its ::before fills the gap under the button, so the
    pointer can go down to it and the hover holds. */

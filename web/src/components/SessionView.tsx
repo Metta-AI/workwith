@@ -10,7 +10,7 @@ import { AttentionPanel } from './AttentionPanel.tsx'
 import { ArtifactIcon, ArtifactPane, hasPreview } from './Artifacts.tsx'
 import { FilesPanel, filesOf } from './FilesPanel.tsx'
 import { revealItem, useItems } from '../items.ts'
-import { ChevronIcon, ChildrenIcon, ClipIcon, MailIcon, MoreIcon, PanelIcon, UndoIcon, XIcon } from './Icons.tsx'
+import { CheckIcon, ChevronIcon, ChildrenIcon, ClipIcon, MailIcon, MoreIcon, PanelIcon, UndoIcon, XIcon } from './Icons.tsx'
 import { inboxLabel } from '../../../shared/inbox.ts'
 import { renderInline } from '../util.ts'
 import { isReaction } from '../emoji.ts'
@@ -21,7 +21,7 @@ import { NotesPill } from './NotesDialog.tsx'
 import { StateMark, TasksDialog } from './TasksDialog.tsx'
 import { McpPill } from './McpDialog.tsx'
 import { shortPath } from './DirPicker.tsx'
-import { AutopilotButton } from './Autopilot.tsx'
+import { AutopilotPanel, autopilotOn, budgetLabel } from './Autopilot.tsx'
 import { PublishDialog } from './PublishDialog.tsx'
 
 export function ContextGauge({ m, onCompact }: { m: SessionMeta; onCompact?: () => void }) {
@@ -101,6 +101,8 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
   // On a phone the head is one line; this button shows the gauges and the mode (styles.css).
   const [more, setMore] = useState(false)
   const [publishing, setPublishing] = useState(false)
+  const [menu, setMenu] = useState<Menu>(null)
+  const ap = m.autopilot
   return (
     <header className={`session-head${more ? ' head-open' : ''}`}>
       <Mascot status={m.status} look={m.look} fatigue={fatigue(m.context.used, m.context.window)} size={44} title={STATUS_LABEL[m.status]} child={!!m.parentId} />
@@ -135,17 +137,13 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
         </div>
         <div className="head-actions">
           <span className="head-mode">
-            {m.kind === 'worker' && (
-              <select value={m.permissionMode} onChange={(e) => void api(`/api/sessions/${m.id}`, 'PATCH', { permissionMode: e.target.value })}>
-                {MODES.map((x) => <option key={x.v} value={x.v}>{x.label}</option>)}
-              </select>
-            )}
-            {m.kind === 'worker' && <AutopilotButton m={m} />}
+            {/* While autopilot runs, the head says so; a click opens it in the menu. */}
+            {m.kind === 'worker' && autopilotOn(m) && <button className="autopilot-on" onClick={() => setMenu('autopilot')}>Autopilot · {budgetLabel(ap!.unit, Math.max(0, ap!.budget - ap!.used))} left</button>}
             <ChildrenButton m={m} />
           </span>
           {extra}
           <button className="icon-tall head-more" aria-label={more ? 'Fewer details' : 'More details'} onClick={() => setMore(!more)}><ChevronIcon size={15} /></button>
-          <SessionMenu m={m} onPublish={() => setPublishing(true)} />
+          <SessionMenu m={m} open={menu} setOpen={setMenu} onPublish={() => setPublishing(true)} />
         </div>
       </div>
       {publishing && <PublishDialog m={m} onClose={() => setPublishing(false)} />}
@@ -190,30 +188,45 @@ function ChildrenButton({ m }: { m: SessionMeta }) {
   )
 }
 
-// Stop, Close and the rest, out of the way behind one button.
-function SessionMenu({ m, onPublish }: { m: SessionMeta; onPublish(): void }) {
-  const [open, setOpen] = useState(false)
+// The menu, or its autopilot panel, or closed.
+type Menu = null | 'list' | 'autopilot'
+
+// Stop, the permission mode, autopilot, Close and the rest, out of the way behind one button.
+function SessionMenu({ m, open, setOpen, onPublish }: { m: SessionMeta; open: Menu; setOpen(v: Menu): void; onPublish(): void }) {
   const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
-    const down = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false) }
+    const down = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(null) }
     document.addEventListener('mousedown', down)
     return () => document.removeEventListener('mousedown', down)
   }, [open])
   const busy = m.status === 'working' || m.status === 'permission'
-  const act = (f: () => unknown) => () => { setOpen(false); void f() }
+  const act = (f: () => unknown) => () => { setOpen(null); void f() }
+  const worker = m.kind === 'worker'
+  const ap = m.autopilot
   const items = [
     busy && <button key="stop" className="danger" onClick={act(() => api(`/api/sessions/${m.id}/interrupt`))}>Stop</button>,
-    m.kind === 'worker' && <button key="publish" onClick={act(onPublish)}>{m.share ? 'Published transcript…' : 'Publish transcript…'}</button>,
-    m.kind === 'worker' && !m.archived && <button key="close" title="Archive session" onClick={act(() => closeSession(m.id))}>Close</button>,
-    m.kind === 'worker' && m.archived && <button key="reopen" onClick={act(() => api(`/api/sessions/${m.id}`, 'PATCH', { archived: false }))}>Reopen</button>,
-    m.kind === 'worker' && m.archived && <button key="delete" className="danger" title="Remove from Codinger (it stays in Resume)" onClick={act(() => { if (confirm(`Delete "${m.title}" from Codinger? Claude Code's own transcript is kept, so you can still find it under Resume.`)) return api(`/api/sessions/${m.id}`, 'DELETE').then(selectFallback) })}>Delete</button>,
+    worker && <div key="modes" className="menu-label">Permission mode</div>,
+    ...(worker ? MODES.map((x) => (
+      <button key={x.v} className="menu-check" onClick={act(() => api(`/api/sessions/${m.id}`, 'PATCH', { permissionMode: x.v }))}>
+        <span>{m.permissionMode === x.v && <CheckIcon size={13} />}</span>{x.label}
+      </button>
+    )) : []),
+    worker && <hr key="sep" />,
+    worker && <button key="autopilot" className={autopilotOn(m) ? 'autopilot-on' : ''} onClick={() => setOpen('autopilot')}>
+      {autopilotOn(m) ? `Autopilot · ${budgetLabel(ap!.unit, Math.max(0, ap!.budget - ap!.used))} left` : 'Autopilot…'}
+    </button>,
+    worker && <button key="publish" onClick={act(onPublish)}>{m.share ? 'Published transcript…' : 'Publish transcript…'}</button>,
+    worker && !m.archived && <button key="close" title="Archive session" onClick={act(() => closeSession(m.id))}>Close</button>,
+    worker && m.archived && <button key="reopen" onClick={act(() => api(`/api/sessions/${m.id}`, 'PATCH', { archived: false }))}>Reopen</button>,
+    worker && m.archived && <button key="delete" className="danger" title="Remove from Codinger (it stays in Resume)" onClick={act(() => { if (confirm(`Delete "${m.title}" from Codinger? Claude Code's own transcript is kept, so you can still find it under Resume.`)) return api(`/api/sessions/${m.id}`, 'DELETE').then(selectFallback) })}>Delete</button>,
   ].filter(Boolean)
   if (!items.length) return null
   return (
     <div className="menu-wrap" ref={box}>
-      <button className={`icon-tall${busy ? ' busy' : ''}`} title="More" onClick={() => setOpen(!open)}><MoreIcon size={15} /></button>
-      {open && <div className="menu">{items}</div>}
+      <button className={`icon-tall${busy ? ' busy' : ''}`} title="More" onClick={() => setOpen(open ? null : 'list')}><MoreIcon size={15} /></button>
+      {open === 'list' && <div className="menu">{items}</div>}
+      {open === 'autopilot' && <AutopilotPanel m={m} onClose={() => setOpen(null)} />}
     </div>
   )
 }
