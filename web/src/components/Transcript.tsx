@@ -99,17 +99,26 @@ export function Transcript({ sid }: { sid: string }) {
   }, [!!events])
 
   // Select any of Claude's text and a comment opens on it, focused, as in Marginer.
+  // A touch screen sends no mouseup after a selection, so there the comment opens once the
+  // selection stops changing and no finger is on the screen.
   useEffect(() => {
     if (state.share) return
-    const up = () => setTimeout(() => {
+    const at = (n: Node) => (n.nodeType === 1 ? n as Element : n.parentElement)
+    // The selection, if it is text of one of this session's messages that takes a comment.
+    const target = () => {
       const sel = getSelection()
-      if (!sel || sel.isCollapsed || !sel.rangeCount || !sel.toString().trim()) return
+      if (!sel || sel.isCollapsed || !sel.rangeCount || !sel.toString().trim()) return null
       const r = sel.getRangeAt(0)
-      const msgOf = (n: Node) => (n.nodeType === 1 ? n as Element : n.parentElement)?.closest<HTMLElement>('[data-msg]')
+      const msgOf = (n: Node) => at(n)?.closest<HTMLElement>('[data-msg]')
       const el = msgOf(r.startContainer)
-      if (!el || el !== msgOf(r.endContainer) || el.dataset.sid !== sid) return
-      const at = (n: Node) => (n.nodeType === 1 ? n as Element : n.parentElement)
-      if (at(r.commonAncestorContainer)?.closest('.ri-edit, textarea, input, button, summary')) return
+      if (!el || el !== msgOf(r.endContainer) || el.dataset.sid !== sid) return null
+      if (at(r.commonAncestorContainer)?.closest('.ri-edit, textarea, input, button, summary')) return null
+      return { sel, r, el }
+    }
+    const comment = () => {
+      const t = target()
+      if (!t) return
+      const { sel, r, el } = t
       // A selection of a whole paragraph or list item goes on it as a whole, as from the
       // reaction button: the same passage the button picks (the shortest; between two, the first).
       const flat = (t: string) => t.replace(/\s+/g, ' ').trim()
@@ -130,9 +139,21 @@ export function Transcript({ sid }: { sid: string }) {
       // A comment inside an item to consider or a question counts as the reply to it.
       const itemKey = at(r.commonAncestorContainer)?.closest<HTMLElement>('[data-item]')?.dataset.item
       addDraft(sid, { id: uid(), kind: 'note', anchor, quote, text: '', images: [], createdAt: Date.now(), ...(whole ? { whole: true } : {}), ...(itemKey ? { itemKey } : {}) })
-    }, 0)
+    }
+    const up = () => setTimeout(comment, 0)
+    const touch = matchMedia('(pointer: coarse)')
+    let wait = 0, down = 0
+    const settle = () => { clearTimeout(wait); if (touch.matches && !down) wait = window.setTimeout(comment, 500) }
+    const fingers = (e: TouchEvent) => { down = e.touches.length; if (down) clearTimeout(wait); else settle() }
     document.addEventListener('mouseup', up)
-    return () => document.removeEventListener('mouseup', up)
+    document.addEventListener('selectionchange', settle)
+    for (const t of ['touchstart', 'touchend', 'touchcancel'] as const) document.addEventListener(t, fingers, { passive: true })
+    return () => {
+      clearTimeout(wait)
+      document.removeEventListener('mouseup', up)
+      document.removeEventListener('selectionchange', settle)
+      for (const t of ['touchstart', 'touchend', 'touchcancel'] as const) document.removeEventListener(t, fingers)
+    }
   }, [sid])
 
   if (!events) return <div className="transcript"><div className="empty">Loading…</div></div>
