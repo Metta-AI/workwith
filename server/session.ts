@@ -66,12 +66,15 @@ export class Session {
   private seqFrom = 1  // the first number for an empty transcript
   private hooks: Hooks
   private launch: () => Launch
+  // The last server stopped mid-turn without handing the process on (a crash, a forced stop).
+  cut = false
 
   constructor(meta: SessionMeta, hooks: Hooks, launch: () => Launch) {
     this.meta = meta
     this.hooks = hooks
     this.launch = launch
-    // Whatever was in flight when the server last stopped is gone now.
+    // Whatever was in flight when the server last stopped is gone now, unless reattach() finds it.
+    this.cut = meta.status === 'working' || meta.status === 'permission'
     meta.running = false
     meta.compacting = false
     if (meta.status === 'working' || meta.status === 'permission') meta.status = 'idle'
@@ -217,6 +220,7 @@ export class Session {
   reattach(): string | null {
     const r = Proc.adopt(this.meta.id)
     if (!r) return null
+    this.cut = false
     const st = r.state as { outstanding: number; background: number; interrupted: boolean; compacting: boolean; pending: [string, { input: any; suggestions: any[] }][]; callFrom: number; callStart: number }
     this.proc = r.proc
     this.outstanding = st.outstanding

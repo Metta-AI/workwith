@@ -32,6 +32,10 @@ export function allEmoji(): Promise<EmojiInfo[]> {
       emoji, name: v.name, group: v.group,
       words: [...(kw[emoji] ?? []), ...(EXTRA[emoji] ?? [])].map((w) => w.toLowerCase().replace(/_/g, ' ')),
     }))
+  }).catch(() => {
+    // Not loaded (a rebuild since this page loaded removes the old files): try again next time.
+    all = null
+    return []
   })
   return all
 }

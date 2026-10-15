@@ -145,13 +145,15 @@ export type AuthState = { state: 'ok' | 'needed' | 'pending' | 'failed'; url?: s
 export type Usage = { fiveHour?: number; sevenDay?: number; resetsAt?: number; status?: string; overage?: boolean; rate?: { fiveHour?: number; sevenDay?: number; pairs: number } }
 // trackedFiles: files whose history Codinger keeps, besides AGENTS.md, CLAUDE.md and LEAD_NOTES.md.
 // selfRestart: offer to restart when Codinger's own code changes (for working on Codinger); off by default.
+// resumeCut: a turn the server's stop cut short (a crash, a forced stop; not a restart, which keeps it
+// running) goes on when the server starts again; off by default.
 // appearance: unset until you pick one, which the first load asks you to do.
 // groupOrder: the sidebar's folders, once you drag one. cacheGuard: tokens; see shared/cache.ts.
 // notes, keepWarmHours, keepWarmMax, keepWarmUsage: see server/notes.ts.
 // plan: what you pay a month (yearly: you pay for a year, usd is that over 12), for the plan
 // you confirmed it for. reviewSeen: the last weekly and monthly review you closed. See shared/costs.ts.
 export type Settings = {
-  leadAutoSend: boolean; autoModeMigrated?: boolean; trackedFiles?: string[]; selfRestart?: boolean
+  leadAutoSend: boolean; autoModeMigrated?: boolean; trackedFiles?: string[]; selfRestart?: boolean; resumeCut?: boolean
   appearance?: Appearance; groupOrder?: string[]; cacheGuard?: number
   notes?: boolean; keepWarmHours?: number; keepWarmMax?: number; keepWarmUsage?: number
   // MCP servers: new sessions start with them off (default), except those always on;

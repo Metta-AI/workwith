@@ -112,6 +112,10 @@ export function SettingsDialog({ onClose, page: first }: { onClose(): void; page
               <input type="checkbox" checked={!!st.settings.selfRestart} onChange={(e) => void api('/api/settings', 'PUT', { selfRestart: e.target.checked })} />
               Offer to restart when Codinger's code changes
             </label>
+            <label className="settings-check" title="After a crash or a forced stop of the server. A restart from Codinger keeps a working session working anyway.">
+              <input type="checkbox" checked={!!st.settings.resumeCut} onChange={(e) => void api('/api/settings', 'PUT', { resumeCut: e.target.checked })} />
+              Go on with turns that a server stop cut short
+            </label>
             <label className="settings-check" title="When the prompt cache expires, the next message re-caches the whole context at full price">
               Ask before re-caching more than
               <select value={guard} onChange={(e) => void api('/api/settings', 'PUT', { cacheGuard: Number(e.target.value) })}>

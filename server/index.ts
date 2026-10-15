@@ -258,6 +258,16 @@ if (!settings.autoModeMigrated) {
 }
 // Busy sessions the last server handed on keep going; any other claude process it left is stopped.
 Proc.sweep(new Set([...sessions.values()].map((s) => s.reattach()).filter((k): k is string => !!k)))
+// The others that were mid-turn lost their turn: they go on, if you asked for that
+// (once the server is up: sending needs what this file sets up further down).
+setImmediate(() => { for (const s of sessions.values()) if (s.cut) resumeCut(s) })
+function resumeCut(s: Session) {
+  s.cut = false
+  if (!settings.resumeCut) return
+  if (holdReasons(s, true).length) { s.notice('The server stopped during Claude\'s turn. Its prompt cache has expired, so it goes on only when you send a message.'); return }
+  s.notice('The server stopped during Claude\'s turn. Claude goes on.')
+  s.send([{ kind: 'text', text: '[Codinger] The server stopped during your last turn, and the turn ended there. Go on from where you stopped.' }], { from: 'codinger', ...hiddenFor(s, []) })
+}
 startNotes({ sessions: () => sessions.values(), settings: () => settings, usage: () => usage, changed: metaChanged })
 startTasks({ changed: (tasks) => broadcast({ type: 'tasks', tasks }), ended: taskEnded })
 // Autopilot goes on in sessions the last server left between turns (a handed-on busy one
@@ -862,6 +872,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       ...settings,
       ...(typeof body.leadAutoSend === 'boolean' ? { leadAutoSend: body.leadAutoSend } : {}),
       ...(typeof body.selfRestart === 'boolean' ? { selfRestart: body.selfRestart } : {}),
+      ...(typeof body.resumeCut === 'boolean' ? { resumeCut: body.resumeCut } : {}),
       ...(body.appearance ? { appearance: cleanAppearance(body.appearance) } : {}),
       ...(Array.isArray(body.groupOrder) ? { groupOrder: body.groupOrder.map(String) } : {}),
       ...(Number.isFinite(body.cacheGuard) && body.cacheGuard >= 0 ? { cacheGuard: Math.round(body.cacheGuard) } : {}),
@@ -1185,7 +1196,10 @@ const DIST = path.join(ROOT, 'dist')
 const TYPES: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' }
 function serveStatic(p: string, res: http.ServerResponse) {
   let file = path.join(DIST, path.normalize(p).replace(/^(\.\.[/\\])+/, ''))
-  if (!file.startsWith(DIST) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DIST, 'index.html')
+  const missing = !file.startsWith(DIST) || !fs.existsSync(file) || fs.statSync(file).isDirectory()
+  // A build since the page loaded removed its old files: a 404, not the page, which no import can use.
+  if (missing && p.startsWith('/assets/')) { res.writeHead(404).end(); return }
+  if (missing) file = path.join(DIST, 'index.html')
   if (!fs.existsSync(file)) { res.writeHead(500).end('Run `npm run build` first, or start with --dev.'); return }
   res.writeHead(200, { 'content-type': TYPES[path.extname(file)] ?? 'application/octet-stream' })
   fs.createReadStream(file).pipe(res)
