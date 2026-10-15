@@ -146,8 +146,9 @@ body.resizing { cursor: col-resize; user-select: none; }
 .head-id { font-size: calc(11.5px * var(--fs, 1)); color: var(--muted); }
 .row-remote { vertical-align: -1px; margin-right: 4px; color: var(--muted); }
 .side-foot-mid { flex: 1; display: flex; justify-content: center; min-width: 0; }
-.reset-order { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 2; white-space: nowrap; font-size: calc(12px * var(--fs, 1)); padding: 0 4px; border: none; background: none; box-shadow: none; color: var(--muted); }
-.reset-order:hover { color: var(--text); text-decoration: underline; background: none; }
+/* The sidebar's own colour, so a session row under it does not show through. */
+.reset-order { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 2; white-space: nowrap; font-size: calc(12px * var(--fs, 1)); padding: 1px 8px; border: none; border-radius: 6px; background: var(--panel); box-shadow: none; color: var(--muted); }
+.reset-order:hover { color: var(--text); text-decoration: underline; background: var(--panel); }
 .settings-check { display: flex; gap: 8px; align-items: center; font-size: calc(13px * var(--fs, 1)); margin: 0 0 12px; }
 .settings-file { display: flex; gap: 10px; align-items: baseline; font-size: calc(13px * var(--fs, 1)); }
 .settings-file .mono { font-size: calc(12px * var(--fs, 1)); }
