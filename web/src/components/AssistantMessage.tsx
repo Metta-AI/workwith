@@ -489,6 +489,9 @@ function useReveal(root: React.RefObject<HTMLDivElement | null>, sid: string, pi
   }, [root, sid, pieces, live])
 }
 
+// The <details> you opened, so that one stays open when its message renders anew.
+const opened = new Set<string>()
+
 function Pieces({ c, pieces }: { c: Ctx; pieces: Piece[] }) {
   return <>{pieces.map((p) => {
     switch (p.kind) {
@@ -496,7 +499,8 @@ function Pieces({ c, pieces }: { c: Ctx; pieces: Piece[] }) {
       case 'ask': return <AskCard key={p.block} c={c} ask={p.ask} block={p.block} />
       case 'answer': return <div key={p.block} className="answer-block"><Pieces c={c} pieces={p.pieces} /></div>
       case 'details': return (
-        <details key={p.block} className="more">
+        <details key={p.block} className="more" open={opened.has(`${c.sid}:${c.msg}:${p.block}`)}
+          onToggle={(e) => { const k = `${c.sid}:${c.msg}:${p.block}`; if (e.currentTarget.open) opened.add(k); else opened.delete(k) }}>
           <summary dangerouslySetInnerHTML={{ __html: renderInline(p.title || 'More details') }} />
           <div className="more-body"><Pieces c={c} pieces={p.pieces} /></div>
         </details>
