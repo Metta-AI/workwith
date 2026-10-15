@@ -176,7 +176,7 @@ export class Hub extends DurableObject<Env> {
     const link = await this.ctx.storage.get<Link>(`link:${code}`)
     if (!link || link.exp < Date.now() || link.token) return page('Not found', '<p>This request is used or too old. Start again in Codinger.</p>', 404)
     const again = await this.ctx.storage.get<Machine>(`machine:${link.name}`)
-    return page('Connect a machine', `<p>Connect <b>${esc(link.name)}</b> to your Codinger? Check that Codinger on that machine shows the code <b>${esc(code)}</b>.</p>
+    return page('Connect a machine', `<p>Connect <b>${esc(link.name)}</b> to your Codinger? Check that Codinger on that machine shows this code:</p><div class="code">${esc(code)}</div>
 ${again ? `<p>A machine with this name is connected already. It will be disconnected.</p>` : ''}
 <form method="post"><input type="hidden" name="code" value="${esc(code)}"><button>Connect ${esc(link.name)}</button></form>`)
   }
@@ -326,11 +326,41 @@ function fromBase64(s: string): Uint8Array {
   return out
 }
 
+// The critter, as on codinger.app.
+const CRITTER = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 -1 16 14' width='34' height='30' shape-rendering='crispEdges'><rect x='3' y='3' width='10' height='1' fill='#2b98c6'/><rect x='2' y='4' width='12' height='5' fill='#2b98c6'/><rect x='3' y='9' width='10' height='1' fill='#2b98c6'/><rect x='0' y='6' width='2' height='2' fill='#2b98c6'/><rect x='14' y='6' width='2' height='2' fill='#2b98c6'/><rect x='5' y='4' width='1' height='2' fill='#222'/><rect x='10' y='4' width='1' height='2' fill='#222'/><rect x='4' y='10' width='2' height='2' fill='#2b98c6'/><rect x='10' y='10' width='2' height='2' fill='#2b98c6'/></svg>`
+const ICON = "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 -1 16 14' shape-rendering='crispEdges'><rect x='3' y='3' width='10' height='1' fill='%232b98c6'/><rect x='2' y='4' width='12' height='5' fill='%232b98c6'/><rect x='3' y='9' width='10' height='1' fill='%232b98c6'/><rect x='0' y='6' width='2' height='2' fill='%232b98c6'/><rect x='14' y='6' width='2' height='2' fill='%232b98c6'/><rect x='5' y='4' width='1' height='2' fill='%23222'/><rect x='10' y='4' width='1' height='2' fill='%23222'/><rect x='4' y='10' width='2' height='2' fill='%232b98c6'/><rect x='10' y='10' width='2' height='2' fill='%232b98c6'/></svg>"
+
+// A page of the hub's own (sign-in, connecting a machine), in codinger.app's colors.
 function page(title: string, body: string, status = 200): Response {
-  return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
-<style>body{font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:3rem auto;padding:0 1rem;color:#222}a{color:#0b6bcb}input,button{font:inherit;padding:.4rem .6rem}button{cursor:pointer}</style>
-<h1>${esc(title)}</h1>${body}`, { status, headers: { 'content-type': 'text/html; charset=utf-8' } })
+  return new Response(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(title)} · Codinger</title><link rel="icon" href="${ICON}">
+<style>
+:root { color-scheme: light dark; --bg: #faf9f6; --fg: #23201c; --muted: #7a746a; --line: #e3dfd6; --card: #fff; --accent: #1f7fae; --accent-ink: #fff; --field: #fff; }
+@media (prefers-color-scheme: dark) { :root { --bg: #1d1c1a; --fg: #ebe7df; --muted: #9a948a; --line: #3a3732; --card: #2c2a26; --accent: #3a9cd0; --accent-ink: #08202c; --field: #23221f; } }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem 1rem;
+  background: var(--bg); color: var(--fg); font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+.brand { display: flex; align-items: center; gap: .55rem; margin-bottom: 1.4rem; font-weight: 700; font-size: 1.15rem; color: var(--fg); text-decoration: none; }
+.brand small { font-weight: 400; color: var(--muted); }
+.card { width: 100%; max-width: 25rem; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1.6rem 1.7rem; box-shadow: 0 10px 30px rgba(0, 0, 0, .07); }
+h1 { margin: 0 0 .7rem; font-size: 1.3rem; }
+p { margin: 0 0 1rem; }
+p:last-child { margin-bottom: 0; }
+.muted { color: var(--muted); font-size: .92rem; }
+a { color: var(--accent); }
+form { margin: 0; }
+input { width: 100%; font: inherit; padding: .65rem .8rem; border: 1px solid var(--line); border-radius: 9px; background: var(--field); color: var(--fg); }
+input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+button { width: 100%; font: inherit; font-weight: 600; padding: .65rem .8rem; border: none; border-radius: 9px; background: var(--accent); color: var(--accent-ink); cursor: pointer; }
+button:hover { filter: brightness(1.08); }
+.code { font: 600 1.5rem ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .18em; text-align: center; padding: .5rem; border: 1px dashed var(--line); border-radius: 9px; margin-bottom: 1rem; }
+footer { margin-top: 1.4rem; font-size: .85rem; color: var(--muted); }
+footer a { color: var(--muted); }
+</style>
+<a class="brand" href="/">${CRITTER}<span>Codinger <small>web</small></span></a>
+<main class="card"><h1>${esc(title)}</h1>${body}</main>
+<footer><a href="https://codinger.app">codinger.app</a></footer></html>`, { status, headers: { 'content-type': 'text/html; charset=utf-8' } })
 }
 
-const loginPage = (next: string) => page('Sign in to Codinger', `<form method="post"><input type="hidden" name="next" value="${esc(next)}"><p><input type="email" name="email" placeholder="you@example.com" required autofocus size="30"></p><p><button>Email me a link</button></p></form>`)
-const verifyPage = (t: string) => page('Sign in to Codinger', `<form method="post"><input type="hidden" name="t" value="${esc(t)}"><button autofocus>Sign in</button></form>`)
+const loginPage = (next: string) => page('Sign in', `<p class="muted">We email you a link to sign in. It works once, for 15 minutes.</p><form method="post"><input type="hidden" name="next" value="${esc(next)}"><p><input type="email" name="email" placeholder="Your email address" autocomplete="email" required autofocus></p><button>Email me a link</button></form>`)
+const verifyPage = (t: string) => page('Sign in', `<p class="muted">Click to finish signing in on this browser.</p><form method="post"><input type="hidden" name="t" value="${esc(t)}"><button autofocus>Sign in</button></form>`)

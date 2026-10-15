@@ -137,7 +137,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 .machine.dragged .machine-head { background: color-mix(in srgb, var(--text) 10%, transparent); }
 .machine.sliding { transition: transform .18s ease; }
 .remote-panel p { margin: 0 0 10px; }
-.remote-panel label input { margin-left: 6px; }
+.remote-panel label { display: block; margin-bottom: 12px; }
 .remote-code { font: 600 calc(22px * var(--fs, 1)) var(--mono, monospace); letter-spacing: .15em; }
 .head-id { font-size: calc(11.5px * var(--fs, 1)); color: var(--muted); }
 .row-remote { vertical-align: -1px; margin-right: 4px; color: var(--muted); }

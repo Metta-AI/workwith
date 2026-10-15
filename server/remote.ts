@@ -59,8 +59,10 @@ export function startRemote(localPort: number, onChange: (s: RemoteStatus) => vo
 export async function remoteLink(name: string): Promise<RemoteStatus> {
   saved.name = machineName(name || saved.name)
   save()
+  // Say why it failed: a network or certificate problem shows only in the cause.
   const r = await fetch(`${HUB}/_remote/link/start`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: saved.name }) })
-  if (!r.ok) throw new Error(`The hub said ${r.status}`)
+    .catch((e: Error & { cause?: Error }) => { throw new Error(`Could not reach ${HUB}: ${e.cause?.message ?? e.message}`) })
+  if (!r.ok) throw new Error(`${HUB} answered ${r.status}: ${(await r.text()).slice(0, 200)}`)
   const { code, poll, url } = await r.json() as { code: string; poll: string; url: string }
   linking = { code, url }
   tell()

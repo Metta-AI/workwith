@@ -1,5 +1,5 @@
 // The hub for remote access at web.codinger.app (src/index.ts), and the Codinger UI.
-// Build the UI first (npm run build, at the top). Local: npx wrangler dev --env dev. Deploy: npx wrangler deploy.
+// Build the UI first (npm run build, at the top). Types for tsc: npx wrangler types. Local: npx wrangler dev --env dev. Deploy: npx wrangler deploy.
 {
   "name": "codinger-web",
   "main": "src/index.ts",
