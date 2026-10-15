@@ -207,6 +207,54 @@ export function select(el: HTMLElement, start: number, end = start) {
   s.addRange(rangeAt(el, start, end))
 }
 
+// The image just before or after a collapsed caret, and on which side of it the caret is.
+function imageBesideCaret(el: HTMLElement): [HTMLImageElement, 'after' | 'before'] | null {
+  const s = getSelection()
+  if (!s?.rangeCount || !s.isCollapsed || !el.contains(s.anchorNode)) return null
+  const n = s.anchorNode!, off = s.anchorOffset
+  const text = n.nodeType === Node.TEXT_NODE
+  const prev = text ? (off === 0 ? n.previousSibling : null) : n.childNodes[off - 1]
+  const next = text ? (off === n.textContent?.length ? n.nextSibling : null) : n.childNodes[off]
+  if (prev instanceof HTMLImageElement) return [prev, 'after']
+  if (next instanceof HTMLImageElement) return [next, 'before']
+  return null
+}
+
+const fontMetrics = new Map<string, { ascent: number; descent: number; x: number }>()
+function metricsOf(font: string) {
+  let m = fontMetrics.get(font)
+  if (!m) {
+    const ctx = document.createElement('canvas').getContext('2d')!
+    ctx.font = font
+    const t = ctx.measureText('x')
+    m = { ascent: t.fontBoundingBoxAscent, descent: t.fontBoundingBoxDescent, x: t.actualBoundingBoxAscent }
+    fontMetrics.set(font, m)
+  }
+  return m
+}
+
+// Beside an image the browser draws the caret as tall as the whole line. There,
+// hide it (.ri-hide-caret) and show `fake` instead: the text's height, on the
+// text's baseline, blinking the same way.
+export function imageCaret(el: HTMLElement, fake: HTMLElement) {
+  const at = document.activeElement === el ? imageBesideCaret(el) : null
+  el.classList.toggle('ri-hide-caret', !!at)
+  fake.hidden = !at
+  if (!at) return
+  const [img, side] = at
+  const r = img.getBoundingClientRect(), st = getComputedStyle(img)
+  const m = metricsOf(getComputedStyle(img.parentElement!).font)
+  // vertical-align: middle puts the middle of the image's margin box half an x-height above the baseline.
+  const baseline = (r.top - parseFloat(st.marginTop) + r.bottom + parseFloat(st.marginBottom)) / 2 + m.x / 2
+  const box = fake.offsetParent!.getBoundingClientRect(), field = el.getBoundingClientRect()
+  fake.hidden = baseline < field.top || baseline > field.bottom
+  fake.style.left = `${(side === 'after' ? r.right : r.left - 1) - box.left}px`
+  fake.style.top = `${baseline - m.ascent - box.top}px`
+  fake.style.height = `${m.ascent + m.descent}px`
+  // A caret that moves shows at once, then blinks.
+  for (const a of fake.getAnimations()) a.currentTime = 0
+}
+
 // A caret at the end of a list marker (or its indent) is drawn inside that
 // fixed-width box, short of the text: put it after the box.
 export function snapCaret(el: HTMLElement) {

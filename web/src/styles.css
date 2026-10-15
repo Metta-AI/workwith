@@ -364,7 +364,7 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .react-badge.hover { box-shadow: 0 0 0 2px var(--hl-focus); }
 .note-card.sent { border-left-color: var(--line); padding-right: 8px; font-size: calc(13px * var(--fs, 1)); color: var(--muted); box-shadow: none; }
 .note-card.sent.hover, .note-card.sent:hover { color: var(--text); box-shadow: 0 2px 8px rgba(0, 0, 0, .08); }
-.note-card.sent .md img, .note-card .ri-img { height: 24px; max-width: 96px; object-fit: cover; vertical-align: middle; position: relative; top: -1px; margin: -5px 2px; border-radius: 4px; border: 1px solid var(--line); cursor: zoom-in; }
+.note-card.sent .md img, .note-card .ri-img { height: 24px; max-width: 96px; object-fit: cover; vertical-align: middle; margin: -6px 0 -4px; border-radius: 4px; border: 1px solid var(--line); cursor: zoom-in; }
 .note-card.sent .md > :first-child { margin-top: 0; } .note-card.sent .md > :last-child { margin-bottom: 0; }
 .user-wrap { margin: 18px 0 0 auto; max-width: 88%; display: flex; flex-direction: column; align-items: flex-end; }
 .user-wrap > .user-turn { margin: 0; max-width: 100%; }
@@ -433,11 +433,8 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .notice.md { text-align: left; }
 .turn-end { height: 1px; background: linear-gradient(90deg, transparent, var(--line), transparent); margin: 14px 40px; }
 .working-dots { display: flex; gap: 4px; padding: 10px 2px; margin-top: 22px; }
-/* Each dot hops in turn, then all three rest a moment. */
-.working-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: dot-hop 1.4s infinite; }
-.working-dots span:nth-child(2) { animation-delay: .3s; } .working-dots span:nth-child(3) { animation-delay: .6s; }
-@keyframes dot-hop { 0%, 22%, 100% { transform: translateY(0); } 11% { transform: translateY(-5px); } }
-@media (prefers-reduced-motion: reduce) { .working-dots span { animation: none; } }
+/* WorkingDots (Transcript.tsx) makes them hop. */
+.working-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 
 /* ---- inline replies & questions ---- */
 .note-card { position: absolute; z-index: 2; pointer-events: auto; background: var(--card); border: 1px solid var(--line); border-left: 3px solid #f0b400; border-radius: 8px; padding: 6px 26px 6px 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, .08); transition: top .15s; }
@@ -511,8 +508,13 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .ri-edit .md-quote { display: inline-block; width: 100%; box-sizing: border-box; vertical-align: top; padding-left: 10px; border-left: 3px solid color-mix(in srgb, var(--text) 18%, transparent); color: color-mix(in srgb, var(--text) 75%, transparent); }
 .ri-edit:focus { outline: 2px solid var(--blue); outline-offset: -1px; }
 .ri-edit[data-empty]::before { content: attr(data-placeholder); color: var(--muted); pointer-events: none; position: absolute; }
-.ri-img { height: 24px; max-width: 96px; object-fit: cover; vertical-align: middle; position: relative; top: -1px; margin: -5px 2px; border-radius: 4px; border: 1px solid var(--line); cursor: zoom-in; }
+.ri-img { height: 24px; max-width: 96px; object-fit: cover; vertical-align: middle; margin: -6px 0 -4px; border-radius: 4px; border: 1px solid var(--line); cursor: zoom-in; }
 .ri-img.loading { opacity: .45; }
+/* No position or transform on .ri-img: either one paints the image over the caret. The margins lift it 1px. */
+.ri-edit.ri-hide-caret { caret-color: transparent; }
+.ri-caret { position: absolute; width: 1px; background: var(--text); pointer-events: none; animation: ri-blink 1s step-end infinite; }
+.ri-caret[hidden] { display: none; }
+@keyframes ri-blink { 50% { opacity: 0; } }
 .user-part .md img { height: 24px; max-width: 96px; object-fit: cover; vertical-align: middle; position: relative; top: -1px; margin: -5px 2px; border-radius: 4px; border: 1px solid var(--line); cursor: zoom-in; }
 .lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .75); display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
 .lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 6px; box-shadow: 0 8px 40px rgba(0, 0, 0, .5); }

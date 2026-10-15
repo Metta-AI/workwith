@@ -6,7 +6,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import type { ImageRef } from '../../../shared/types.ts'
 import { htmlToMarkdown } from '../htmlmd.ts'
-import { activate, enterKey, fromDom, imgNode, rangeAt, render, select, selectionOffsets, snapCaret, wrapKey } from '../mdlive.ts'
+import { activate, enterKey, fromDom, imageCaret, imgNode, rangeAt, render, select, selectionOffsets, snapCaret, wrapKey } from '../mdlive.ts'
 import { imagesFrom, uploadImage } from '../util.ts'
 import { ImageIcon, XIcon } from './Icons.tsx'
 
@@ -41,6 +41,7 @@ type Snap = { v: string; s: number; e: number; t: number }
 
 export function RichInput({ value, onChange, images, onImages, placeholder, autoFocus, onSubmit, onEscape, minRows = 2, onKey }: Props) {
   const ed = useRef<HTMLDivElement>(null)
+  const fake = useRef<HTMLSpanElement>(null)       // the caret beside an image (mdlive.ts imageCaret)
   const last = useRef<string | null>(null)        // what this field last reported
   const caret = useRef<[number, number] | null>(null) // where the caret last was, as text offsets
   const composing = useRef(false)                  // an IME is mid-word: leave the DOM alone
@@ -117,9 +118,14 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
       if (sel) caret.current = sel
       if (document.activeElement === el) snapCaret(el)
       activate(el)
+      imageCaret(el, fake.current!)
     }
+    // An image that loads changes size, and so moves the caret.
+    const loaded = () => { if (ed.current) imageCaret(ed.current, fake.current!) }
+    const el = ed.current!
     document.addEventListener('selectionchange', save)
-    return () => document.removeEventListener('selectionchange', save)
+    el.addEventListener('load', loaded, true)
+    return () => { document.removeEventListener('selectionchange', save); el.removeEventListener('load', loaded, true) }
   }, [])
 
   // Each image shows at once and fills in when its upload is done.
@@ -222,6 +228,8 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
             if (t === 'historyUndo') { e.preventDefault(); undo() }
             if (t === 'historyRedo') { e.preventDefault(); redo() }
           }}
+          onScroll={() => imageCaret(ed.current!, fake.current!)}
+          onBlur={() => imageCaret(ed.current!, fake.current!)}
           onPaste={paste}
           onCopy={(e) => copy(e, false)}
           onCut={(e) => copy(e, true)}
@@ -234,6 +242,7 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
             if (e.key === 'Escape' && onEscape) { e.preventDefault(); onEscape() }
           }}
         />
+        <span ref={fake} className="ri-caret" hidden />
         <label className="attach" title="Attach images" onMouseDown={(e) => e.preventDefault()}>
           <input type="file" accept="image/*" multiple hidden onChange={(e) => { void add([...(e.target.files ?? [])], null); e.target.value = '' }} />
           <ImageIcon />

@@ -28,7 +28,11 @@ tag on its own line; markdown works inside. Plain text outside the tags is fine 
 4. \`<ask id="...">\`: a question for the user. Put the question first, then one "- " line for
    each suggested answer (optional; the user can also write free text and attach images).
    The user picks an answer and sends it as their own words, so write each one in the user's
-   voice: "Yes, rename the repo", not "Yes, I will rename the repo". Use a different id for each. Put it right after the passage it belongs to, in the middle of
+   voice: "Yes, rename the repo", not "Yes, I will rename the repo". In an answer, "I" is the
+   user and "you" is you, the agent. When an answer says who does what, write "You deploy it
+   with Wrangler" (you deploy), "I make the rule in the dashboard" (the user makes it); never
+   "I deploy it" for work that you do. Before you send, read each answer as the user saying it
+   to you. Use a different id for each. Put it right after the passage it belongs to, in the middle of
    your message if that is where it comes up, not collected at the end. Keep working on
    whatever does not depend on the answer.
 5. \`<draft id="..." title="...">\`: text you wrote for the user to use or send on: a commit

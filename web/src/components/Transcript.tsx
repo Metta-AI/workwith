@@ -148,7 +148,7 @@ export function Transcript({ sid }: { sid: string }) {
             ? <ItemView key={g.item.key} sid={sid} item={g.item} f={folded} />
             : <Activity key={g.items[0].key} sid={sid} items={g.items} f={folded} live={i === groups.length - 1 && meta?.status === 'working'} />)}
           {streaming && <AssistantMessage sid={sid} msg="live" text={streaming} live />}
-          {meta?.status === 'working' && !streaming && <div className="working-dots"><span /><span /><span /></div>}
+          {meta?.status === 'working' && !streaming && <WorkingDots />}
         </div>
         <Margin sid={sid} inner={inner} column={column} gutter={gutter} events={events} />
       </div>
@@ -160,6 +160,26 @@ export function Transcript({ sid }: { sid: string }) {
 
 // While open questions or items are out of view, a toast at the bottom of the
 // transcript points toward the nearest one; clicking it goes there.
+// Each dot hops on its own: after a random wait, for a random time.
+function WorkingDots() {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const timers = ([...ref.current!.children] as HTMLElement[]).map((dot) => {
+      const t = { id: 0 }
+      const hop = () => {
+        const duration = 220 + Math.random() * 280
+        dot.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(-5px)' }, { transform: 'translateY(0)' }], { duration, easing: 'ease-out' })
+        t.id = window.setTimeout(hop, duration + 150 + Math.random() * 1300)
+      }
+      t.id = window.setTimeout(hop, Math.random() * 600)
+      return t
+    })
+    return () => timers.forEach((t) => clearTimeout(t.id))
+  }, [])
+  return <div className="working-dots" ref={ref}><span /><span /><span /></div>
+}
+
 function OpenToast({ scroller, keys }: { scroller: React.RefObject<HTMLDivElement | null>; keys: string[] }) {
   const [target, setTarget] = useState<{ key: string; dir: 'up' | 'down' } | null>(null)
   const sig = keys.join('|')

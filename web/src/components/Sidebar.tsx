@@ -56,8 +56,11 @@ function useDragSort(onDrop: (key: string, ids: string[]) => void) {
     const rects = els.map((el) => el.getBoundingClientRect())
     const size = i + 1 < els.length ? rects[i + 1].top - rects[i].top : rects[i].height + parseFloat(getComputedStyle(els[i]).marginBottom)
     const others = ids.filter((x) => x !== id)
-    const mids = rects.filter((_, k) => k !== i).map((r) => r.top + r.height / 2)
-    const slot = (dy: number) => { const c = rects[i].top + rects[i].height / 2 + dy; return mids.filter((m) => m < c).length }
+    // A sibling slides aside once the dragged one covers most of it, whatever their heights.
+    const slot = (dy: number) => {
+      const top = rects[i].top + dy, bottom = rects[i].bottom + dy
+      return rects.filter((r, k) => k < i ? top > r.bottom - 0.6 * r.height : k > i && bottom > r.top + 0.6 * r.height).length
+    }
     const move = (ev: PointerEvent) => {
       const dy = ev.clientY - y0
       if (!moved.current && Math.abs(dy) < 5) return
