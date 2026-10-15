@@ -2,7 +2,8 @@
 // under ~/.codinger/artifacts/<name>/, in the shape of a page on Prolifica:
 //
 //   index.html      the page; it reads its data with `await prolifica.data('slot')`
-//   artifact.json   { title, description, slots: {slot: {kind, description}}, bindings: {slot: "data/x.csv"} }
+//   artifact.json   { title, description, slots: {slot: {kind, description}}, bindings: {slot: "data/x.csv"}, parent? }
+//   instructions.md for agents: how to use and rebind this page (optional; published with it)
 //   data/           the files the bindings name
 //
 // A second HTTP server, on a port of its own, runs them: never Codinger's origin,
@@ -47,6 +48,8 @@ const dirOf = (name: string) => path.join(ARTIFACTS, name)
 
 type Manifest = {
   title?: string; description?: string; short_title?: string; view_name?: string
+  /** the Prolifica isle this page came from */
+  parent?: string
   slots?: Record<string, { kind?: string; description?: string }>
   bindings?: Record<string, string>
 }
@@ -158,7 +161,8 @@ export const artifactsPrompt = () => `
 When the user wants to see something (a chart, a table to explore, a dashboard, a report over data, a small tool), and whenever you analyse data, make an artifact: a page that Codinger shows in a pane next to this session. Each artifact is a folder in \`${ARTIFACTS}/<name>/\`, with a short lowercase name with hyphens:
 - \`index.html\`: one self-contained page. Use \`<script type="module">\` (top-level await works) and libraries from a CDN (https://esm.sh/..., https://cdn.jsdelivr.net/npm/...). There is no build step.
 - \`data/\`: the data, as files (csv, json, md, txt, images). Do not put data in the page.
-- \`artifact.json\`: \`{"title": "...", "description": "Two to four short sentences on what it shows.", "slots": {"rows": {"kind": "csv", "description": "One row per ...: the columns the page uses"}}, "bindings": {"rows": "data/rows.csv"}}\`
+- \`artifact.json\`: \`{"title": "...", "description": "Two to four short sentences on what it shows.", "slots": {"rows": {"kind": "csv", "description": "One row per ...: the columns the page uses"}}, "bindings": {"rows": "data/rows.csv"}}\`. When the page came from an isle on Prolifica, add \`"parent": "<isle id>"\`.
+- \`instructions.md\`: instructions for agents about this page, so the next agent does not have to learn it from the HTML. Write them for each artifact. Say which data fields drive the wording, what text is fixed in the page, the limits, and what breaks. Write about the page, not about this data. Update them when you learn something about the page. They are published with the page.
 
 The page reads its data by slot name: \`const rows = await prolifica.data('rows')\` (csv: an array of objects, numbers parsed; json: the parsed value; text and markdown: a string; image: a URL). \`prolifica.dataUrl('rows')\` gives the raw URL. The user can publish an artifact to Prolifica (prolifica.app), where other people run the same page over their own data. So keep what is particular to this data (names, units, dates) in the data, not in the page.
 - Make the page work at any width and in light and dark (prefers-color-scheme). Size charts from their container, and draw them again on resize.
@@ -372,6 +376,7 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
   const body = (id?: string) => JSON.stringify({
     id, html: src.read('index.html')?.toString('utf8') ?? '', title: m.title ?? name, description: m.description,
     shortTitle: m.short_title, viewName: m.view_name, slots: m.slots ?? {}, bindings, visibility, note: opts.note || undefined,
+    parent: m.parent || undefined, instructions: src.read('instructions.md')?.toString('utf8'),
   })
   const post = (id?: string) => call('/api/isles', { method: 'POST', headers: { 'content-type': 'application/json' }, body: body(id) })
   // Deleted on Prolifica since: publish it as a new page.
