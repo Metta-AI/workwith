@@ -361,11 +361,12 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
     const prev = before?.data[file]
     if (prev?.sha === hash) { bindings[slot] = prev.id; data[file] = prev; continue }
     const ext = path.extname(file), stem = path.basename(file, ext)
-    const q = new URLSearchParams({ path: `${name}/${prev ? `${stem}.v${next}${ext}` : `${stem}${ext}`}` })
+    const dpath = `${name}/${prev ? `${stem}.v${next}${ext}` : `${stem}${ext}`}`
+    const q = new URLSearchParams({ path: dpath })
     if (m.slots?.[slot]?.description) q.set('description', m.slots[slot].description!)
     const ds = await call(`/api/data?${q}`, { method: 'POST', headers: { 'content-type': typeOf(file) }, body: new Uint8Array(bytes) })
     bindings[slot] = ds.id
-    data[file] = { sha: hash, id: ds.id }
+    data[file] = { sha: hash, id: ds.id, path: dpath }
   }
   const visibility = opts.visibility ?? before?.visibility ?? 'public'
   const body = (id?: string) => JSON.stringify({
@@ -375,11 +376,25 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
   const post = (id?: string) => call('/api/isles', { method: 'POST', headers: { 'content-type': 'application/json' }, body: body(id) })
   // Deleted on Prolifica since: publish it as a new page.
   const out = await post(before?.id).catch((e) => { if (before?.id && e.status === 404) return post(); throw e })
-  let history = [...(out.isle.id === before?.id ? before?.history ?? (before ? [{ version: before.version, local: before.local ?? 0, at: before.at }] : []) : []), { version: out.isle.version, local, at: Date.now() }]
+  const ids = Object.values(data).map((d) => d.id)
+  const earlier = out.isle.id === before?.id ? before?.history ?? (before ? [{ version: before.version, local: before.local ?? 0, at: before.at }] : []) : []
+  let history = [...earlier.map((h) => ({ ...h, data: h.data ?? (h.version === before?.version ? Object.values(before.data).map((d) => d.id) : undefined) })), { version: out.isle.version, local, at: Date.now(), data: ids }]
   if (opts.replace && before && out.isle.id === before.id) {
     const sq = await call(`/api/isles/${encodeURIComponent(before.id)}/squash`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from: before.version, to: out.isle.version, note: opts.note || null }) })
     out.isle = sq.isle
-    history = [...history.slice(0, -2), { version: sq.isle.version, local, at: Date.now() }]
+    history = [...history.slice(0, -2), { version: sq.isle.version, local, at: Date.now(), data: ids }]
+    // The replaced version's data that changed: deleted when no version left uses it (Prolifica
+    // refuses when another page shows it, and then it stays), and the new file takes its name.
+    // An earlier version with no record of its data might use it: then it stays too.
+    const known = history.every((h) => h.data)
+    for (const [file, d] of Object.entries(data)) {
+      const old = before.data[file]
+      if (!known || !old || old.id === d.id || history.some((h) => h.data!.includes(old.id))) continue
+      try {
+        await call(`/api/data/${encodeURIComponent(old.id)}`, { method: 'DELETE' })
+        if (old.path) { await call(`/api/data/${encodeURIComponent(d.id)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: old.path }) }); d.path = old.path }
+      } catch { /* still shown somewhere: it stays */ }
+    }
   }
   r.published = { id: out.isle.id, url: `${ORIGIN}/i/${out.isle.id}`, version: out.isle.version, at: Date.now(), mtime: mtimeOf(dirOf(name)), visibility, data, local, history }
   saveRecord()
