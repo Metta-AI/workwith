@@ -1,0 +1,12 @@
+// The hub for remote access (src/index.ts). Local: npx wrangler dev. Deploy: npx wrangler deploy.
+{
+  "name": "codinger-remote",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "vars": { "BASE_HOST": "codinger.app" },
+  "durable_objects": { "bindings": [{ "name": "HUB", "class_name": "Hub" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hub"] }],
+  "env": {
+    "dev": { "vars": { "BASE_HOST": "localhost" }, "durable_objects": { "bindings": [{ "name": "HUB", "class_name": "Hub" }] } }
+  }
+}
