@@ -34,7 +34,6 @@ function App() {
       <main>
         {/* On a phone the sidebar covers the page; this shows it again. */}
         <button className="icon-btn side-show" aria-label="Sessions" onClick={() => { state.sideOpen = true; changed() }}><MenuIcon size={18} /></button>
-        <Offline />
         <SignIn />
         <Update />
         <Restart />
@@ -46,7 +45,11 @@ function App() {
       <ArtifactCheck />
       {welcome && <AppearanceDialog welcome onClose={() => setWelcome(false)} />}
       {st.lightbox && <div className="lightbox" onClick={() => { state.lightbox = null; changed() }}><img src={st.lightbox} alt="" /></div>}
-      {st.error && <div className="toast" onClick={() => { state.error = null; changed() }}>{st.error}</div>}
+      {/* Notices stack in the bottom left corner. */}
+      <div className="toasts">
+        <Offline />
+        {st.error && <div className="toast" onClick={() => { state.error = null; changed() }}>{st.error}</div>}
+      </div>
     </div>
   )
 }
