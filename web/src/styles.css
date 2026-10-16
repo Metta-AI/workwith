@@ -309,6 +309,8 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 
 /* A long URL or path breaks onto the next line instead of running past the column. */
 .md { overflow-wrap: break-word; }
+/* A link to another session (util.ts), apart from a web link: a dotted underline. */
+.md a.session-link { text-decoration-line: underline; text-decoration-style: dotted; text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
 .md p { margin: .55em 0; }
 .md li { margin-bottom: .35em; } .md li > p { margin: .2em 0; }
 .md ul, .md ol { margin: .55em 0; padding-left: 1.5em; }

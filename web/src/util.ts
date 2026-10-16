@@ -4,7 +4,7 @@ import { highlight } from './highlight.ts'
 import DOMPurify from 'dompurify'
 import type { ImageRef } from '../../shared/types.ts'
 import { MEDIA_URL, embedOf, mediaKind } from '../../shared/media.ts'
-import { api, media } from './store.ts'
+import { api, localId, media, state } from './store.ts'
 
 export const marked = new Marked(
   markedHighlight({ emptyLangClass: 'hljs', langPrefix: 'hljs language-', highlight: (code, lang) => linkUrls(highlight(code, lang)) }),
@@ -24,10 +24,15 @@ function urlCode({ text }: { text: string }): string | false {
 }
 
 // [title](session:<id>) names another session; a click shows it (main.tsx). DOMPurify
-// drops a session: href, so the id goes in a data attribute.
+// drops a session: href, so the id goes in a data attribute. With no title ([](session:<id>))
+// the link says the session's name; with a title that is not its name, a tip says the name.
 function sessionLink(href: string, html: string): string | false {
   const id = /^session:([\w.-]+)$/.exec(href)?.[1]
-  return !!id && `<a class="session-link" href="#" data-session="${id}">${html}</a>`
+  if (!id) return false
+  const s = state.sessions.find((x) => localId(x.id) === id) ?? (id.length >= 6 ? state.sessions.find((x) => localId(x.id).startsWith(id)) : undefined)
+  const said = html.replace(/<[^>]*>/g, '').trim()
+  const tip = s && said && said !== s.title ? ` data-tip="${escapeHtml(s.title).replace(/"/g, '&quot;')}"` : ''
+  return `<a class="session-link" href="#" data-session="${id}"${tip}>${said ? html : escapeHtml(s?.title ?? id)}</a>`
 }
 
 // So is a web URL in a code block: in the text between the highlighter's tags, up to a

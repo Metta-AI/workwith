@@ -48,13 +48,32 @@ function caretAt(x: number, y: number): Range | null {
 
 type Snap = { v: string; s: number; e: number; t: number }
 
-// Focus a field from outside (a tap on a reaction, a highlight), with the caret at its end:
-// on iOS a contenteditable that takes the focus with no caret in it takes no typing.
+// Give a field the focus with the caret at its end, so that on iOS it takes the typing (a
+// contenteditable with the focus but no caret there takes none). What worked there, step by step:
+// - focus without a scroll of the page (iOS scrolled the passage away), the caret at the end;
+// - the caret set again a moment later (60 and 300 ms);
+// - the focus tried again (150 ms) if it missed, while nothing or the hidden field that holds
+//   the keyboard (holdKeyboard) has it;
+// - for a second, a selection outside the field moves back into it: iOS finishes a selection in
+//   the message after the touch that ends it, and puts it over the caret.
+// Returns what stops the rest.
+function takeFocus(el: HTMLElement): () => void {
+  const end = () => select(el, fromDom(el).length)
+  const go = () => { el.focus({ preventScroll: true }); end() }
+  go()
+  const timers = [60, 300].map((ms) => setTimeout(() => { if (document.activeElement === el) end() }, ms))
+  timers.push(setTimeout(() => { if (!document.activeElement || document.activeElement === document.body || document.activeElement.matches('[data-hold-keyboard]')) go() }, 150))
+  const back = () => {
+    const s = getSelection()
+    if (document.activeElement === el && s?.rangeCount && !el.contains(s.anchorNode)) end()
+  }
+  document.addEventListener('selectionchange', back)
+  timers.push(setTimeout(() => document.removeEventListener('selectionchange', back), 1000))
+  return () => { timers.forEach(clearTimeout); document.removeEventListener('selectionchange', back) }
+}
+// Focus a field from outside (a tap on a reaction, a highlight).
 export function focusField(el: HTMLElement | null | undefined) {
-  if (!el) return
-  el.focus()
-  const s = getSelection()
-  if (!s?.rangeCount || !el.contains(s.anchorNode)) select(el, fromDom(el).length)
+  if (el) takeFocus(el)
 }
 
 export function RichInput({ value, onChange, images, onImages, placeholder, autoFocus, onSubmit, onEscape, minRows = 2, onKey, machine, uploadDir, attachRef }: Props) {
@@ -128,21 +147,7 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
   useEffect(() => {
     const el = ed.current!
     if (!autoFocus) return
-    const go = () => { el.focus(); select(el, fromDom(el).length) }
-    go()
-    // On a phone the focus can miss while the card still appears; try once more if the
-    // hidden field that holds the keyboard (holdKeyboard), or nothing, has it.
-    const again = setTimeout(() => { if (!document.activeElement || document.activeElement === document.body || document.activeElement.matches('[data-hold-keyboard]')) go() }, 150)
-    // iOS finishes a selection in the message after the touch that ends it, and puts it back
-    // over the caret here: the field has the focus, but typing goes nowhere. For a moment,
-    // a selection outside the field while it has the focus moves back into it.
-    const back = () => {
-      const s = getSelection()
-      if (document.activeElement === el && s?.rangeCount && !el.contains(s.anchorNode)) select(el, fromDom(el).length)
-    }
-    document.addEventListener('selectionchange', back)
-    const done = setTimeout(() => document.removeEventListener('selectionchange', back), 1000)
-    return () => { clearTimeout(again); clearTimeout(done); document.removeEventListener('selectionchange', back) }
+    return takeFocus(el)
   }, [autoFocus])
 
   useEffect(() => {

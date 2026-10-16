@@ -313,19 +313,17 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     const n = root.current && rangesFor(anchor, root.current)[0]?.startContainer
     return (n?.nodeType === 1 ? n as Element : n?.parentElement)?.closest<HTMLElement>('[data-item]')?.dataset.item
   }
-  // No holdKeyboard here: the card's field takes the focus inside the touch itself (below), and a
-  // hidden field that took it first used the touch up, so iOS gave the card's field no keyboard.
+  // As a selection does (Transcript.tsx), which works on iOS: a hidden field takes the focus in the
+  // touch (holdKeyboard), and the card's field takes it over once the card shows.
   const commentOn = (anchor: Anchor, quote: string, whole: boolean) => {
     focusPassage(sid, null)
+    holdKeyboard()
     const k = keyOf(anchor)
     const open = draftsOf(sid).find((d): d is NoteDraft => d.kind === 'note' && !d.reaction && keyOf(d.anchor) === k)
-    // Without a gutter the card shows only after the render that state.focus causes. That render happens
-    // here, inside the touch, so its field takes the focus in it: iOS types only into a field focused so.
-    const field = (id: string) => focusField(document.querySelector<HTMLElement>(`.note-card[data-id="${id}"] .ri-edit`))
-    if (open) { flushSync(() => { state.focus = open.id; changed() }); field(open.id); return }
-    const itemKey = itemOf(anchor), id = uid()
-    flushSync(() => addDraft(sid, { id, kind: 'note', anchor, quote, text: '', images: [], createdAt: Date.now(), ...(whole ? { whole } : {}), ...(itemKey ? { itemKey } : {}) }))
-    field(id)
+    // Without a gutter the card shows only after the render that state.focus causes, so focus it on the next frame.
+    if (open) { state.focus = open.id; changed(); requestAnimationFrame(() => focusField(document.querySelector<HTMLElement>(`.note-card[data-id="${open.id}"] .ri-edit`))); return }
+    const itemKey = itemOf(anchor)
+    addDraft(sid, { id: uid(), kind: 'note', anchor, quote, text: '', images: [], createdAt: Date.now(), ...(whole ? { whole } : {}), ...(itemKey ? { itemKey } : {}) })
   }
   // A passage's own reactions not sent yet, and toggling one.
   const mine = (p: Pick) => draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note' && !!d.reaction && !!d.whole === p.whole && keyOf(d.anchor) === keyOf(p.anchor))

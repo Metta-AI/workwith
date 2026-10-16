@@ -222,6 +222,20 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
   }, [sid, gutter])
   const notesRef = useRef(notes)
   notesRef.current = notes
+  // Without a gutter, a touch or click outside the open card puts it away at once: its field
+  // may not have the focus, so no blur would take it away.
+  useEffect(() => {
+    if (gutter || !open) return
+    const away = (e: PointerEvent) => {
+      const card = layer.current?.querySelector<HTMLElement>(`.note-card[data-id="${open}"]`), t = e.target as Element
+      if (!card || card.contains(t) || t.closest?.('.emoji-picker, .rail-row')) return
+      if (card.contains(document.activeElement)) (document.activeElement as HTMLElement).blur()
+      if (state.focus === open) state.focus = null
+      setOpen(null)
+    }
+    document.addEventListener('pointerdown', away, true)
+    return () => document.removeEventListener('pointerdown', away, true)
+  }, [open, gutter])
 
   return (
     <div className="margin" ref={layer}>
