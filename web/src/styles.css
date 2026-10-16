@@ -560,13 +560,19 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .working-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 
 /* ---- inline replies & questions ---- */
-.note-card { position: absolute; z-index: 2; pointer-events: auto; background: var(--card); border: 1px solid var(--line); border-left: 3px solid #f0b400; border-radius: 8px; padding: 6px 30px 6px 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, .08); transition: top .15s; }
+.note-card { position: absolute; z-index: 2; pointer-events: auto; background: var(--card); border: 1px solid var(--line); border-left: 3px solid #f0b400; border-radius: 0 8px 8px 0; padding: 6px 30px 6px 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, .08); transition: top .15s; }
 .note-card:focus-within { box-shadow: 0 3px 14px rgba(0, 0, 0, .16); }
-.note-card.hover { box-shadow: 0 0 0 2px var(--hl-focus), 0 3px 14px rgba(0, 0, 0, .16); }
+/* The ring and the border make one even 3px frame: the left edge gives up 2px to the ring, and the padding takes them, so the text stays where it was. */
+.note-card.hover:not(.sent) { border-color: #f0b400; border-left-width: 1px; padding-left: 10px; box-shadow: 0 0 0 2px #f0b400, 0 3px 14px rgba(0, 0, 0, .16); }
 .note-card .ri-edit, .note-card .ri-edit:focus { border: none; background: none; padding: 2px 24px 2px 4px; outline: none; min-height: 24px !important; }
 /* The image button and the X (.card-x) sit level with the first line of the comment (18px down); the X is as far from the side as from the top. */
 .note-card .rich-input .attach { top: 5px; right: 0; }
 .note-card .thumbs { margin: 0 0 4px; }
+/* In the gutter, where every comment you write shows, only the one you write in is open: the others
+   show their text, with the X and the image button on hover. (Without a gutter a card shows only while
+   open, sometimes before its field has the focus, so it keeps all of it.) */
+.transcript-inner.gutter .note-card:not(:focus-within) .reactions { display: none; }
+.transcript-inner.gutter .note-card:not(:focus-within):not(:hover):not(.hover) :is(.card-x, .attach) { visibility: hidden; }
 /* Into the card's right padding (kept clear only for the discard button, above); the buttons
    share the row's width, so the row fits the card, also where the emoji are wider (Windows). */
 .reactions { position: relative; display: flex; gap: 0; margin: 4px -24px 0 1px; }

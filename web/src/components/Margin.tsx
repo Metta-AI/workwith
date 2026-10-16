@@ -8,7 +8,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { rangesFor, setHighlights } from '../anchoring.ts'
-import { draftsOf, removeDraft, state, updateDraft, useStore, type NoteDraft } from '../store.ts'
+import { addDraft, draftsOf, removeDraft, state, uid, updateDraft, useStore, type NoteDraft } from '../store.ts'
 import type { Anchor, Event, ImageRef } from '../../../shared/types.ts'
 import { isReaction, topEmoji, usedEmoji } from '../emoji.ts'
 import { holdKeyboard, renderMd, visibleBox } from '../util.ts'
@@ -156,10 +156,10 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
   }, [notes.length, gutter])
   useEffect(() => { layoutRef.current() }, [events, open, peek])
 
-  // Without a gutter, a click on a highlight shows its card and puts the caret in it.
+  // A click on a highlight puts the caret in its card (and without a gutter, shows the card).
   useEffect(() => {
     const box = inner.current
-    if (!box || gutter) return
+    if (!box) return
     const click = (e: MouseEvent) => {
       if (!getSelection()?.isCollapsed || (e.target as Element).closest?.('.note-card')) return
       const hit = notesRef.current.find((n) => n.kind === 'draft' && onPassage(rangesOfNote(sid, n), e.clientX, e.clientY))
@@ -285,15 +285,22 @@ function NoteCard({ sid, note, onOpen, onFocus, onBlur }: { sid: string; note: N
     return () => document.removeEventListener('pointerdown', away)
   }, [note.id])
   const [picking, setPicking] = useState(false)
-  // The passage's reactions (not sent yet), which the emoji row shows first.
+  // The passage's reactions (not sent yet), which the emoji row shows first, on.
   const k = JSON.stringify(note.anchor)
-  const reactions = draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note' && !!d.reaction && JSON.stringify(d.anchor) === k)
-  // An emoji from the row goes into the comment, at the caret (or at the end): it is text, not a reaction.
+  const reactions = draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note' && !!d.reaction && !!d.whole === !!note.whole && JSON.stringify(d.anchor) === k)
+  const on = [...new Set(reactions.map((d) => d.text.trim()))]
+  // An emoji from the row is a reaction, never text in the comment: a click on one that is on takes it
+  // off, any other adds it. The card stays, with the caret in it, so you can add words; left empty, it
+  // goes as usual and only the reaction stays.
   const react = (r: string) => {
-    usedEmoji(r)
+    if (on.includes(r)) for (const d of reactions) { if (d.text.trim() === r) removeDraft(sid, d.id) }
+    else {
+      usedEmoji(r)
+      addDraft(sid, { ...note, id: uid(), text: r, images: [], reaction: true, createdAt: Date.now() })
+      state.focus = null
+    }
     const ed = card.current?.querySelector<HTMLElement>('.ri-edit')
-    if (ed && document.activeElement === ed && document.execCommand('insertText', false, r)) return
-    updateDraft(sid, note.id, { text: note.text.trim() ? `${note.text.trimEnd()} ${r}` : r })
+    if (ed && document.activeElement !== ed) focusField(ed)
   }
   return (
     <div
@@ -324,11 +331,11 @@ function NoteCard({ sid, note, onOpen, onFocus, onBlur }: { sid: string; note: N
         minRows={1}
         onEscape={() => { if (isEmpty(note)) removeDraft(sid, note.id); else (document.activeElement as HTMLElement | null)?.blur() }}
       />
-      {/* The emoji keep the focus in the comment; the picker's search field takes it. */}
+      {/* The emoji keep the focus in the comment; the picker's search field can take it. */}
       <div className="reactions" onMouseDown={(e) => { if (!(e.target as Element).closest('input')) e.preventDefault() }}>
         {/* The passage's reactions first, whatever they are, then your most used. */}
-        {[...new Set([...reactions.map((d) => d.text.trim()), ...topEmoji(8)])].slice(0, Math.max(8, reactions.length)).map((r) => (
-          <button key={r} onClick={() => react(r)}>{r}</button>
+        {[...new Set([...on, ...topEmoji(8)])].slice(0, Math.max(8, on.length)).map((r) => (
+          <button key={r} className={on.includes(r) ? 'on' : ''} onClick={() => react(r)}>{r}</button>
         ))}
         <button className="more-emoji" onClick={() => setPicking(true)}>+</button>
         {picking && <EmojiPicker onPick={(r) => { react(r); setPicking(false) }} onClose={() => setPicking(false)} />}
