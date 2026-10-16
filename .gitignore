@@ -5,3 +5,6 @@ dist
 
 # Notes between Claude sessions; personal, not part of the project
 HANDOFF-*.md
+
+# Secrets (API tokens) for local tools
+.env
