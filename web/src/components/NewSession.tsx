@@ -7,16 +7,17 @@ import { FlagPicker } from './FlagPicker.tsx'
 import { RichInput } from './Inputs.tsx'
 
 // machine: where it runs; the current session's by default.
-export function NewSession({ cwd: initial, machine: start = currentMachine(), group, onClose }: { cwd: string; machine?: string; group?: string; onClose(): void }) {
+// title and prompt: filled in already (a link from another app, url.ts).
+export function NewSession({ cwd: initial, machine: start = currentMachine(), group, title: initialTitle = '', prompt: initialPrompt = '', onClose }: { cwd: string; machine?: string; group?: string; title?: string; prompt?: string; onClose(): void }) {
   useEscape(onClose)
   const [machine, setMachine] = useState(start)
   const [cwd, setCwd] = useState(initial)
-  const [title, setTitle] = useState('')
+  const [title, setTitle] = useState(initialTitle)
   const [model, setModel] = useState('')
   const [mode, setMode] = useState<PermissionMode>('auto')
   const [flags, setFlags] = useState<string[]>([])
   const [parentId, setParentId] = useState('')
-  const [prompt, setPrompt] = useState('')
+  const [prompt, setPrompt] = useState(initialPrompt)
   const [images, setImages] = useState<ImageRef[]>([])
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)

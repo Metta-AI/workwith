@@ -10,6 +10,14 @@
 
 import { changed, onChanged, opened, quiet, state } from './store.ts'
 
+// A link can open the New session dialog with its fields filled in, for another app to hand work
+// over (Prolifica's Ask): ?new&cwd=…&title=…&prompt=…. It never starts a session by itself, since
+// any page could link here: you look at it and press Create. The address drops these at once.
+export type LinkedNew = { cwd: string; title: string; prompt: string }
+export let linkedNew: LinkedNew | null = null
+export function closeLinkedNew() { linkedNew = null; changed() }
+const NEW_KEYS = ['new', 'cwd', 'title', 'prompt']
+
 const phone = matchMedia('(max-width: 720px)')
 const num = (x: string | null) => x != null && /^\d+$/.test(x) ? Number(x) : undefined
 
@@ -72,6 +80,8 @@ function sync() {
 
 export function initUrl() {
   const q = new URLSearchParams(location.search)
+  if (q.has('new') || q.has('prompt')) linkedNew = { cwd: q.get('cwd') ?? '', title: q.get('title') ?? '', prompt: q.get('prompt') ?? '' }
+  for (const k of NEW_KEYS) q.delete(k)
   // A bare address keeps what you had open last time (saved in the browser).
   if (q.size) apply(q, true)
   onChanged(sync)

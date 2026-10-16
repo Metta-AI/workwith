@@ -12,7 +12,8 @@ import { useFavicon } from './favicon.tsx'
 import { ChevronIcon, MenuIcon } from './components/Icons.tsx'
 import { initTooltips } from './tooltip.ts'
 import { initPeek } from './peek.ts'
-import { initUrl } from './url.ts'
+import { closeLinkedNew, initUrl, linkedNew } from './url.ts'
+import { NewSession } from './components/NewSession.tsx'
 import './styles.css'
 
 function App() {
@@ -50,6 +51,7 @@ function App() {
       </main>
       <ArtifactCheck />
       {welcome && <AppearanceDialog welcome onClose={() => setWelcome(false)} />}
+      {linkedNew && st.loaded && <NewSession cwd={linkedNew.cwd} title={linkedNew.title} prompt={linkedNew.prompt} onClose={closeLinkedNew} />}
       {st.lightbox && <div className="lightbox" onClick={() => { state.lightbox = null; changed() }}><img src={st.lightbox} alt="" /></div>}
       {/* Notices stack in the bottom left corner. */}
       <div className="toasts">
