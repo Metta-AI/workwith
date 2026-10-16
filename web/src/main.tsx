@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import { useEffect } from 'react'
-import { api, changed, globalId, select, start, state, useStore, currentMachine, labelOf, localId, machineOf } from './store.ts'
+import { api, changed, globalId, opened, select, start, state, useStore, currentMachine, labelOf, localId, machineOf } from './store.ts'
 import type { SessionMeta } from '../../shared/types.ts'
 import { useState } from 'react'
 import { Sidebar } from './components/Sidebar.tsx'
@@ -12,6 +12,7 @@ import { useFavicon } from './favicon.tsx'
 import { ChevronIcon, MenuIcon } from './components/Icons.tsx'
 import { initTooltips } from './tooltip.ts'
 import { initPeek } from './peek.ts'
+import { initUrl } from './url.ts'
 import './styles.css'
 
 function App() {
@@ -19,7 +20,7 @@ function App() {
   const [side, setSide] = useWidth('sidebar', 260)
   // The lead agent is hidden for now: only workers show.
   const sel = st.sessions.find((s) => s.id === st.selected && s.kind === 'worker')
-  useEffect(() => { if (sel) select(sel.id, false) }, [sel?.id])
+  useEffect(() => { if (sel) opened(sel.id) }, [sel?.id])
 
   useFavicon(st.sessions, st.settings.appearance)
 
@@ -253,6 +254,7 @@ document.addEventListener('touchcancel', release)
 document.addEventListener('click', () => { if (phone.matches) history.pushState({ side: true }, '') }, { once: true })
 addEventListener('popstate', () => { if (phone.matches) { openSide(); history.pushState({ side: true }, '') } })
 
+initUrl()
 void start()
 initTooltips()
 initPeek()

@@ -48,6 +48,15 @@ function caretAt(x: number, y: number): Range | null {
 
 type Snap = { v: string; s: number; e: number; t: number }
 
+// Focus a field from outside (a tap on a reaction, a highlight), with the caret at its end:
+// on iOS a contenteditable that takes the focus with no caret in it takes no typing.
+export function focusField(el: HTMLElement | null | undefined) {
+  if (!el) return
+  el.focus()
+  const s = getSelection()
+  if (!s?.rangeCount || !el.contains(s.anchorNode)) select(el, fromDom(el).length)
+}
+
 export function RichInput({ value, onChange, images, onImages, placeholder, autoFocus, onSubmit, onEscape, minRows = 2, onKey, machine, uploadDir, attachRef }: Props) {
   const ed = useRef<HTMLDivElement>(null)
   const fake = useRef<HTMLSpanElement>(null)       // the caret beside an image (mdlive.ts imageCaret)
@@ -124,7 +133,16 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
     // On a phone the focus can miss while the card still appears; try once more if the
     // hidden field that holds the keyboard (holdKeyboard), or nothing, has it.
     const again = setTimeout(() => { if (!document.activeElement || document.activeElement === document.body || document.activeElement.matches('[data-hold-keyboard]')) go() }, 150)
-    return () => clearTimeout(again)
+    // iOS finishes a selection in the message after the touch that ends it, and puts it back
+    // over the caret here: the field has the focus, but typing goes nowhere. For a moment,
+    // a selection outside the field while it has the focus moves back into it.
+    const back = () => {
+      const s = getSelection()
+      if (document.activeElement === el && s?.rangeCount && !el.contains(s.anchorNode)) select(el, fromDom(el).length)
+    }
+    document.addEventListener('selectionchange', back)
+    const done = setTimeout(() => document.removeEventListener('selectionchange', back), 1000)
+    return () => { clearTimeout(again); clearTimeout(done); document.removeEventListener('selectionchange', back) }
   }, [autoFocus])
 
   useEffect(() => {

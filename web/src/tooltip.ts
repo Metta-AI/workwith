@@ -2,13 +2,16 @@
 // browser's own (title) waits about a second and can't be styled; this one
 // waits a moment, sits below the element (above it near the bottom of the
 // window) and stays inside the window. In the sidebar it sits to the right of
-// the element, over the page, so it covers none of the list. A title becomes a data-tip the first
+// the element, over the page, so it covers none of the list (data-tip-at="right"
+// puts it just right of the element instead). A title becomes a data-tip the first
 // time the pointer is on it, so the browser's own never shows; React sets the
 // title again only when it changes, and then it moves over again.
 //
 // On a touch screen there is no hover. A finger that holds still on an element
 // shows its tip, and the click when the finger lets go is dropped. A tap shows
-// the tip only on an element that does nothing on a tap.
+// the tip only on an element that does nothing on a tap. On an element with data-tip-touch (a
+// critter in the sidebar, which shows only a face) any touch shows the tip at once, and a tap
+// still does what a click does. A tip from a touch sits above the element, clear of the finger.
 
 const DELAY = 200
 const HOLD = 500
@@ -23,15 +26,23 @@ export function initTooltips() {
   let timer = 0
 
   const hide = () => { clearTimeout(timer); target = null; tip.classList.remove('on') }
-  const show = (el: HTMLElement) => {
+  const show = (el: HTMLElement, touch = false) => {
     const text = el.dataset.tip
     if (!text || !el.isConnected) return
     tip.textContent = text
     tip.classList.add('on')
     const r = el.getBoundingClientRect(), t = tip.getBoundingClientRect()
+    if (touch && r.top - 6 - t.height >= 6) {
+      tip.style.left = `${Math.max(6, Math.min(r.left + r.width / 2 - t.width / 2, innerWidth - t.width - 6))}px`
+      tip.style.top = `${r.top - 6 - t.height}px`
+      return
+    }
+    // data-tip-at="right": just right of the element itself (a critter in the sidebar, small and far from the page).
+    const near = el.dataset.tipAt === 'right' ? r.right + 6 : null
     const side = el.closest('.sidebar')?.getBoundingClientRect()
-    if (side && side.right + 8 + t.width < innerWidth - 6) {
-      tip.style.left = `${side.right + 8}px`
+    const x = near ?? (side ? side.right + 8 : null)
+    if (x != null && x + t.width < innerWidth - 6) {
+      tip.style.left = `${x}px`
       tip.style.top = `${Math.max(6, Math.min(r.top + r.height / 2 - t.height / 2, innerHeight - t.height - 6))}px`
       return
     }
@@ -65,8 +76,9 @@ export function initTooltips() {
     if (!el) { start = null; return }
     target = el
     start = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+    if (el.hasAttribute('data-tip-touch')) { show(el, true); return }
     // A hold that drags a row in the sidebar shows no tip.
-    timer = window.setTimeout(() => { if (!document.body.classList.contains('sorting')) { held = el; show(el) } }, HOLD)
+    timer = window.setTimeout(() => { if (!document.body.classList.contains('sorting')) { held = el; show(el, true) } }, HOLD)
   }, { passive: true })
   document.addEventListener('touchmove', (e) => {
     if (start && Math.hypot(e.touches[0].clientX - start.x, e.touches[0].clientY - start.y) > 10) { start = null; hide() }
@@ -77,7 +89,8 @@ export function initTooltips() {
     const el = target
     if (held || !el || !start) return
     start = null
-    if (!(e.target as Element).closest?.(CLICKABLE) && getComputedStyle(e.target as Element).cursor !== 'pointer') show(el)
+    if (el.hasAttribute('data-tip-touch')) return
+    if (!(e.target as Element).closest?.(CLICKABLE) && getComputedStyle(e.target as Element).cursor !== 'pointer') show(el, true)
     else target = null
   })
   document.addEventListener('touchcancel', () => { start = null; hide() })

@@ -154,3 +154,20 @@ export function holdKeyboard() {
   f.focus({ preventScroll: true })
   setTimeout(() => { if (document.activeElement === f) f.blur() }, 1000)
 }
+
+// The part of the page you see (above a phone's keyboard), in the coordinates that
+// getBoundingClientRect gives, and where position: fixed puts top: 0 and left: 0 in them.
+// With the keyboard open, iOS pans what you see, and the two do not agree: a fixed element
+// at a box's top shows elsewhere. So place one at (x - fixed.left, y - fixed.top).
+let probe: HTMLElement | null = null
+export function visibleBox() {
+  if (!probe) {
+    probe = document.createElement('div')
+    probe.setAttribute('aria-hidden', 'true')
+    probe.style.cssText = 'position: fixed; top: 0; left: 0; width: 0; height: 0; visibility: hidden; pointer-events: none'
+    document.body.appendChild(probe)
+  }
+  const p = probe.getBoundingClientRect(), vv = visualViewport
+  const top = p.top + (vv?.offsetTop ?? 0), left = p.left + (vv?.offsetLeft ?? 0)
+  return { top, left, bottom: top + (vv?.height ?? innerHeight), right: left + (vv?.width ?? innerWidth), fixed: { top: p.top, left: p.left } }
+}

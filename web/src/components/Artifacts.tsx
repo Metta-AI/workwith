@@ -104,8 +104,10 @@ export function PublishControl({ a, v }: { a: Artifact; v?: number }) {
   const local = v ?? a.latest
   // Already there: an old version that went up before, or the artifact unchanged since the last publish.
   const upAs = p && (v != null ? p.history?.find((h) => h.local === v)?.version : p.mtime >= a.mtime ? p.version : undefined)
+  // Only who can see it changes: the version on view is there already.
+  const onlyVis = upAs != null
   const press = async () => {
-    if (st.prolifica) return setOpen(!open)
+    if (st.prolifica) { if (!open) setVis(p?.visibility ?? 'public'); return setOpen(!open) }
     const { url } = await api<{ url: string }>('/api/prolifica/connect')
     setWaiting(true)
     window.open(url, '_blank')
@@ -113,7 +115,9 @@ export function PublishControl({ a, v }: { a: Artifact; v?: number }) {
   const go = async () => {
     setBusy(true)
     try {
-      const r = await api<{ madePublic: string[] }>(`/api/artifacts/${encodeURIComponent(a.name)}/publish`, 'POST', { visibility: vis, note, v, replace: replace && !!p })
+      const r = onlyVis
+        ? await api<{ madePublic: string[] }>(`/api/artifacts/${encodeURIComponent(a.name)}/visibility`, 'POST', { visibility: vis })
+        : await api<{ madePublic: string[] }>(`/api/artifacts/${encodeURIComponent(a.name)}/publish`, 'POST', { visibility: vis, note, v, replace: replace && !!p })
       setMade(r.madePublic); setNote(''); setOpen(false)
     } finally { setBusy(false) }
   }
@@ -124,7 +128,7 @@ export function PublishControl({ a, v }: { a: Artifact; v?: number }) {
       {open && (
         <div className="publish-pop">
           <div className="small">{upAs != null
-            ? `v${local} is on Prolifica already, as v${upAs}.`
+            ? `v${local} is on Prolifica already, as v${upAs}.${vis !== p!.visibility ? ' This changes only who can see the page.' : ''}`
             : p && replace ? `This replaces v${p.version} of the page on Prolifica with v${local} here. Earlier versions there stay as they are.`
             : p ? `This makes v${p.version + 1} of the page on Prolifica, from v${local} here. v${p.version} there stays as it is, with its data.`
             : `This makes a new page on Prolifica, from v${local} here.`}</div>
@@ -137,11 +141,11 @@ export function PublishControl({ a, v }: { a: Artifact; v?: number }) {
           </label>
           {vis !== 'private' && <div className="muted small">Its data goes up with it and is {vis === 'public' ? 'public' : 'visible to anyone with the link'} too.</div>}
           {p && upAs == null && <label className="check"><input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} /> Replace v{p.version}</label>}
-          {p && <label>What changed<input value={note} placeholder="For the version history" onChange={(e) => setNote(e.target.value)} /></label>}
+          {p && !onlyVis && <label>What changed<input value={note} placeholder="For the version history" onChange={(e) => setNote(e.target.value)} /></label>}
           <div className="publish-foot">
             <span className="muted small">{st.prolifica?.handle ? `As @${st.prolifica.handle}` : ''}</span>
             <button className="link" onClick={() => setOpen(false)}>Cancel</button>
-            <button className="primary" disabled={busy || upAs != null} onClick={() => void go()}>{busy ? 'Publishing…' : p && replace ? `Replace v${p.version}` : p ? `Publish v${p.version + 1}` : 'Publish'}</button>
+            <button className="primary" disabled={busy || (onlyVis && vis === p!.visibility)} onClick={() => void go()}>{busy ? 'Publishing…' : onlyVis ? `Make it ${vis}` : p && replace ? `Replace v${p.version}` : p ? `Publish v${p.version + 1}` : 'Publish'}</button>
           </div>
         </div>
       )}
@@ -282,14 +286,15 @@ function Description({ text }: { text: string }) {
 // Every artifact: what it is, which sessions made and changed it, and whether it is published.
 export function ArtifactsView() {
   const st = useStore()
-  const [sel, setSel] = useState<string | null>(() => localStorage.getItem('codinger.artifact'))
-  const [v, setV] = useState<number | undefined>()
-  const a = st.artifacts.find((x) => x.name === sel) ?? st.artifacts[0]
+  // The artifact and the version on view are in the page's address (url.ts).
+  const v = st.artifactV
+  const setV = (n?: number) => { state.artifactV = n; changed() }
+  const a = st.artifacts.find((x) => x.name === st.artifact) ?? st.artifacts[0]
   // On a phone the list and the artifact take turns: a tap shows the artifact, Back the list.
   // There the version, Publish and the history wait behind a menu button.
   const [picked, setPicked] = useState(false)
   const [more, setMore] = useState(false)
-  const choose = (name: string) => { localStorage.setItem('codinger.artifact', name); setSel(name); setV(undefined); setPicked(true); setMore(false) }
+  const choose = (name: string) => { state.artifact = name; state.artifactV = undefined; setPicked(true); setMore(false); changed() }
   // As the preview pane has: load again, a new tab, the full width (no list); and the history can hide.
   const [reload, setReload] = useState(0)
   const [full, setFull] = useState(false)

@@ -41,7 +41,7 @@ const who = (by: By) =>
   : by.kind === 'claude' ? `Claude Code in ${shortPath(by.cwd)}`
   : 'Outside Codinger'
 
-export function SettingsDialog({ onClose, page: first }: { onClose(): void; page?: Page }) {
+export function SettingsDialog({ onClose }: { onClose(): void }) {
   const st = useStore()
   const [files, setFiles] = useState<FileRow[]>([])
   const [sel, setSel] = useState('')
@@ -52,8 +52,9 @@ export function SettingsDialog({ onClose, page: first }: { onClose(): void; page
   const [adding, setAdding] = useState('')
   const tick = sel ? st.fileTick[sel] ?? 0 : 0
 
-  const [page, setPage] = useState<Page>(() => first ?? PAGES.find(([p]) => p === localStorage.getItem('codinger.settingsPage'))?.[0] ?? 'general')
-  const go = (p: Page) => { localStorage.setItem('codinger.settingsPage', p); setPage(p) }
+  // The page is in the page's address (url.ts).
+  const page: Page = PAGES.find(([p]) => p === st.settingsPage)?.[0] ?? 'general'
+  const go = (p: Page) => { localStorage.setItem('codinger.settingsPage', p); state.settingsPage = p; changed() }
   const guard = st.settings.cacheGuard ?? DEFAULT_CACHE_GUARD
   const [stale, setStale] = useState(false)   // the server predates file history: it needs a restart
   const loadFiles = () => api<FileRow[]>('/api/files', 'GET')
@@ -109,6 +110,11 @@ export function SettingsDialog({ onClose, page: first }: { onClose(): void; page
               <input type="checkbox" checked={st.showSteps} onChange={(e) => { state.showSteps = e.target.checked; changed() }} />
               Show Claude's in-between messages
             </label>
+            {/* Only a touch screen has it; it is saved in this browser. */}
+            {matchMedia('(pointer: coarse)').matches && <label className="settings-check">
+              <input type="checkbox" checked={st.touchPick} onChange={(e) => { state.touchPick = e.target.checked; changed() }} />
+              While the keyboard is open, hold a finger on message text to pick it for a comment
+            </label>}
             <label className="settings-check">
               Updates from GitHub
               <select value={st.settings.autoUpdate ?? 'ask'} onChange={(e) => void api('/api/settings', 'PUT', { autoUpdate: e.target.value })}>

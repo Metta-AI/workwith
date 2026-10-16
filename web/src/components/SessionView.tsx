@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Mail, PermissionMode, SessionMeta, SlashCommand } from '../../../shared/types.ts'
 import { MAX_RUN } from '../../../shared/mail.ts'
-import { api, closeSession, composerOf, draftsOf, hasContent, loadEvents, queuedParts, select, sendQueued, setComposer, state, undismissItem, useStore, selectFallback, globalId, machineOf, localId } from '../store.ts'
+import { api, changed, closeSession, composerOf, draftsOf, hasContent, loadEvents, queuedParts, select, sendQueued, setComposer, state, undismissItem, useStore, selectFallback, globalId, machineOf, localId, quietly } from '../store.ts'
 import { fatigue, kTokens } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { RichInput } from './Inputs.tsx'
@@ -214,9 +214,9 @@ function SessionMenu({ m, open, setOpen, onPublish }: { m: SessionMeta; open: Me
     )) : []),
     worker && <hr key="sep" />,
     worker && <button key="autopilot" className={autopilotOn(m) ? 'autopilot-on' : ''} onClick={() => setOpen('autopilot')}>
-      {autopilotOn(m) ? `Autopilot · ${budgetLabel(ap!.unit, Math.max(0, ap!.budget - ap!.used))} left` : 'Autopilot…'}
+      {autopilotOn(m) ? `Autopilot · ${budgetLabel(ap!.unit, Math.max(0, ap!.budget - ap!.used))} left` : 'Autopilot'}
     </button>,
-    worker && <button key="publish" onClick={act(onPublish)}>{m.share ? 'Published transcript…' : 'Publish transcript…'}</button>,
+    worker && <button key="publish" onClick={act(onPublish)}>{m.share ? 'Published transcript' : 'Publish transcript'}</button>,
     worker && !m.archived && <button key="close" title="Archive session" onClick={act(() => closeSession(m.id))}>Close</button>,
     worker && m.archived && <button key="reopen" onClick={act(() => api(`/api/sessions/${m.id}`, 'PATCH', { archived: false }))}>Reopen</button>,
     worker && m.archived && <button key="delete" className="danger" title="Remove from Codinger (it stays in Resume)" onClick={act(() => { if (confirm(`Delete "${m.title}" from Codinger? Claude Code's own transcript is kept, so you can still find it under Resume.`)) return api(`/api/sessions/${m.id}`, 'DELETE').then(selectFallback) })}>Delete</button>,
@@ -511,18 +511,19 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
   const togglePanel = () => { localStorage.setItem('codinger.panel', panel ? '0' : '1'); setPanel(!panel) }
   const [panelW, setPanelW] = useWidth('attention', 300)
   // The preview pane (Artifacts.tsx): open while you leave it open, and whenever the agent shows something.
-  const [preview, setPreview] = useState(() => !phone && localStorage.getItem('codinger.previewPane') !== '0')
-  const togglePreview = () => { localStorage.setItem('codinger.previewPane', preview ? '0' : '1'); setPreview(!preview) }
+  // Both are in the page's address (url.ts).
+  const preview = st.previewPane
+  const togglePreview = () => { state.previewPane = !preview; changed() }
   const [previewW, setPreviewW] = useWidth('preview', 480)
   // wide: the pane takes the conversation's place too (the conversation stays mounted, hidden).
-  const [wide, setWide] = useState(() => localStorage.getItem('codinger.previewWide') === '1')
-  const toggleWide = () => { localStorage.setItem('codinger.previewWide', wide ? '0' : '1'); setWide(!wide) }
+  const wide = st.previewWide
+  const toggleWide = () => { state.previewWide = !wide; changed() }
   // The files attached to its messages (FilesPanel.tsx).
   const [filesOn, setFilesOn] = useState(() => !phone && localStorage.getItem('codinger.filesPane') === '1')
   const toggleFiles = () => { localStorage.setItem('codinger.filesPane', filesOn ? '0' : '1'); setFilesOn(!filesOn) }
   const [filesW, setFilesW] = useWidth('files', 260)
   const shownAt = st.preview[id]?.at
-  useEffect(() => { if (shownAt && Date.now() - shownAt < 5000) { localStorage.setItem('codinger.previewPane', '1'); setPreview(true) } }, [shownAt])
+  useEffect(() => { if (shownAt && Date.now() - shownAt < 5000 && !state.previewPane) quietly(() => { state.previewPane = true; changed() }) }, [shownAt])
   if (!m) return <div className="empty">No such session.</div>
   const open = items.filter((i) => i.status === 'open').length
   const canPreview = hasPreview(id)

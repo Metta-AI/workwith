@@ -7,6 +7,7 @@
 // has arrived.
 
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import type { Token, Tokens } from 'marked'
 import DOMPurify from 'dompurify'
 import { parseAskBody, type Ask } from '../../../shared/asks.ts'
@@ -17,7 +18,7 @@ import { anchorFromRange, mediaIn, passageQuote, rangesFor, setHighlights } from
 import { render as renderLive } from '../mdlive.ts'
 import { addDraft, api, changed, dismissItem, draftsOf, markDone, removeDraft, reviveItem, setDoneText, state, uid, undismissItem, updateDraft, useStore, type AnswerDraft, type DoneDraft, type NoteDraft } from '../store.ts'
 import type { TrackedItem } from '../items.ts'
-import { RichInput, Thumbs } from './Inputs.tsx'
+import { focusField, RichInput, Thumbs } from './Inputs.tsx'
 import { CheckIcon, ChevronIcon, CommentIcon, TerminalIcon, UndoIcon, XIcon } from './Icons.tsx'
 import { EmojiPicker } from './EmojiPicker.tsx'
 import { focusPassage, onPassage } from './Margin.tsx'
@@ -255,19 +256,19 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     const zone = el?.closest('.transcript-inner')
     if (!el || !zone) return
     let raf = 0
-    const move = (e: MouseEvent) => {
+    const level = (x: number, y: number, at: EventTarget | null) => {
       cancelAnimationFrame(raf)
       raf = requestAnimationFrame(() => {
-        if (busy.current || (e.target as Element).closest?.('.rail-row')) return
+        if (busy.current || (at as Element | null)?.closest?.('.rail-row')) return
         const r = el.getBoundingClientRect()
-        if (e.clientY < r.top || e.clientY > r.bottom || e.clientX < r.left - 72 || e.clientX > r.right) { if (targetRef.current) setTarget(null); return }
+        if (y < r.top || y > r.bottom || x < r.left - 72 || x > r.right) { if (targetRef.current) setTarget(null); return }
         // The innermost one level with the pointer; between two, keep the last.
         let best: HTMLElement | null = null, h = Infinity
         for (const c of el.querySelectorAll<HTMLElement>('li, [data-block]')) {
           // A passage in a closed <details> is laid out on top of what follows it.
           if (c.closest('details:not([open])') || (c.closest('.ask-card') && !c.closest('.ask-q'))) continue
           const b = c.getBoundingClientRect()
-          if (e.clientY >= b.top - 2 && e.clientY <= b.bottom + 2 && b.height < h) { best = c; h = b.height }
+          if (y >= b.top - 2 && y <= b.bottom + 2 && b.height < h) { best = c; h = b.height }
         }
         if (!best || best === targetRef.current?.el) return
         const anchor = anchorFromRange(contentsOf(best), el)
@@ -275,10 +276,14 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
         if (anchor && top != null) setTarget({ el: best, key: keyOf(anchor), anchor, top })
       })
     }
+    const move = (e: MouseEvent) => level(e.clientX, e.clientY, e.target)
+    // On a touch screen the button shows as the finger goes down, so a passage you scroll into view has it already.
+    const touch = (e: TouchEvent) => { if (e.touches.length === 1) level(e.touches[0].clientX, e.touches[0].clientY, e.target) }
     const leave = () => { if (!busy.current) setTarget(null) }
     zone.addEventListener('mousemove', move as EventListener)
+    zone.addEventListener('touchstart', touch as EventListener, { passive: true })
     zone.addEventListener('mouseleave', leave)
-    return () => { cancelAnimationFrame(raf); zone.removeEventListener('mousemove', move as EventListener); zone.removeEventListener('mouseleave', leave) }
+    return () => { cancelAnimationFrame(raf); zone.removeEventListener('mousemove', move as EventListener); zone.removeEventListener('touchstart', touch as EventListener); zone.removeEventListener('mouseleave', leave) }
   }, [root])
 
   // Clicking the highlight of a reaction to a selection opens a comment on it.
@@ -308,15 +313,19 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     const n = root.current && rangesFor(anchor, root.current)[0]?.startContainer
     return (n?.nodeType === 1 ? n as Element : n?.parentElement)?.closest<HTMLElement>('[data-item]')?.dataset.item
   }
+  // No holdKeyboard here: the card's field takes the focus inside the touch itself (below), and a
+  // hidden field that took it first used the touch up, so iOS gave the card's field no keyboard.
   const commentOn = (anchor: Anchor, quote: string, whole: boolean) => {
     focusPassage(sid, null)
-    holdKeyboard()
     const k = keyOf(anchor)
     const open = draftsOf(sid).find((d): d is NoteDraft => d.kind === 'note' && !d.reaction && keyOf(d.anchor) === k)
-    // Without a gutter the card shows only after the render that state.focus causes, so focus it on the next frame.
-    if (open) { state.focus = open.id; changed(); requestAnimationFrame(() => document.querySelector<HTMLElement>(`.note-card[data-id="${open.id}"] .ri-edit`)?.focus()); return }
-    const itemKey = itemOf(anchor)
-    addDraft(sid, { id: uid(), kind: 'note', anchor, quote, text: '', images: [], createdAt: Date.now(), ...(whole ? { whole } : {}), ...(itemKey ? { itemKey } : {}) })
+    // Without a gutter the card shows only after the render that state.focus causes. That render happens
+    // here, inside the touch, so its field takes the focus in it: iOS types only into a field focused so.
+    const field = (id: string) => focusField(document.querySelector<HTMLElement>(`.note-card[data-id="${id}"] .ri-edit`))
+    if (open) { flushSync(() => { state.focus = open.id; changed() }); field(open.id); return }
+    const itemKey = itemOf(anchor), id = uid()
+    flushSync(() => addDraft(sid, { id, kind: 'note', anchor, quote, text: '', images: [], createdAt: Date.now(), ...(whole ? { whole } : {}), ...(itemKey ? { itemKey } : {}) }))
+    field(id)
   }
   // A passage's own reactions not sent yet, and toggling one.
   const mine = (p: Pick) => draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note' && !!d.reaction && !!d.whole === p.whole && keyOf(d.anchor) === keyOf(p.anchor))
@@ -350,6 +359,14 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
       pressing.current = false
       // A held press opened the row, which keeps it busy; a click did not.
       if (!held) busy.current = false
+      // iOS brings up the keyboard (for a comment card) only from a touchend, not a pointerup.
+      if (!held && u.pointerType === 'touch') {
+        let done = false
+        const go = () => { if (!done) { done = true; document.removeEventListener('touchend', go); click() } }
+        document.addEventListener('touchend', go)
+        setTimeout(go, 300)
+        return
+      }
       if (!held) return click()
       const over = (document.elementFromPoint(u.clientX, u.clientY) as Element | null)?.closest<HTMLElement>('[data-emoji]')
       if (over) toggle(over.dataset.emoji!, p)
@@ -357,6 +374,49 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     document.addEventListener('pointermove', move)
     document.addEventListener('pointerup', up)
   }
+
+  // On a touch screen the button shows only once a finger is on the passage. So a press where it
+  // will be (a box the button's size, level with the first line of a paragraph or list item)
+  // shows it and works as a press on it at once: a tap adds your last emoji, a hold or a drag up
+  // opens the row. Not within 20px of the screen's left edge, where a swipe opens the sessions.
+  const pressAt = useRef<(t: NonNullable<typeof target>, e: PointerEvent) => void>(() => {})
+  pressAt.current = (t, e) => {
+    const own = itemsRef.current.find((it) => it.whole && it.key === t.key)
+    const tp = pickOf(t.anchor, passageQuote(t.el), true)
+    press(tp, () => own ? commentOn(own.anchor, own.quote, true) : toggle(lastEmoji(), tp))(e as unknown as React.PointerEvent)
+  }
+  useEffect(() => {
+    const el = root.current
+    const zone = el?.closest('.transcript-inner')
+    if (!el || !zone) return
+    const skip = (at: EventTarget | null) => !!(at as Element | null)?.closest?.('.rail-row, button, a, input, textarea, .note-card')
+    const hit = (x: number, y: number) => {
+      const r = el.getBoundingClientRect()
+      if (x < Math.max(20, r.left - 40) || x > r.left - 4 || y < r.top - 14 || y > r.bottom) return null
+      let best: { el: HTMLElement; key: string; anchor: Anchor; top: number } | null = null, h = Infinity
+      for (const c of el.querySelectorAll<HTMLElement>('li, [data-block]')) {
+        if (c.closest('details:not([open])') || (c.closest('.ask-card') && !c.closest('.ask-q'))) continue
+        const b = c.getBoundingClientRect()
+        if (y < b.top - 14 || y > b.top + 40 || b.height >= h) continue
+        const anchor = anchorFromRange(contentsOf(c), el)
+        const top = anchor && lineMid(rangesFor(anchor, el)[0] ?? null, el)
+        if (anchor && top != null && Math.abs(y - r.top - top) <= 14) { best = { el: c, key: keyOf(anchor), anchor, top }; h = b.height }
+      }
+      return best
+    }
+    const down = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch' || busy.current || skip(e.target)) return
+      const t = hit(e.clientX, e.clientY)
+      if (!t) return
+      flushSync(() => setTarget(t))
+      pressAt.current(t, e)
+    }
+    // No scroll from there, as from the button itself.
+    const hold = (e: TouchEvent) => { if (e.touches.length === 1 && !skip(e.target) && hit(e.touches[0].clientX, e.touches[0].clientY)) e.preventDefault() }
+    zone.addEventListener('pointerdown', down as EventListener)
+    zone.addEventListener('touchstart', hold as EventListener, { passive: false })
+    return () => { zone.removeEventListener('pointerdown', down as EventListener); zone.removeEventListener('touchstart', hold as EventListener) }
+  }, [root])
 
   const all = target && !rows.some((r) => r.top === target.top) ? [...rows, { top: target.top, items: [] }] : rows
   // The row and the remove button to its left stay right of the transcript's edge, clear of the sidebar.
@@ -563,7 +623,7 @@ function ConsiderCard({ c, p }: { c: Ctx; p: SectionPiece }) {
     holdKeyboard()
     // A reaction in the item has no card to go to.
     const existing = draftsOf(c.sid).find((d): d is NoteDraft => d.kind === 'note' && d.itemKey === key && !d.reaction)
-    if (existing) { document.querySelector<HTMLElement>(`.note-card[data-id="${existing.id}"] .ri-edit`)?.focus(); return }
+    if (existing) { focusField(document.querySelector<HTMLElement>(`.note-card[data-id="${existing.id}"] .ri-edit`)); return }
     const card = (e.currentTarget as HTMLElement).closest('.consider')!
     const head = card.querySelector<HTMLElement>('.consider-title')!
     const msgEl = card.closest<HTMLElement>('[data-msg]')!

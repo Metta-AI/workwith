@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import type { Anchor, Block, Event, ImageRef, Part, Task } from '../../../shared/types.ts'
 import { addDraft, api, draftsOf, media, removeDraft, rewind, select, state, uid, useStore, here } from '../store.ts'
 import { mediaKind } from '../../../shared/media.ts'
-import { anchorFromRange, passageQuote } from '../anchoring.ts'
+import { anchorFromRange, passageQuote, setHighlights } from '../anchoring.ts'
 import { holdKeyboard, renderInline, renderMd, renderText } from '../util.ts'
 import { AssistantMessage, type Reaction } from './AssistantMessage.tsx'
-import { RichInput, Thumbs } from './Inputs.tsx'
+import { focusField, RichInput, Thumbs } from './Inputs.tsx'
 import { foldItems, revealItem, trackItems, type TrackedItem } from '../items.ts'
 import { itemsOf } from '../../../shared/blocks.ts'
 import { isReaction } from '../emoji.ts'
@@ -116,33 +117,42 @@ export function Transcript({ sid }: { sid: string }) {
       if (at(r.commonAncestorContainer)?.closest('.ri-edit, textarea, input, button, summary')) return null
       return { sel, r, el }
     }
-    // hold: from a touch, which may bring up the keyboard (holdKeyboard), once the selection is read.
-    const comment = (hold = false) => {
-      const t = target()
-      if (!t) return
-      const { sel, r, el } = t
+    // A comment on range r of message el: from a selection (sel), or a pick on a touch screen
+    // (none). hold: from a touch, which may bring up the keyboard (holdKeyboard), once the
+    // selection is read. now: inside the touch that ends a pick: the card renders and its
+    // field takes the focus in it, as iOS types only into a field focused so.
+    const commentOn = (r: Range, el: HTMLElement, sel: Selection | null, { hold = false, now = false } = {}) => {
+      const raw = sel ? sel.toString() : r.toString()
       // A selection of a whole paragraph or list item goes on it as a whole, as from the
       // reaction button: the same passage the button picks (the shortest; between two, the first).
       const flat = (t: string) => t.replace(/\s+/g, ' ').trim()
-      const text = flat(sel.toString())
+      const text = flat(raw)
       let whole: HTMLElement | null = null
       for (const b of el.querySelectorAll<HTMLElement>('li, [data-block]')) {
-        if (!r.intersectsNode(b) || b.closest('.run-card, details:not([open])') || (b.closest('.ask-card') && !b.closest('.ask-q')) || flat(b.innerText) !== text) continue
+        if (!r.intersectsNode(b) || b.closest('.run-card, details:not([open])') || (b.closest('.ask-card') && !b.closest('.ask-q')) || (flat(b.innerText) !== text && flat(b.textContent ?? '') !== text)) continue
         if (!whole || b.getBoundingClientRect().height < whole.getBoundingClientRect().height) whole = b
       }
       const all = document.createRange()
       if (whole) all.selectNodeContents(whole)
       const anchor = anchorFromRange(whole ? all : r, el)
       if (!anchor) return
-      const quote = whole ? passageQuote(whole) : sel.toString().trim().replace(/\n{3,}/g, '\n\n')
+      const quote = whole ? passageQuote(whole) : raw.trim().replace(/\n{3,}/g, '\n\n')
       // A comment inside an item to consider or a question counts as the reply to it.
       const itemKey = at(r.commonAncestorContainer)?.closest<HTMLElement>('[data-item]')?.dataset.item
       // Only now: the hidden field's focus clears the selection.
       if (hold) holdKeyboard()
       // One empty comment at a time: starting a new one drops the untouched last one.
       for (const d of draftsOf(sid)) if (d.kind === 'note' && !d.text.trim() && !d.images.length) removeDraft(sid, d.id)
-      sel.removeAllRanges()
-      addDraft(sid, { id: uid(), kind: 'note', anchor, quote, text: '', images: [], createdAt: Date.now(), ...(whole ? { whole: true } : {}), ...(itemKey ? { itemKey } : {}) })
+      sel?.removeAllRanges()
+      const id = uid()
+      const add = () => addDraft(sid, { id, kind: 'note', anchor, quote, text: '', images: [], createdAt: Date.now(), ...(whole ? { whole: true } : {}), ...(itemKey ? { itemKey } : {}) })
+      if (!now) return add()
+      flushSync(add)
+      focusField(document.querySelector<HTMLElement>(`.note-card[data-id="${id}"] .ri-edit`))
+    }
+    const comment = (hold = false) => {
+      const t = target()
+      if (t) commentOn(t.r, t.el, t.sel, { hold })
     }
     const up = () => setTimeout(() => comment(), 0)
     const touch = matchMedia('(pointer: coarse)')
@@ -154,14 +164,92 @@ export function Transcript({ sid }: { sid: string }) {
       if (down) return
       if (touch.matches && target()) comment(true); else settle()
     }
+    // On a touch screen with the keyboard up, Codinger picks the text itself: iOS starts a
+    // selection only inside the field that has the focus (WebKit's
+    // textInteractionGesture:shouldBeginAtPoint:), so then a long press on a message was only a
+    // tap that closed the keyboard. A finger held still for a moment picks the word under it; a
+    // drag grows the pick word by word; letting go opens the comment on it, focused. Without the
+    // keyboard iOS's own selection works, and this stays out of it. Settings can turn it off.
+    let hold = 0, from: { x: number; y: number } | null = null
+    let pick: { el: HTMLElement; first: Range; r: Range } | null = null
+    // The word at a point of message el, or the one character there if it is not in a word.
+    const wordAt = (el: HTMLElement, x: number, y: number) => {
+      const d = document as Document & { caretRangeFromPoint?(x: number, y: number): Range | null }
+      let c: Range | null = d.caretRangeFromPoint?.(x, y) ?? null
+      if (!c) { const p = document.caretPositionFromPoint?.(x, y); if (p) { c = document.createRange(); c.setStart(p.offsetNode, p.offset) } }
+      const n = c?.startContainer
+      if (!n || n.nodeType !== Node.TEXT_NODE || !el.contains(n) || at(n)?.closest('.ri-edit, textarea, input, button, summary, .rail-row, .note-card')) return null
+      const t = n.textContent ?? '', w = /[\p{L}\p{N}_'’-]/u
+      let a = c!.startOffset, b = a
+      while (a > 0 && w.test(t[a - 1])) a--
+      while (b < t.length && w.test(t[b])) b++
+      if (a === b) { if (b < t.length) b++; else if (a > 0) a--; else return null }
+      const r = document.createRange()
+      r.setStart(n, a); r.setEnd(n, b)
+      return r
+    }
+    const unpick = () => { clearTimeout(hold); from = null; pick = null; setHighlights('pick', 'pick', []); document.removeEventListener('touchmove', grow) }
+    const press = (e: TouchEvent) => {
+      unpick()
+      const el = e.target instanceof Node ? at(e.target) : null
+      // A press that something else took (a reaction button, or where one will be) picks nothing.
+      const ed = document.activeElement
+      if (!touch.matches || !state.touchPick || e.touches.length !== 1 || e.defaultPrevented || !ed?.matches('input, textarea, [contenteditable]') || ed.matches('[data-hold-keyboard]')) return
+      const msg = el?.closest<HTMLElement>('[data-msg]')
+      if (!msg || msg.dataset.sid !== sid || el!.closest('.ri-edit, textarea, input, button, summary, a, .rail-row, .note-card')) return
+      const p = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+      from = p
+      hold = window.setTimeout(() => {
+        const r = from && wordAt(msg, p.x, p.y)
+        if (!r) return
+        pick = { el: msg, first: r, r }
+        setHighlights('pick', 'pick', [r])
+        // Only now a listener that can stop the scroll: one all the time would slow every scroll.
+        document.addEventListener('touchmove', grow, { passive: false })
+      }, 350)
+    }
+    // Before the pick a move is a scroll, and ends it; after, the page holds still and the pick grows.
+    const drag = (e: TouchEvent) => {
+      const t = e.touches[0]
+      if (!pick && from && Math.hypot(t.clientX - from.x, t.clientY - from.y) > 10) unpick()
+    }
+    function grow(e: TouchEvent) {
+      const t = e.touches[0]
+      if (!pick) return
+      e.preventDefault()
+      const w = wordAt(pick.el, t.clientX, t.clientY)
+      if (!w) return
+      const r = document.createRange()
+      const before = w.compareBoundaryPoints(Range.START_TO_START, pick.first) < 0
+      r.setStart(before ? w.startContainer : pick.first.startContainer, before ? w.startOffset : pick.first.startOffset)
+      const after = w.compareBoundaryPoints(Range.END_TO_END, pick.first) > 0
+      r.setEnd(after ? w.endContainer : pick.first.endContainer, after ? w.endOffset : pick.first.endOffset)
+      pick.r = r
+      setHighlights('pick', 'pick', [r])
+    }
+    const lift = (e: TouchEvent) => {
+      const p = pick
+      unpick()
+      if (!p || e.type !== 'touchend') return
+      // No click after it: a click would take the focus, and close the keyboard.
+      e.preventDefault()
+      commentOn(p.r, p.el, null, { now: true })
+    }
     document.addEventListener('mouseup', up)
     document.addEventListener('selectionchange', settle)
     for (const t of ['touchstart', 'touchend', 'touchcancel'] as const) document.addEventListener(t, fingers, { passive: true })
+    document.addEventListener('touchstart', press, { passive: true })
+    document.addEventListener('touchmove', drag, { passive: true })
+    for (const t of ['touchend', 'touchcancel'] as const) document.addEventListener(t, lift, { passive: false })
     return () => {
       clearTimeout(wait)
+      unpick()
       document.removeEventListener('mouseup', up)
       document.removeEventListener('selectionchange', settle)
       for (const t of ['touchstart', 'touchend', 'touchcancel'] as const) document.removeEventListener(t, fingers)
+      document.removeEventListener('touchstart', press)
+      document.removeEventListener('touchmove', drag)
+      for (const t of ['touchend', 'touchcancel'] as const) document.removeEventListener(t, lift)
     }
   }, [sid])
 

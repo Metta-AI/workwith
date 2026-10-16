@@ -450,3 +450,15 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
   saveRecord()
   return { published: r.published, madePublic: [...new Set([...madePublic, ...(out.madePublic ?? [])].map((d: { path?: string; id: string }) => d.path ?? d.id))] }
 }
+
+// Change who can see the page on Prolifica, with no new version: what goes up is there already.
+// Its data goes public with it when it was private (Prolifica does that, but does not say so here).
+export async function setVisibility(name: string, visibility: Visibility): Promise<{ published: ArtifactPublished; madePublic: string[] }> {
+  const p = recOf(name).published
+  if (!p) throw new Error(`${name} is not on Prolifica.`)
+  await call(`/api/isles/${encodeURIComponent(p.id)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ visibility }) })
+  const madePublic = p.visibility === 'private' && visibility !== 'private' ? Object.values(p.data).map((d) => d.path ?? d.id) : []
+  p.visibility = visibility
+  saveRecord()
+  return { published: p, madePublic }
+}

@@ -3,6 +3,8 @@
 // while a held press slides along it), the emoji search and a comment's reactions.
 // "+", the comment button and the remove button get one too, a copy of the button's own content.
 
+import { visibleBox } from './util.ts'
+
 const EMOJI = '.ack-row button, .ack-clear, .emoji-picker button, .note-card .reactions button'
 
 export function initPeek() {
@@ -23,9 +25,10 @@ export function initPeek() {
     if (icon) box.innerHTML = el.innerHTML
     else box.textContent = text
     box.classList.add('on')
-    const r = el.getBoundingClientRect()
-    box.style.left = `${Math.max(6, Math.min(r.left + r.width / 2 - box.offsetWidth / 2, innerWidth - box.offsetWidth - 6))}px`
-    box.style.top = `${Math.max(6, r.top - box.offsetHeight - 20)}px`
+    // Inside what you see, which a phone's keyboard pans (visibleBox).
+    const r = el.getBoundingClientRect(), v = visibleBox()
+    box.style.left = `${Math.max(v.left + 6, Math.min(r.left + r.width / 2 - box.offsetWidth / 2, v.right - box.offsetWidth - 6)) - v.fixed.left}px`
+    box.style.top = `${Math.max(v.top + 6, r.top - box.offsetHeight - 20) - v.fixed.top}px`
   }
 
   document.addEventListener('pointerdown', (e) => {

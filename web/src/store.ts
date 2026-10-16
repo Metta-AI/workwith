@@ -64,6 +64,7 @@ type State = {
   auth: AuthState
   lightbox: string | null     // an image shown full size
   showSteps: boolean          // keep Claude's in-between messages out of the activity rows
+  touchPick: boolean          // on a touch screen with the keyboard up, a held finger picks message text (Transcript.tsx)
   money: 'usd' | 'pct' | 'week'   // costs in dollars, or as a share of the 5-hour or weekly limit (web/src/cache.ts)
   runs: Record<string, Run>
   tasks: Task[]   // long-running commands agents started (server/tasks.ts)
@@ -74,6 +75,11 @@ type State = {
   restarting: boolean
   loaded: boolean                    // the server's hello came: sessions and settings are real
   page: 'artifacts' | null           // a page in place of the selected session
+  artifact: string | null            // the artifact chosen on the Artifacts page
+  artifactV?: number                 // and the version of it on view there (none: the latest)
+  settingsPage: string | null        // Settings is open, on this page
+  previewPane: boolean               // a session's preview pane is open (Artifacts.tsx)
+  previewWide: boolean               // and it takes the conversation's place too
   artifacts: Artifact[]
   artifactsPort: number              // where the server that runs artifacts listens
   prolifica: ProlificaState
@@ -107,12 +113,18 @@ export const state = {
   error: null,
   lightbox: null,
   showSteps: saved('codinger.showSteps', false),
+  touchPick: saved('codinger.touchPick', true),
   // 'both' was a choice until October 2026.
   money: (['usd', 'pct', 'week'] as const).find((x) => x === saved('codinger.money', 'pct')) ?? 'pct',
   runs: {},
   fileTick: {},
   restarting: false,
   page: null,
+  artifact: localStorage.getItem('codinger.artifact'),
+  settingsPage: null,
+  // On a phone the panes cover the session (styles.css), so the preview starts closed there.
+  previewPane: !matchMedia('(max-width: 720px)').matches && localStorage.getItem('codinger.previewPane') !== '0',
+  previewWide: localStorage.getItem('codinger.previewWide') === '1',
   artifacts: [],
   artifactsPort: 0,
   prolifica: null,
@@ -198,6 +210,10 @@ export function artifactsBase(port: number): string | null {
 let version = 0
 const listeners = new Set<() => void>()
 let persistTimer = 0
+// Changes the server makes (quietly), not you: the address changes in place for them (url.ts).
+export let quiet = 0
+export function quietly(fn: () => void) { quiet++; try { fn() } finally { quiet-- } }
+export const onChanged = (l: () => void) => { listeners.add(l) }
 export function changed() {
   version++
   for (const l of listeners) l()
@@ -208,12 +224,16 @@ export function changed() {
     localStorage.setItem('codinger.composer', JSON.stringify(state.composer))
     localStorage.setItem('codinger.selected', JSON.stringify(state.selected))
     localStorage.setItem('codinger.showSteps', JSON.stringify(state.showSteps))
+    localStorage.setItem('codinger.touchPick', JSON.stringify(state.touchPick))
     localStorage.setItem('codinger.preview', JSON.stringify(state.preview))
     localStorage.setItem('codinger.sideTab', JSON.stringify(state.sideTab))
     localStorage.setItem('codinger.collapsed', JSON.stringify(state.collapsed))
     localStorage.setItem('codinger.sideAll', JSON.stringify(state.sideAll))
     localStorage.setItem('codinger.sideHidden', JSON.stringify(state.sideHidden))
     localStorage.setItem('codinger.machineOrder', JSON.stringify(state.machineOrder))
+    if (state.artifact) localStorage.setItem('codinger.artifact', state.artifact)
+    localStorage.setItem('codinger.previewPane', state.previewPane ? '1' : '0')
+    localStorage.setItem('codinger.previewWide', state.previewWide ? '1' : '0')
   }, 300)
 }
 // Tell the server which sessions you are writing a reply in, so the lead's
@@ -297,7 +317,7 @@ function connect(machine: string) {
   const base = baseOf(machine)
   const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${base}/ws`)
   sockets.set(machine, ws)
-  ws.onmessage = (m) => onServer(JSON.parse(m.data), machine)
+  ws.onmessage = (m) => quietly(() => onServer(JSON.parse(m.data), machine))
   ws.onopen = () => {
     const m = state.machines[machine]
     if (m) m.connected = true
@@ -436,6 +456,10 @@ export function select(id: string, hideSide = true) {
   state.page = null
   if (hideSide) state.sideOpen = false
   changed()
+  opened(id)
+}
+// A session that shows now: its events, and it is seen.
+export function opened(id: string) {
   if (!id) return
   void loadEvents(id)
   const s = state.sessions.find((x) => x.id === id)

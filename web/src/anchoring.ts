@@ -74,14 +74,14 @@ let outlined: HTMLElement[] = []
 function paint() {
   const byKind = new Map<string, Range[]>()
   for (const { kind, ranges } of registry.values()) byKind.set(kind, [...(byKind.get(kind) ?? []), ...ranges])
-  for (const m of outlined) m.classList.remove('hl-draft', 'hl-sent', 'hl-focus')
+  for (const m of outlined) m.classList.remove('hl-draft', 'hl-sent', 'hl-focus', 'hl-pick')
   outlined = []
   for (const [kind, ranges] of byKind) for (const r of ranges) {
     const m = mediaIn(r)
     if (m) { m.classList.add(`hl-${kind}`); outlined.push(m) }
   }
   if (!('highlights' in CSS)) return
-  for (const kind of ['draft', 'sent', 'focus']) {
+  for (const kind of ['draft', 'sent', 'focus', 'pick']) {
     const r = byKind.get(kind) ?? []
     if (r.length) CSS.highlights.set(`cd-${kind}`, new Highlight(...r))
     else CSS.highlights.delete(`cd-${kind}`)

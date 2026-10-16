@@ -166,7 +166,8 @@ export function Sidebar({ width }: { width: number }) {
   const st = useStore()
   const [newIn, setNewIn] = useState<{ cwd: string; machine?: string; group?: string } | null>(null)
   const [history, setHistory] = useState(false)
-  const [settings, setSettings] = useState<Page | true | false>(false)
+  // Settings, on its page: in the page's address (url.ts). true: the page you looked at last.
+  const setSettings = (p: Page | true) => { state.settingsPage = p === true ? localStorage.getItem('codinger.settingsPage') ?? 'general' : p; changed() }
   const [tasks, setTasks] = useState(false)
   const [menu, setMenu] = useState<MenuAt | null>(null)
   const openMenu = (e: React.MouseEvent, items: MenuItem[]) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, items }) }
@@ -251,7 +252,7 @@ export function Sidebar({ width }: { width: number }) {
       </div>
       {newIn !== null && <NewSession cwd={newIn.cwd} machine={newIn.machine} group={newIn.group} onClose={() => setNewIn(null)} />}
       {history && <HistoryDialog onClose={() => setHistory(false)} />}
-      {settings && <SettingsDialog page={settings === true ? undefined : settings} onClose={() => setSettings(false)} />}
+      {st.settingsPage && <SettingsDialog onClose={() => { state.settingsPage = null; changed() }} />}
       {tasks && <TasksDialog onClose={() => setTasks(false)} />}
       {menu && <CtxMenu at={menu} onClose={() => setMenu(null)} />}
     </aside>
@@ -297,7 +298,7 @@ function moveToGroup(s: SessionMeta, group: string) {
 
 // One machine's sessions, by the groups you made. In a group, the sessions that need
 // you are rows; the others are critters in one line at the bottom, unless you show all.
-// A shut group still shows the ones that need you.
+// A shut group shows only its head.
 function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: string, group: string): void; onMenu(e: React.MouseEvent, items: MenuItem[]): void }) {
   const st = useStore()
   const m = st.machines[machine]
@@ -342,7 +343,7 @@ function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: s
     const shut = st.collapsed.includes(shutKey)
     const sg = g.id ? sortable(`${machine}|groups`, g.id) : null
     const needs = list.filter((s) => own(s) === 0)
-    const rows = shut || !all ? needs : list
+    const rows = shut ? [] : all ? list : needs
     // The rest in the order they came, so that a critter keeps its place in the line.
     const rest = all ? [] : list.filter((s) => own(s) !== 0).sort((a, b) => a.createdAt - b.createdAt)
     // Shown as a tree, a session and those nested under it move as one.
@@ -379,7 +380,7 @@ function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: s
               const parent = s.parentId && m?.sessions.find((x) => x.id === s.parentId)
               return (
                 <button key={s.id} {...d} className={`face${st.selected === s.id ? ' active' : ''}${d.className}`}
-                  data-tip={`${s.title}${parent ? ` (from ${parent.title})` : ''} · ${s.compacting ? 'compacting' : STATUS_LABEL[s.status]}`}
+                  data-tip={`${s.title}${parent ? ` (from ${parent.title})` : ''} · ${s.compacting ? 'compacting' : STATUS_LABEL[s.status]}`} data-tip-at="right" data-tip-touch
                   onClick={() => select(s.id)} onPointerDown={(e) => start(e, `${machine}|dock`, s.id, g.id, true)} onContextMenu={(e) => onMenu(e, rowItems(s))}>
                   <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={22} child={!!s.parentId} />
                   {/* The open one can be archived from here, as a row can. */}

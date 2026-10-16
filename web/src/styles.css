@@ -399,6 +399,8 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 ::highlight(cd-draft) { background-color: var(--hl-draft); }
 ::highlight(cd-sent) { background-color: var(--hl-sent); }
 ::highlight(cd-focus) { background-color: var(--hl-focus); }
+/* Text picked by a held finger on a touch screen with the keyboard up (Transcript.tsx). */
+::highlight(cd-pick) { background-color: color-mix(in srgb, var(--blue) 30%, transparent); }
 /* Highlights paint text only: an image, a video or a player in a passage gets an outline (anchoring.ts). */
 .md .hl-sent { box-shadow: 0 0 0 3px var(--hl-sent); }
 .md .hl-draft { box-shadow: 0 0 0 3px var(--hl-draft); }
@@ -441,7 +443,9 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 /* The row's first emoji sits right above the button you pressed; the remove button hangs off to its left. */
 .ack-pop { position: absolute; bottom: calc(100% + 4px); left: -6px; touch-action: none; }
 .ack-row { position: relative; display: flex; align-items: center; display: flex; gap: 2px; padding: 3px; background: var(--card); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 4px 16px rgba(0, 0, 0, .15); white-space: nowrap; }
-.ack-row button { border: none; background: none; font-size: calc(24px * var(--fs, 1)); line-height: 1; padding: 4px; border-radius: 50%; transition: transform .08s; }
+.ack-row button { position: relative; border: none; background: none; font-size: calc(24px * var(--fs, 1)); line-height: 1; padding: 4px; border-radius: 50%; transition: transform .08s; }
+/* Each emoji takes a finger a little above and below the row too (a drag up that ends off it); less below, so the button you pressed stays clear. */
+.ack-row button::before { content: ''; position: absolute; inset: -12px -1px -6px; }
 /* The circle grows a little and stays inside the row's edge; the emoji in it grows more. */
 .ack-row button:hover { transform: scale(1.1); background: rgba(127, 127, 127, .12); }
 .ack-row button > span { display: inline-block; transition: transform .08s; }
@@ -553,19 +557,21 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .working-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 
 /* ---- inline replies & questions ---- */
-.note-card { position: absolute; z-index: 2; pointer-events: auto; background: var(--card); border: 1px solid var(--line); border-left: 3px solid #f0b400; border-radius: 8px; padding: 6px 26px 6px 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, .08); transition: top .15s; }
+.note-card { position: absolute; z-index: 2; pointer-events: auto; background: var(--card); border: 1px solid var(--line); border-left: 3px solid #f0b400; border-radius: 8px; padding: 6px 30px 6px 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, .08); transition: top .15s; }
 .note-card:focus-within { box-shadow: 0 3px 14px rgba(0, 0, 0, .16); }
 .note-card.hover { box-shadow: 0 0 0 2px var(--hl-focus), 0 3px 14px rgba(0, 0, 0, .16); }
 .note-card .ri-edit, .note-card .ri-edit:focus { border: none; background: none; padding: 2px 24px 2px 4px; outline: none; min-height: 24px !important; }
-.note-card .rich-input .attach { top: 3px; right: 0; }
+/* The image button and the X (.card-x) sit level with the first line of the comment (18px down); the X is as far from the side as from the top. */
+.note-card .rich-input .attach { top: 5px; right: 0; }
 .note-card .thumbs { margin: 0 0 4px; }
 /* Into the card's right padding (kept clear only for the discard button, above); the buttons
    share the row's width, so the row fits the card, also where the emoji are wider (Windows). */
-.reactions { position: relative; display: flex; gap: 0; margin: 4px -20px 0 1px; }
-.reactions button { flex: 1 1 0; min-width: 0; aspect-ratio: 1; display: inline-flex; align-items: center; justify-content: center; border: none; background: none; padding: 0; font-size: calc(20px * var(--fs, 1)); line-height: 1.3; border-radius: 6px; }
-.reactions button:hover { background: rgba(127, 127, 127, .15); }
-.reactions button.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
-.card-x { position: absolute; top: 4px; right: 4px; border: none; background: none; padding: 2px; line-height: 0; color: var(--muted); border-radius: 4px; }
+.reactions { position: relative; display: flex; gap: 0; margin: 4px -24px 0 1px; }
+/* Only the card's own row: the emoji picker opens inside it, with buttons of its own. */
+.reactions > button { flex: 1 1 0; min-width: 0; aspect-ratio: 1; display: inline-flex; align-items: center; justify-content: center; border: none; background: none; padding: 0; font-size: calc(20px * var(--fs, 1)); line-height: 1.3; border-radius: 6px; }
+.reactions > button:hover { background: rgba(127, 127, 127, .15); }
+.reactions > button.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.card-x { position: absolute; top: 10px; right: 10px; border: none; background: none; padding: 2px; line-height: 0; color: var(--muted); border-radius: 4px; }
 .card-x:hover { color: var(--text); background: rgba(127, 127, 127, .15); }
 .ask-card { margin: .7em 0 .9em; border-left: 3px solid var(--blue); background: var(--card); border-radius: 0 10px 10px 0; padding: 8px 10px; box-shadow: 0 1px 3px rgba(0, 0, 0, .06); }
 .ask-card.queued { border-left-color: var(--ok); }
@@ -672,6 +678,8 @@ h1.rename { cursor: text; border-radius: 5px; } h1.rename:hover { background: rg
 /* The slash menu floats over the transcript, above the whole composer (queue
    and inbox included), lined up with the text column. */
 .composer .ri-edit { max-height: 220px; }
+/* Level with the last line, as far from the bottom as from the side: in the middle of a one-line field. */
+.composer .rich-input .attach { top: auto; bottom: 9px; right: 9px; }
 .composer .slash-menu { bottom: calc(100% + 8px); left: max(72px, calc((100% - 848px) / 2 + 72px)); }
 .session-main.gutter .composer .slash-menu { left: max(72px, calc((100% - 1140px) / 2 + 72px)); }
 .dismissed-wrap { position: relative; }
@@ -1098,8 +1106,8 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
   .side-hide { display: inline-flex; padding: 6px; }
   /* Over the page here (the sidebar is hidden), so clear of the message field. */
   .toasts { bottom: calc(90px + env(safe-area-inset-bottom)); }
-  /* Its middle (19px down) lines up with the first line of a banner, or of the title. */
-  .side-show { display: inline-flex; position: fixed; top: calc(2px + env(safe-area-inset-top)); left: calc(6px + env(safe-area-inset-left)); z-index: 6; padding: 8px; color: var(--text); }
+  /* Its middle (24px down) lines up with the middle of the critter beside the title, or of a banner's first line. */
+  .side-show { display: inline-flex; position: fixed; top: calc(7px + env(safe-area-inset-top)); left: calc(6px + env(safe-area-inset-left)); z-index: 6; padding: 8px; color: var(--text); }
   .row { padding-top: 9px; padding-bottom: 9px; }
   /* A finger holds a row to move it (Sidebar.tsx): no text selection or callout then. */
   .sidebar nav { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }

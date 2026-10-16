@@ -8,12 +8,12 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { rangesFor, setHighlights } from '../anchoring.ts'
-import { addDraft, draftsOf, removeDraft, state, uid, updateDraft, useStore, type NoteDraft } from '../store.ts'
+import { draftsOf, removeDraft, state, updateDraft, useStore, type NoteDraft } from '../store.ts'
 import type { Anchor, Event, ImageRef } from '../../../shared/types.ts'
 import { isReaction, topEmoji, usedEmoji } from '../emoji.ts'
-import { holdKeyboard, renderMd } from '../util.ts'
+import { holdKeyboard, renderMd, visibleBox } from '../util.ts'
 import { EmojiPicker } from './EmojiPicker.tsx'
-import { RichInput, Thumbs } from './Inputs.tsx'
+import { focusField, RichInput, Thumbs } from './Inputs.tsx'
 import { XIcon } from './Icons.tsx'
 
 export const CARD_W = 272
@@ -40,10 +40,6 @@ export function onPassage(ranges: Range[], x: number, y: number) {
 }
 
 // Darken one comment's passage while its card (or its sent copy) is hovered or focused.
-// A quick reaction to a passage: an emoji as (part of) the comment.
-const toggleReaction = (text: string, r: string) =>
-  text.includes(r) ? text.replace(r, '').replace(/ {2,}/g, ' ').trim() : text.trim() ? `${text.trimEnd()} ${r}` : r
-
 export function focusPassage(sid: string, d: { anchor: NoteDraft['anchor'] } | null) {
   setHighlights('focus', 'focus', d ? rangesOfNote(sid, d) : [])
 }
@@ -146,8 +142,7 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
     const card = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('.note-card')
     const sc = inner.current?.closest<HTMLElement>('.transcript')
     if (!card || !sc || !layer.current?.contains(card)) return
-    const vv = visualViewport
-    const over = card.getBoundingClientRect().bottom + 8 - Math.min(sc.getBoundingClientRect().bottom, vv ? vv.offsetTop + vv.height : innerHeight)
+    const over = card.getBoundingClientRect().bottom + 8 - Math.min(sc.getBoundingClientRect().bottom, visibleBox().bottom)
     if (over > 0) sc.scrollTop += over
   }
 
@@ -171,7 +166,7 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
       if (!hit) return
       holdKeyboard()
       setOpen(hit.id)
-      requestAnimationFrame(() => layer.current?.querySelector<HTMLElement>(`.note-card[data-id="${hit.id}"] .ri-edit`)?.focus())
+      requestAnimationFrame(() => focusField(layer.current?.querySelector<HTMLElement>(`.note-card[data-id="${hit.id}"] .ri-edit`)))
     }
     box.addEventListener('click', click)
     return () => box.removeEventListener('click', click)
@@ -276,22 +271,15 @@ function NoteCard({ sid, note, onOpen, onFocus, onBlur }: { sid: string; note: N
     return () => document.removeEventListener('pointerdown', away)
   }, [note.id])
   const [picking, setPicking] = useState(false)
-  // The passage's reactions (not sent yet), which the emoji row shows as on.
+  // The passage's reactions (not sent yet), which the emoji row shows first.
   const k = JSON.stringify(note.anchor)
   const reactions = draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note' && !!d.reaction && JSON.stringify(d.anchor) === k)
+  // An emoji from the row goes into the comment, at the caret (or at the end): it is text, not a reaction.
   const react = (r: string) => {
-    const same = reactions.find((d) => d.text.trim() === r)
-    if (isEmpty(note) && same) return removeDraft(sid, same.id)
-    if (!note.text.includes(r)) usedEmoji(r)
-    if (isEmpty(note) && reactions.length) {
-      // The passage has reactions already (the card was opened from one): add this one beside them, and keep the card.
-      addDraft(sid, { ...note, id: uid(), text: r, reaction: true, createdAt: Date.now() })
-      state.focus = null
-      return
-    }
-    // On a fresh empty card the emoji is a reaction: it moves to the left of the passage and the card goes.
-    if (isEmpty(note)) { focusPassage(sid, null); updateDraft(sid, note.id, { text: r, reaction: true }); return }
-    updateDraft(sid, note.id, { text: toggleReaction(note.text, r) })
+    usedEmoji(r)
+    const ed = card.current?.querySelector<HTMLElement>('.ri-edit')
+    if (ed && document.activeElement === ed && document.execCommand('insertText', false, r)) return
+    updateDraft(sid, note.id, { text: note.text.trim() ? `${note.text.trimEnd()} ${r}` : r })
   }
   return (
     <div
@@ -322,10 +310,11 @@ function NoteCard({ sid, note, onOpen, onFocus, onBlur }: { sid: string; note: N
         minRows={1}
         onEscape={() => { if (isEmpty(note)) removeDraft(sid, note.id); else (document.activeElement as HTMLElement | null)?.blur() }}
       />
-      <div className="reactions" onMouseDown={(e) => e.preventDefault()}>
+      {/* The emoji keep the focus in the comment; the picker's search field takes it. */}
+      <div className="reactions" onMouseDown={(e) => { if (!(e.target as Element).closest('input')) e.preventDefault() }}>
         {/* The passage's reactions first, whatever they are, then your most used. */}
         {[...new Set([...reactions.map((d) => d.text.trim()), ...topEmoji(8)])].slice(0, Math.max(8, reactions.length)).map((r) => (
-          <button key={r} className={note.text.includes(r) || reactions.some((d) => d.text.trim() === r) ? 'on' : ''} onClick={() => react(r)}>{r}</button>
+          <button key={r} onClick={() => react(r)}>{r}</button>
         ))}
         <button className="more-emoji" onClick={() => setPicking(true)}>+</button>
         {picking && <EmojiPicker onPick={(r) => { react(r); setPicking(false) }} onClose={() => setPicking(false)} />}
