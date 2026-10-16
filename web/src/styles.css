@@ -303,6 +303,8 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .transcript-inner.gutter { max-width: calc(848px + 292px); padding-right: calc(24px + 292px); }
 .margin { position: absolute; inset: 0; pointer-events: none; }
 
+/* A long URL or path breaks onto the next line instead of running past the column. */
+.md { overflow-wrap: break-word; }
 .md p { margin: .55em 0; }
 .md li { margin-bottom: .35em; } .md li > p { margin: .2em 0; }
 .md ul, .md ol { margin: .55em 0; padding-left: 1.5em; }
@@ -311,6 +313,13 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 /* A click copies inline code in Claude's replies (AssistantMessage.tsx): a hand with a copy mark. */
 .assistant-text[data-msg] :not(pre, a) > code { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cpath d='M7 3a1.5 1.5 0 0 1 3 0v6.5a1.4 1.4 0 0 1 2.8 0v1a1.4 1.4 0 0 1 2.8 0v1a1.4 1.4 0 0 1 2.8 0V18c0 2.8-2 4.5-4.5 4.5H11c-1.6 0-2.7-.7-3.5-2L3.4 15a1.4 1.4 0 0 1 2.2-1.8L7 15z' fill='white' stroke='black' stroke-width='1.2' stroke-linejoin='round'/%3E%3Crect x='19' y='19' width='7' height='9' rx='1.5' fill='white' stroke='black' stroke-width='1.3'/%3E%3Crect x='22' y='22' width='7' height='8' rx='1.5' fill='white' stroke='black' stroke-width='1.3'/%3E%3C/svg%3E") 8 2, copy; transition: background .6s; }
 /* Shows a path named in inline code in Finder (AssistantMessage.tsx). */
+/* The copy button on a code block (AssistantMessage.tsx): faint until the pointer is on the block. */
+.md .code-wrap { position: relative; }
+.md .code-wrap > pre { padding-right: 36px; }
+.md button.code-copy { position: absolute; top: 6px; right: 6px; display: flex; padding: 4px; border: 0; border-radius: 6px; background: var(--panel); color: var(--muted); cursor: pointer; opacity: .55; }
+.md .code-wrap:hover > button.code-copy, .md button.code-copy.on { opacity: 1; }
+.md button.code-copy:hover { color: var(--accent); background: var(--card); }
+.md button.code-copy.on { color: var(--ok); }
 .md button.reveal { display: inline-flex; vertical-align: -2px; margin-left: 2px; padding: 1px 2px; border: 0; background: none; color: var(--muted); cursor: pointer; border-radius: 4px; }
 .md button.reveal:hover { color: var(--accent); background: var(--panel); }
 .assistant-text[data-msg] code.copied { background: color-mix(in srgb, var(--accent) 30%, transparent); transition: none; }

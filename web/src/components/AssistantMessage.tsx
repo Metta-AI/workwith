@@ -120,6 +120,7 @@ export const AssistantMessage = memo(function AssistantMessage({ sid, msg, text,
     return () => { setHighlights(`d:${sid}:${msg}`, 'draft', []); setHighlights(`s:${sid}:${msg}`, 'sent', []) }
   }, [noteKey, sentKey, pieces, sid, msg, live])
   useCodeCopy(root, live)
+  useBlockCopy(root, pieces, live)
   useReveal(root, sid, pieces, live)
 
   return (
@@ -450,6 +451,40 @@ function useCodeCopy(root: React.RefObject<HTMLDivElement | null>, live: boolean
     el.addEventListener('click', click)
     return () => el.removeEventListener('click', click)
   }, [root, live])
+}
+
+// Each code block gets a copy button at its top right. The button holds only an
+// icon, so the text of the message (which anchors comments) stays the same.
+const COPY = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-.5a1 1 0 00-1-1h-6a1 1 0 00-1 1v6a1 1 0 001 1h.5"/></svg>'
+const COPIED = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3 3 7-7"/></svg>'
+
+function useBlockCopy(root: React.RefObject<HTMLDivElement | null>, pieces: Piece[], live: boolean) {
+  useEffect(() => {
+    const el = root.current
+    if (!el || live) return
+    // Not the command of a <run> card: it has its own Copy button.
+    for (const pre of el.querySelectorAll<HTMLElement>('pre')) {
+      if (pre.closest('.run-card') || pre.parentElement?.classList.contains('code-wrap')) continue
+      const wrap = document.createElement('div')
+      wrap.className = 'code-wrap'
+      pre.replaceWith(wrap)
+      wrap.append(pre)
+      const b = document.createElement('button')
+      b.className = 'code-copy'
+      b.innerHTML = COPY
+      let t = 0
+      b.addEventListener('click', (e) => {
+        e.stopPropagation()
+        void navigator.clipboard.writeText(pre.textContent ?? '').then(() => {
+          b.innerHTML = COPIED
+          b.classList.add('on')
+          clearTimeout(t)
+          t = window.setTimeout(() => { b.innerHTML = COPY; b.classList.remove('on') }, 1200)
+        })
+      })
+      wrap.append(b)
+    }
+  }, [root, pieces, live])
 }
 
 // Inline code that names a file or folder on this machine gets a folder button
