@@ -139,12 +139,6 @@ tinted); hover for who and when, click for every change with links to the conver
 Commands, the files Claude writes or edits, `<run>` blocks and fenced code in messages are
 syntax highlighted (highlight.js, common languages only: `web/src/highlight.ts`).
 
-## Other agents
-
-Before each message to a worker, if `~/.claude/bin/agents` exists, the server runs
-`agents active <dir>` and adds the result to the message, out of the transcript, so Claude
-knows who else is at work there without checking.
-
 ## Working on Codinger itself
 
 Settings has **Offer to restart when Codinger's code changes**, off by default. With it on,

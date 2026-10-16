@@ -13,13 +13,12 @@ import { fileURLToPath } from 'node:url'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { InboxItem, Part, PermissionMode, ServerMsg, SessionMeta, Settings, Usage } from '../shared/types.ts'
 import { criticalUnanswered, inboxLabel, inboxParts, openItemsOf } from '../shared/inbox.ts'
-import { execFile, execFileSync, spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import os from 'node:os'
 import { Session, slashCommand, type Hooks, type Launch, type SlashCommand } from './session.ts'
 import { Proc } from './proc.ts'
 import { findHistory, importTranscript, lastCache, listDirs, listHistory } from './history.ts'
 import { LEAD_PROMPT, WORKER_PROMPT, lookPrompt, workerNotesPrompt } from './prompts.ts'
-import { addPointer, initCoordination, pointerMissing, pruneCoordination } from './coordination.ts'
 import { LOOK_OPTIONS, LOOK_SLOTS, cleanLook, describeLook } from '../shared/looks.ts'
 import { cleanAppearance } from '../shared/appearance.ts'
 import * as meter from './meter.ts'
@@ -350,22 +349,13 @@ function resumeHistory(claudeId: string): Session {
 }
 
 // Context added to each message you send, out of the transcript: the lead gets
-// the board; a worker gets who else is at work in its directory, from the
-// ~/.claude/bin/agents helper when there is one, so it need not check first.
-const AGENTS_BIN = path.join(os.homedir(), '.claude', 'bin', 'agents')
+// the board; a worker gets the tasks that ended.
 // What goes to Claude unseen with a message. A slash command takes none, so tasks
 // that ended stay unheard until a message that can carry them.
 function hiddenFor(s: Session, parts: Part[]): { hidden?: string; tasks?: string[] } {
   if (slashCommand(parts)) return {}
   if (s.meta.kind === 'lead') return { hidden: board() }
   const out: string[] = []
-  if (fs.existsSync(AGENTS_BIN)) {
-    let who = ''
-    try { who = execFileSync(AGENTS_BIN, ['active', s.meta.cwd, '--other', s.meta.claudeSessionId.slice(0, 8)], { timeout: 3000, encoding: 'utf8' }) }
-    catch (e) { who = String((e as { stdout?: string }).stdout ?? '') } // exit code 1: someone is active
-    who = who.trim()
-    out.push(`[Codinger, ${new Date().toISOString().slice(0, 16)}Z] Other agents active in ${s.meta.cwd} (from \`agents active\`): ${who ? `\n${who}` : 'none.'}`)
-  }
   // Tasks that ended since it last heard; the message keeps their ids, to show them.
   const ended = tasksEnded(s)
   out.push(...ended.map(endText))
@@ -653,11 +643,6 @@ const UI_ORIGINS = [`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`]
 const artifactsPort = await startHost(Number(process.env.ARTIFACTS_PORT ?? PORT + 1), () => [...UI_ORIGINS, 'https://web.codinger.app', remoteStatus().hub])
 const artifactsMsg = (): ServerMsg => ({ type: 'artifacts', artifacts: listArtifacts(), port: artifactsPort, prolifica: prolificaState() })
 watchArtifacts(() => broadcast(artifactsMsg()))
-// The coordination file: its rules when it is missing, and no say for archived sessions.
-initCoordination()
-const pruneHolds = () => { const all = metas(); pruneCoordination(new Set(all.map((m) => m.id)), new Set(all.filter((m) => m.archived).map((m) => m.id))) }
-pruneHolds()
-setInterval(pruneHolds, 5 * 60_000)
 
 function artifactTool(id: string): Tool {
   return {
@@ -1078,16 +1063,6 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     writeAgentsMd(body.text)
     recordVersion(AGENTS_FILE, { kind: 'settings' })
     return send(res, 200, { path: AGENTS_FILE, text: body.text })
-  }
-  // Whether ~/.claude/CLAUDE.md points to the coordination file, and the answer to the ask (main.tsx).
-  if (a === 'coordination') {
-    if (!id && method === 'GET') return send(res, 200, { missing: settings.coordinationPointer !== 'never' && pointerMissing() })
-    if (id === 'pointer' && method === 'POST') {
-      const answer = (await json(req)).answer
-      if (answer === 'yes') addPointer()
-      if (answer === 'never') { settings = { ...settings, coordinationPointer: 'never' }; saveSettings(settings); broadcast({ type: 'settings', settings }) }
-      return send(res, 200, { ok: true })
-    }
   }
   if (a === 'settings' && method === 'PUT') {
     const body = await json(req)

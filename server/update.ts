@@ -107,7 +107,7 @@ export async function updateNow(): Promise<UpdateStatus> {
 export function updatePrompt(): string {
   const why = 'why' in status ? ` The automatic update stopped: ${status.why}` : ''
   return `Codinger's own checkout (${o?.root}) is behind origin/main.${why}\n\n` +
-    'Bring it up to date with origin/main without losing local work: look at what is uncommitted or unpushed and who it belongs to (`~/.claude/bin/agents active` if it exists), ' +
+    'Bring it up to date with origin/main without losing local work: look at what is uncommitted or unpushed and which session it belongs to (list_sessions), ' +
     'and ask me before you discard, stash or rewrite anything. Run `npm install` if package.json or package-lock.json changed. ' +
     'Then restart Codinger with its own restart (POST /api/restart on this server).'
 }
