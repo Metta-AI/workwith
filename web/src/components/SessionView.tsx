@@ -187,27 +187,37 @@ function Held({ m }: { m: SessionMeta }) {
   const live = othersLive(m)
   if (!m.held?.length && !live.length) return null
   const unhold = (id: string, part?: number) => api(`/api/sessions/${m.id}/unhold`, 'POST', { id, ...(part != null ? { part } : {}) })
-  const batch = (h: HeldReplies, isLive: boolean) => (
-    <div key={`${isLive ? 'l' : 'h'}${h.id}`} className={`held-batch${isLive ? ' live' : ''}`}>
+  return (
+    <div className="held-tray">
+      <div className="held-head">{live.length ? 'The others at the desk · it all goes with the next send' : 'Held for one reply · they go with the next send'}</div>
+      {(m.held ?? []).map((h) => <Batch key={`h${h.id}`} h={h} unhold={unhold} />)}
+      {live.map((h) => <Batch key={`l${h.id}`} h={h} />)}
+    </div>
+  )
+}
+
+// One person's replies in the tray. Live ones: their messages show; their comments and
+// answers, which also show in place, fold under "all".
+function Batch({ h, unhold }: { h: HeldReplies; unhold?: (id: string, part?: number) => void }) {
+  const [all, setAll] = useState(false)
+  const inPlace = (p: Part) => p.kind === 'note' || p.kind === 'answer'
+  const folded = !unhold && h.parts.some(inPlace)
+  const shown = h.parts.map((p, i) => [p, i] as const).filter(([p]) => !folded || all || !inPlace(p))
+  return (
+    <div className={`held-batch${unhold ? '' : ' live'}`}>
       <div className="held-by">
-        {isLive && <Who p={h.by} />}<b>{h.by?.name ?? 'Someone'}</b> <span className="muted">{isLive ? `is writing ${heldSummary(h.parts)}${h.parts.some((p) => p.kind === 'note' || p.kind === 'answer') ? ' (comments and answers show where they go)' : ''}` : `held ${heldSummary(h.parts)}`}</span>
-        {!isLive && <button className="icon-btn" title="Take these back out of the reply" onClick={() => void unhold(h.id)}><XIcon size={13} /></button>}
+        {!unhold && <Who p={h.by} />}<b>{h.by?.name ?? 'Someone'}</b> <span className="muted">{unhold ? 'held' : 'is writing'} {heldSummary(h.parts)}</span>
+        {folded && <button className="link held-all" onClick={() => setAll(!all)}>{all ? 'Show less' : 'Show all'}</button>}
+        {unhold && <button className="icon-btn" title="Take these back out of the reply" onClick={() => unhold(h.id)}><XIcon size={13} /></button>}
       </div>
-      {h.parts.map((p, i) => isLive && (p.kind === 'note' || p.kind === 'answer') ? null : (
+      {shown.map(([p, i]) => (
         <div key={i} className={`held-part${p.kind === 'text' ? ' message' : ''}`}>
           {p.kind === 'note' && p.quote.trim() && <span className="held-quote">“{p.quote.length > 80 ? p.quote.slice(0, 80) + '…' : p.quote}”</span>}
           {p.kind === 'answer' && <span className="held-quote">{p.question.split('\n')[0]}</span>}
           <span className="held-text">{p.kind === 'dismiss' ? `dismissed ${p.items.length}` : p.kind === 'done' ? `done: ${p.items.map((x) => x.label).join(', ')}` : p.kind === 'answer' && p.choices?.length ? `${p.choices.join('; ')} ${p.text}` : p.text}</span>
-          {!isLive && h.parts.length > 1 && <button className="icon-btn" title="Take this one back" onClick={() => void unhold(h.id, i)}><XIcon size={11} /></button>}
+          {unhold && h.parts.length > 1 && <button className="icon-btn" title="Take this one back" onClick={() => unhold(h.id, i)}><XIcon size={11} /></button>}
         </div>
       ))}
-    </div>
-  )
-  return (
-    <div className="held-tray">
-      <div className="held-head">{live.length ? 'The others at the desk · it all goes with the next send' : 'Held for one reply · they go with the next send'}</div>
-      {(m.held ?? []).map((h) => batch(h, false))}
-      {live.map((h) => batch(h, true))}
     </div>
   )
 }

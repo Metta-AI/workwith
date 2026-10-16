@@ -11,7 +11,7 @@ import type { Token, Tokens } from 'marked'
 import DOMPurify from 'dompurify'
 import { parseAskBody, type Ask } from '../../../shared/asks.ts'
 import { askOf, commandOf, draftOf, isTask, segmentsOf, type Segment } from '../../../shared/blocks.ts'
-import type { Anchor } from '../../../shared/types.ts'
+import type { Anchor, Person } from '../../../shared/types.ts'
 import { marked, renderInline, renderText } from '../util.ts'
 import { anchorFromRange, rangesFor, setHighlights } from '../anchoring.ts'
 import { render as renderLive } from '../mdlive.ts'
@@ -571,6 +571,16 @@ function othersAnswers(sid: string, askKey: string) {
   return othersLive(state.sessions.find((x) => x.id === sid)).flatMap((l) =>
     l.parts.flatMap((p) => p.kind === 'answer' && p.askKey === askKey ? [{ by: l.by, p }] : []))
 }
+// An option of a question; the others who picked it show as badges at its round end,
+// each badge on the same centre as the end's curve (styles.css .chip.has-who).
+function OptionChip({ label, on, onClick, who }: { label: string; on: boolean; onClick: () => void; who: (Person | null)[] }) {
+  return (
+    <button className={`chip${on ? ' on' : ''}${who.length ? ' has-who' : ''}`} onClick={onClick}>
+      <span>{label}</span>
+      {who.length > 0 && <span className="chip-who">{who.map((p, i) => <Who key={p?.login ?? i} p={p} fill />)}</span>}
+    </button>
+  )
+}
 function OthersAnswers({ sid, askKey }: { sid: string; askKey: string }) {
   useStore()
   const answers = othersAnswers(sid, askKey).filter((a) => a.p.text.trim())
@@ -651,9 +661,8 @@ function QuestionCard({ c, ask, compact }: { c: Ctx; ask: Ask; compact?: boolean
       {ask.options.length > 0 && (
         <div className="ask-options">
           {ask.options.map((o) => (
-            <button key={o} className={`chip${choices.includes(o) ? ' on' : ''}`} onClick={() => toggle(o)}>
-              {o}{theirs.filter((a) => a.p.kind === 'answer' && a.p.choices?.includes(o)).map((a) => <Who key={a.by?.login} p={a.by} size={15} />)}
-            </button>
+            <OptionChip key={o} on={choices.includes(o)} onClick={() => toggle(o)} label={o}
+              who={theirs.flatMap((a) => a.p.kind === 'answer' && a.p.choices?.includes(o) ? [a.by] : [])} />
           ))}
         </div>
       )}
