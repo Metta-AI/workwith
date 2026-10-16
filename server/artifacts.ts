@@ -131,7 +131,7 @@ export function listArtifacts(): Artifact[] {
     if (!e.isDirectory() || !NAME_RE.test(e.name) || !fs.existsSync(path.join(dirOf(e.name), 'index.html'))) continue
     const r = record[e.name] ?? { edits: [] }
     const a: Artifact = { name: e.name, title: e.name, mtime: mtimeOf(dirOf(e.name)), created: r.created, edits: r.edits, published: r.published, latest: r.versions?.at(-1)?.n, versions: r.versions?.map(({ n, at }) => ({ n, at })) }
-    try { const m = manifest(e.name); a.title = m.title || e.name; a.description = m.description } catch (err) { a.error = `artifact.json: ${(err as Error).message}` }
+    try { const m = manifest(e.name); a.title = m.title || e.name; a.description = m.description; if (!r.published && m.isle) a.isle = m.isle } catch (err) { a.error = `artifact.json: ${(err as Error).message}` }
     out.push(a)
   }
   return out.sort((a, b) => b.mtime - a.mtime)
@@ -536,7 +536,7 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
   const ids = Object.values(data).map((d) => d.id)
   const earlier = out.isle.id === before?.id ? before?.history ?? (before ? [{ version: before.version, local: before.local ?? 0, at: before.at }] : []) : []
   let history = [...earlier.map((h) => ({ ...h, data: h.data ?? (h.version === before?.version ? Object.values(before.data).map((d) => d.id) : undefined) })), { version: out.isle.version, local, at: Date.now(), data: ids }]
-  if (opts.replace && before && !adopted && out.isle.id === before.id) {
+  if (opts.replace && before && out.isle.id === before.id) {
     const sq = await call(`/api/isles/${encodeURIComponent(before.id)}/squash`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from: before.version, to: out.isle.version, note: opts.note || null }) })
     out.isle = sq.isle
     history = [...history.slice(0, -2), { version: sq.isle.version, local, at: Date.now(), data: ids }]

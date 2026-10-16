@@ -16,6 +16,7 @@ export type Artifact = {
   latest?: number         // its newest version
   versions?: { n: number; at: number }[]   // every version kept, oldest first
   error?: string          // its artifact.json could not be read
+  isle?: string           // the isle it is ("isle" in artifact.json), while it is not published from here yet
 }
 
 // data: what each data file was when it went up (sha256), its dataset id and path there.

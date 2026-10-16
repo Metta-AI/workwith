@@ -117,7 +117,7 @@ export function PublishControl({ a, v }: { a: Artifact; v?: number }) {
     try {
       const r = onlyVis
         ? await api<{ madePublic: string[] }>(`/api/artifacts/${encodeURIComponent(a.name)}/visibility`, 'POST', { visibility: vis })
-        : await api<{ madePublic: string[] }>(`/api/artifacts/${encodeURIComponent(a.name)}/publish`, 'POST', { visibility: vis, note, v, replace: replace && !!p })
+        : await api<{ madePublic: string[] }>(`/api/artifacts/${encodeURIComponent(a.name)}/publish`, 'POST', { visibility: vis, note, v, replace: replace && (!!p || !!a.isle) })
       setMade(r.madePublic); setNote(''); setOpen(false)
     } finally { setBusy(false) }
   }
@@ -131,6 +131,8 @@ export function PublishControl({ a, v }: { a: Artifact; v?: number }) {
             ? `v${local} is on Prolifica already, as v${upAs}.${vis !== p!.visibility ? ' This changes only who can see the page.' : ''}`
             : p && replace ? `This replaces v${p.version} of the page on Prolifica with v${local} here. Earlier versions there stay as they are.`
             : p ? `This makes v${p.version + 1} of the page on Prolifica, from v${local} here. v${p.version} there stays as it is, with its data.`
+            : a.isle && replace ? `This replaces the latest version of the isle ${a.isle} on Prolifica with v${local} here. Earlier versions there stay as they are.`
+            : a.isle ? `This makes the next version of the isle ${a.isle} on Prolifica, from v${local} here. If that isle is not yours, it makes a new page with the isle as its parent.`
             : `This makes a new page on Prolifica, from v${local} here.`}</div>
           {p?.there && <div className="small">Changed on Prolifica since the last publish: {p.there.changed.join('; ')}. Data that is there already as it is here is not sent again.</div>}
           <label>Who can see it
@@ -141,12 +143,12 @@ export function PublishControl({ a, v }: { a: Artifact; v?: number }) {
             </select>
           </label>
           {vis !== 'private' && <div className="muted small">Its data goes up with it and is {vis === 'public' ? 'public' : 'visible to anyone with the link'} too.</div>}
-          {p && upAs == null && <label className="check"><input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} /> Replace v{p.version}</label>}
-          {p && !onlyVis && <label>What changed<input value={note} placeholder="For the version history" onChange={(e) => setNote(e.target.value)} /></label>}
+          {(p || a.isle) && upAs == null && <label className="check"><input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} /> {p ? `Replace v${p.version}` : 'Replace its latest version'}</label>}
+          {(p || a.isle) && !onlyVis && <label>What changed<input value={note} placeholder="For the version history" onChange={(e) => setNote(e.target.value)} /></label>}
           <div className="publish-foot">
             <span className="muted small">{st.prolifica?.handle ? `As @${st.prolifica.handle}` : ''}</span>
             <button className="link" onClick={() => setOpen(false)}>Cancel</button>
-            <button className="primary" disabled={busy || (onlyVis && vis === p!.visibility)} onClick={() => void go()}>{busy ? 'Publishing…' : onlyVis ? `Make it ${vis}` : p && replace ? `Replace v${p.version}` : p ? `Publish v${p.version + 1}` : 'Publish'}</button>
+            <button className="primary" disabled={busy || (onlyVis && vis === p!.visibility)} onClick={() => void go()}>{busy ? 'Publishing…' : onlyVis ? `Make it ${vis}` : p && replace ? `Replace v${p.version}` : p ? `Publish v${p.version + 1}` : a.isle && replace ? 'Replace latest' : a.isle ? 'Publish next version' : 'Publish'}</button>
           </div>
         </div>
       )}
