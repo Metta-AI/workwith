@@ -15,6 +15,7 @@ import type { Anchor } from '../../../shared/types.ts'
 import { marked, renderInline, renderText } from '../util.ts'
 import { anchorFromRange, rangesFor, setHighlights } from '../anchoring.ts'
 import { render as renderLive } from '../mdlive.ts'
+import { Who } from './Who.tsx'
 import { addDraft, api, changed, dismissItem, draftsOf, markDone, othersLive, removeDraft, setDoneText, state, uid, undismissItem, updateDraft, useStore, type AnswerDraft, type DoneDraft, type NoteDraft } from '../store.ts'
 import type { TrackedItem } from '../items.ts'
 import { RichInput, Thumbs } from './Inputs.tsx'
@@ -88,14 +89,18 @@ export const AssistantMessage = memo(function AssistantMessage({ sid, msg, text,
   const drafted = live ? [] : draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note' && d.anchor.msg === msg && !!d.reaction)
   const noteKey = notes.map((n) => n.id + JSON.stringify(n.anchor.pieces)).join('|')
   const sentAll = [...sent, ...reacts.filter((r) => !r.whole).map((r) => r.anchor)]
-  const sentKey = JSON.stringify(sentAll)
+  // Comments the others at the desk are writing now: their passages show too, in a lighter way.
+  const theirs = live ? [] : othersLive(state.sessions.find((x) => x.id === sid)).flatMap((l) =>
+    l.parts.flatMap((p) => p.kind === 'note' && p.anchor.msg === msg && !p.whole ? [p.anchor] : []))
+  const sentKey = JSON.stringify(sentAll) + JSON.stringify(theirs)
 
   useLayoutEffect(() => {
     const el = root.current
     if (!el || live) return
     setHighlights(`d:${sid}:${msg}`, 'draft', notes.flatMap((n) => rangesFor(n.anchor, el)))
     setHighlights(`s:${sid}:${msg}`, 'sent', sentAll.flatMap((a) => rangesFor(a, el)))
-    return () => { setHighlights(`d:${sid}:${msg}`, 'draft', []); setHighlights(`s:${sid}:${msg}`, 'sent', []) }
+    setHighlights(`o:${sid}:${msg}`, 'others', theirs.flatMap((a) => rangesFor(a, el)))
+    return () => { setHighlights(`d:${sid}:${msg}`, 'draft', []); setHighlights(`s:${sid}:${msg}`, 'sent', []); setHighlights(`o:${sid}:${msg}`, 'others', []) }
   }, [noteKey, sentKey, pieces, sid, msg, live])
   useCodeCopy(root, live)
 
@@ -536,6 +541,7 @@ function DraftCard({ c, ask, compact }: { c: Ctx; ask: Ask & { draft: string }; 
     <div className={`ask-card draft-card${approved || edited ? ' queued' : ''}${approved ? ' approved' : ''}`} {...attrs} onMouseUp={(e) => e.stopPropagation()}>
       {head(status === 'open' && <button className="icon-btn" title="Dismiss" onClick={() => dismissItem(c.sid, askKey, ask.question)}><XIcon size={13} /></button>)}
       {/* An edit ends an approval: the edits are what goes back. */}
+      <OthersAnswers sid={c.sid} askKey={askKey} />
       <div className="draft-field">
         <RichInput value={text} onChange={(t) => patch({ text: t, approved: false })} images={[]} onImages={() => {}} placeholder="Draft" minRows={2} />
         {edited && peek && <Original text={ask.draft} />}
@@ -555,22 +561,23 @@ function DraftCard({ c, ask, compact }: { c: Ctx; ask: Ask & { draft: string }; 
         )}
         {edited && <span className="muted draft-edited" onMouseEnter={() => setPeek(true)} onMouseLeave={() => setPeek(false)}>Edited</span>}
       </div>
-      <OthersAnswers sid={c.sid} askKey={askKey} />
     </div>
   )
 }
 
-// What the others at the desk are answering to this question now (meta.live).
+// What the others at the desk are answering to a question now (meta.live), in place:
+// the options they picked carry their badge (OptionChip), their words sit above the box.
+function othersAnswers(sid: string, askKey: string) {
+  return othersLive(state.sessions.find((x) => x.id === sid)).flatMap((l) =>
+    l.parts.flatMap((p) => p.kind === 'answer' && p.askKey === askKey ? [{ by: l.by, p }] : []))
+}
 function OthersAnswers({ sid, askKey }: { sid: string; askKey: string }) {
-  const st = useStore()
-  const answers = othersLive(st.sessions.find((x) => x.id === sid)).flatMap((l) =>
-    l.parts.flatMap((p) => p.kind === 'answer' && p.askKey === askKey ? [{ who: l.by?.name ?? 'Someone', p }] : []))
+  useStore()
+  const answers = othersAnswers(sid, askKey).filter((a) => a.p.text.trim())
   if (!answers.length) return null
   return (
     <div className="others-answers">
-      {answers.map(({ who, p }, i) => (
-        <div key={i} className="other-answer"><b>{who}</b>{p.choices?.length ? <> · {p.choices.join('; ')}</> : null}{p.text.trim() ? <> · {p.text}</> : null}</div>
-      ))}
+      {answers.map(({ by, p }, i) => <div key={i} className="other-answer"><Who p={by} /> <span>{p.text}</span></div>)}
     </div>
   )
 }
@@ -633,6 +640,7 @@ function QuestionCard({ c, ask, compact }: { c: Ctx; ask: Ask; compact?: boolean
     }
   }
   const toggle = (o: string) => patch({ choices: choices.includes(o) ? choices.filter((x) => x !== o) : [...choices, o] })
+  const theirs = othersAnswers(c.sid, askKey)
 
   return (
     <div className={`ask-card${status === 'drafted' ? ' queued' : ''}`} {...attrs} onMouseUp={(e) => e.stopPropagation()}>
@@ -642,9 +650,14 @@ function QuestionCard({ c, ask, compact }: { c: Ctx; ask: Ask; compact?: boolean
       </div>
       {ask.options.length > 0 && (
         <div className="ask-options">
-          {ask.options.map((o) => <button key={o} className={`chip${choices.includes(o) ? ' on' : ''}`} onClick={() => toggle(o)}>{o}</button>)}
+          {ask.options.map((o) => (
+            <button key={o} className={`chip${choices.includes(o) ? ' on' : ''}`} onClick={() => toggle(o)}>
+              {o}{theirs.filter((a) => a.p.kind === 'answer' && a.p.choices?.includes(o)).map((a) => <Who key={a.by?.login} p={a.by} size={15} />)}
+            </button>
+          ))}
         </div>
       )}
+      <OthersAnswers sid={c.sid} askKey={askKey} />
       <RichInput
         value={draft?.text ?? ''}
         onChange={(text) => patch({ text })}
@@ -653,7 +666,6 @@ function QuestionCard({ c, ask, compact }: { c: Ctx; ask: Ask; compact?: boolean
         placeholder="Answer"
         minRows={1}
       />
-      <OthersAnswers sid={c.sid} askKey={askKey} />
     </div>
   )
 }

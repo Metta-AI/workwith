@@ -51,7 +51,7 @@ function paint() {
   if (!('highlights' in CSS)) return
   const byKind = new Map<string, Range[]>()
   for (const { kind, ranges } of registry.values()) byKind.set(kind, [...(byKind.get(kind) ?? []), ...ranges])
-  for (const kind of ['draft', 'sent', 'focus']) {
+  for (const kind of ['draft', 'sent', 'others', 'focus']) {
     const r = byKind.get(kind) ?? []
     if (r.length) CSS.highlights.set(`cd-${kind}`, new Highlight(...r))
     else CSS.highlights.delete(`cd-${kind}`)

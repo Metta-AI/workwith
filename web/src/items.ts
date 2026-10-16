@@ -4,7 +4,7 @@
 import { useMemo } from 'react'
 import type { Event, Part } from '../../shared/types.ts'
 import { itemsOf, type Item } from '../../shared/blocks.ts'
-import { draftsOf, hasContent, inboxOf, useStore } from './store.ts'
+import { draftsOf, hasContent, inboxOf, othersLive, state, useStore } from './store.ts'
 
 export type ItemStatus =
   | 'open'        // in Claude's latest turn, nothing done yet
@@ -43,6 +43,10 @@ export function draftStatus(sid: string, key: string): ItemStatus | null {
   for (const d of draftsOf(sid)) {
     if (d.kind === 'answer' && d.askKey === key && hasContent(d)) return 'drafted'
     if (d.kind === 'note' && d.itemKey === key && hasContent(d)) return 'drafted'
+  }
+  // So does an answer someone else at the desk is writing now.
+  for (const l of othersLive(state.sessions.find((x) => x.id === sid))) for (const p of l.parts) {
+    if ((p.kind === 'answer' && p.askKey === key) || (p.kind === 'note' && p.itemKey === key)) return 'drafted'
   }
   // A draft of the lead's counts as one of yours.
   const i = inboxOf(sid).find((x) => x.key === key)

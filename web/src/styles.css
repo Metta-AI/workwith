@@ -290,6 +290,7 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .md-block > :first-child { margin-top: .3em; } .md-block > :last-child { margin-bottom: .3em; }
 ::highlight(cd-draft) { background-color: var(--hl-draft); }
 ::highlight(cd-sent) { background-color: var(--hl-sent); }
+::highlight(cd-others) { background-color: var(--hl-sent); text-decoration: underline dotted #3fb950 2px; text-underline-offset: 3px; }
 ::highlight(cd-focus) { background-color: var(--hl-focus); }
 
 .user-turn { margin: 18px 0 14px auto; max-width: 88%; background: var(--accent-soft); border-radius: 12px; padding: 8px 14px; }
@@ -778,9 +779,14 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .note-card.sent.held { border-left-color: var(--accent); border-left-style: dashed; }
 .note-card.sent.live { border-left-color: #3fb950; border-left-style: dashed; }
 .held-part.message .held-text { white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
-.others-answers { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; font-size: calc(13px * var(--fs, 1)); color: var(--muted); }
-.other-answer { white-space: pre-wrap; } .other-answer b { color: var(--text); font-weight: 600; }
-.other-answer b::before, .held-batch.live .held-by b::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: #3fb950; }
+.others-answers { display: flex; flex-direction: column; gap: 3px; margin: 2px 0 6px; font-size: calc(13px * var(--fs, 1)); color: var(--muted); }
+.other-answer span { white-space: pre-wrap; color: var(--text); }
+.who-badge { display: inline-flex; align-items: center; justify-content: center; flex: none; border-radius: 50%; color: #fff; font-weight: 700; line-height: 1; vertical-align: -2px; }
+.chip .who-badge { margin-left: 5px; box-shadow: 0 0 0 1.5px var(--bg); }
+.chip .who-badge + .who-badge { margin-left: -3px; }
+.other-answer { display: flex; align-items: baseline; gap: 6px; }
+.held-by .who-badge { margin-right: 2px; }
+.held-tray { max-height: 28vh; overflow-y: auto; }
 .held-tray { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 8px; background: var(--panel); }
 .held-head { font-size: calc(11px * var(--fs, 1)); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .held-by { display: flex; align-items: center; gap: 6px; } .held-by .icon-btn { margin-left: auto; }

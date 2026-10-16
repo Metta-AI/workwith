@@ -9,7 +9,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { rangesFor, setHighlights } from '../anchoring.ts'
 import { addDraft, draftsOf, othersLive, removeDraft, state, uid, updateDraft, useStore, type NoteDraft } from '../store.ts'
-import type { Anchor, Event, Held, ImageRef } from '../../../shared/types.ts'
+import type { Anchor, Event, Held, ImageRef, Person } from '../../../shared/types.ts'
+import { Who } from './Who.tsx'
 import { isReaction, topEmoji, usedEmoji } from '../emoji.ts'
 import { renderMd } from '../util.ts'
 import { EmojiPicker } from './EmojiPicker.tsx'
@@ -54,13 +55,13 @@ type Props = { sid: string; inner: React.RefObject<HTMLDivElement | null>; colum
 // only), and reactions (an emoji alone), as small badges.
 // by: who wrote a sent or held comment; held: it waits for a joint turn (SessionView Held).
 // live: someone else is writing it now (meta.live).
-type Entry = { id: string; anchor: Anchor; kind: 'draft' | 'sent' | 'badge'; text: string; images?: ImageRef[]; draft?: NoteDraft; by?: string; held?: boolean; live?: boolean }
+type Entry = { id: string; anchor: Anchor; kind: 'draft' | 'sent' | 'badge'; text: string; images?: ImageRef[]; draft?: NoteDraft; by?: string; held?: boolean; live?: boolean; who?: Person | null }
 
 function sentEntries(events: Event[], held: Held[] = [], live: Held[] = []): Entry[] {
   const out: Entry[] = []
   for (const [list, tag] of [[held, 'h'], [live, 'l']] as const) for (const h of list) h.parts.forEach((p, i) => {
     if (p.kind !== 'note' || !p.anchor.pieces.length) return
-    out.push({ id: `${tag}${h.id}.${i}`, anchor: p.anchor, kind: 'sent', text: p.text, images: p.images, by: p.by?.name, ...(tag === 'h' ? { held: true } : { live: true }) })
+    out.push({ id: `${tag}${h.id}.${i}`, anchor: p.anchor, kind: 'sent', text: p.text, images: p.images, by: p.by?.name, ...(tag === 'h' ? { held: true } : { live: true, who: h.by }) })
   })
   for (const e of events) {
     if (e.t !== 'user') continue
@@ -243,7 +244,7 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
         >{n.text.trim()}</button>
       ) : (
         <div key={n.id} data-id={n.id} className={`note-card sent${n.held ? ' held' : ''}${n.live ? ' live' : ''}`} onMouseEnter={() => focusPassage(sid, n)} onMouseLeave={() => focusPassage(sid, null)}>
-          {(n.by || n.held) && <div className="note-by">{n.by ?? 'Someone'}{n.held && <span className="muted"> · held</span>}{n.live && <span className="muted"> · writing</span>}</div>}
+          {(n.by || n.held) && <div className="note-by">{n.live && <Who p={n.who} size={14} />} {n.by ?? 'Someone'}{n.held && <span className="muted"> · held</span>}{n.live && <span className="muted"> · writing</span>}</div>}
           <div className="md" dangerouslySetInnerHTML={{ __html: renderMd(n.text) }} />
           <Thumbs images={n.images} />
         </div>

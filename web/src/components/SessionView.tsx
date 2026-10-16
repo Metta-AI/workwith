@@ -4,6 +4,7 @@ import { agentName, api, closeSession, composerOf, draftsOf, hasContent, loadEve
 import { fatigue, kTokens } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { RichInput } from './Inputs.tsx'
+import { Who } from './Who.tsx'
 import { Transcript } from './Transcript.tsx'
 import { AttentionPanel } from './AttentionPanel.tsx'
 import { revealItem, useItems } from '../items.ts'
@@ -189,10 +190,10 @@ function Held({ m }: { m: SessionMeta }) {
   const batch = (h: HeldReplies, isLive: boolean) => (
     <div key={`${isLive ? 'l' : 'h'}${h.id}`} className={`held-batch${isLive ? ' live' : ''}`}>
       <div className="held-by">
-        <b>{h.by?.name ?? 'Someone'}</b> <span className="muted">{isLive ? 'is writing' : 'held'} {heldSummary(h.parts)}</span>
+        {isLive && <Who p={h.by} />}<b>{h.by?.name ?? 'Someone'}</b> <span className="muted">{isLive ? `is writing ${heldSummary(h.parts)}${h.parts.some((p) => p.kind === 'note' || p.kind === 'answer') ? ' (comments and answers show where they go)' : ''}` : `held ${heldSummary(h.parts)}`}</span>
         {!isLive && <button className="icon-btn" title="Take these back out of the reply" onClick={() => void unhold(h.id)}><XIcon size={13} /></button>}
       </div>
-      {h.parts.map((p, i) => (
+      {h.parts.map((p, i) => isLive && (p.kind === 'note' || p.kind === 'answer') ? null : (
         <div key={i} className={`held-part${p.kind === 'text' ? ' message' : ''}`}>
           {p.kind === 'note' && p.quote.trim() && <span className="held-quote">“{p.quote.length > 80 ? p.quote.slice(0, 80) + '…' : p.quote}”</span>}
           {p.kind === 'answer' && <span className="held-quote">{p.question.split('\n')[0]}</span>}
