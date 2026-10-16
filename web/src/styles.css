@@ -776,7 +776,11 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .user-turn .from.by { font-weight: 600; color: var(--text); opacity: .8; }
 .part-by, .note-by { font-size: calc(11px * var(--fs, 1)); font-weight: 600; color: var(--muted); margin-bottom: 2px; }
 .note-card.sent.held { border-left-color: var(--accent); border-left-style: dashed; }
-.send.hold { background: var(--card); }
+.note-card.sent.live { border-left-color: #3fb950; border-left-style: dashed; }
+.held-part.message .held-text { white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
+.others-answers { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; font-size: calc(13px * var(--fs, 1)); color: var(--muted); }
+.other-answer { white-space: pre-wrap; } .other-answer b { color: var(--text); font-weight: 600; }
+.other-answer b::before, .held-batch.live .held-by b::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: #3fb950; }
 .held-tray { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 8px; background: var(--panel); }
 .held-head { font-size: calc(11px * var(--fs, 1)); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .held-by { display: flex; align-items: center; gap: 6px; } .held-by .icon-btn { margin-left: auto; }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Part, PermissionMode, SessionMeta, SlashCommand } from '../../../shared/types.ts'
-import { agentName, api, closeSession, composerOf, draftsOf, hasContent, holdQueued, loadEvents, queuedParts, select, sendQueued, setComposer, state, undismissItem, useStore } from '../store.ts'
+import type { Held as HeldReplies, Part, PermissionMode, SessionMeta, SlashCommand } from '../../../shared/types.ts'
+import { agentName, api, closeSession, composerOf, draftsOf, hasContent, loadEvents, othersLive, queuedParts, select, sendQueued, setComposer, state, undismissItem, useStore } from '../store.ts'
 import { fatigue, kTokens } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { RichInput } from './Inputs.tsx'
@@ -179,30 +179,34 @@ function Inbox({ m }: { m: SessionMeta }) {
   )
 }
 
-// Replies people held for a joint turn (server/index.ts 'hold'): everyone sees them
-// here, anyone can take one back, and the next send takes them all along.
+// Replies people held for a joint turn (server/index.ts 'hold'), and what the others are
+// writing now (meta.live): everyone sees them here, and the next send takes them all along.
+// Held replies anyone can take back; live ones only their writer, by changing them.
 function Held({ m }: { m: SessionMeta }) {
-  if (!m.held?.length) return null
+  const live = othersLive(m)
+  if (!m.held?.length && !live.length) return null
   const unhold = (id: string, part?: number) => api(`/api/sessions/${m.id}/unhold`, 'POST', { id, ...(part != null ? { part } : {}) })
-  return (
-    <div className="held-tray">
-      <div className="held-head">Held for one reply · they go with the next send</div>
-      {m.held.map((h) => (
-        <div key={h.id} className="held-batch">
-          <div className="held-by">
-            <b>{h.by?.name ?? 'Someone'}</b> <span className="muted">{heldSummary(h.parts)}</span>
-            <button className="icon-btn" title="Take these back out of the reply" onClick={() => void unhold(h.id)}><XIcon size={13} /></button>
-          </div>
-          {h.parts.map((p, i) => (
-            <div key={i} className="held-part">
-              {p.kind === 'note' && p.quote.trim() && <span className="held-quote">“{p.quote.length > 80 ? p.quote.slice(0, 80) + '…' : p.quote}”</span>}
-              {p.kind === 'answer' && <span className="held-quote">{p.question.split('\n')[0]}</span>}
-              <span className="held-text">{p.kind === 'dismiss' ? `dismissed ${p.items.length}` : p.kind === 'done' ? `done: ${p.items.map((x) => x.label).join(', ')}` : p.text}</span>
-              {h.parts.length > 1 && <button className="icon-btn" title="Take this one back" onClick={() => void unhold(h.id, i)}><XIcon size={11} /></button>}
-            </div>
-          ))}
+  const batch = (h: HeldReplies, isLive: boolean) => (
+    <div key={`${isLive ? 'l' : 'h'}${h.id}`} className={`held-batch${isLive ? ' live' : ''}`}>
+      <div className="held-by">
+        <b>{h.by?.name ?? 'Someone'}</b> <span className="muted">{isLive ? 'is writing' : 'held'} {heldSummary(h.parts)}</span>
+        {!isLive && <button className="icon-btn" title="Take these back out of the reply" onClick={() => void unhold(h.id)}><XIcon size={13} /></button>}
+      </div>
+      {h.parts.map((p, i) => (
+        <div key={i} className={`held-part${p.kind === 'text' ? ' message' : ''}`}>
+          {p.kind === 'note' && p.quote.trim() && <span className="held-quote">“{p.quote.length > 80 ? p.quote.slice(0, 80) + '…' : p.quote}”</span>}
+          {p.kind === 'answer' && <span className="held-quote">{p.question.split('\n')[0]}</span>}
+          <span className="held-text">{p.kind === 'dismiss' ? `dismissed ${p.items.length}` : p.kind === 'done' ? `done: ${p.items.map((x) => x.label).join(', ')}` : p.kind === 'answer' && p.choices?.length ? `${p.choices.join('; ')} ${p.text}` : p.text}</span>
+          {!isLive && h.parts.length > 1 && <button className="icon-btn" title="Take this one back" onClick={() => void unhold(h.id, i)}><XIcon size={11} /></button>}
         </div>
       ))}
+    </div>
+  )
+  return (
+    <div className="held-tray">
+      <div className="held-head">{live.length ? 'The others at the desk · it all goes with the next send' : 'Held for one reply · they go with the next send'}</div>
+      {(m.held ?? []).map((h) => batch(h, false))}
+      {live.map((h) => batch(h, true))}
     </div>
   )
 }
@@ -287,17 +291,18 @@ export function Composer({ m }: { m: SessionMeta }) {
   const [sending, setSending] = useState(false)
   // Sending while questions or items are still open warns once; sending again
   // dismisses the rest.
-  const open = useItems(m.id).filter((i) => i.status === 'open')
+  // A question someone else at the desk is answering (or set aside) is not open.
+  const theirs = new Set(othersLive(m).flatMap((l) => l.parts.flatMap((p) =>
+    p.kind === 'answer' ? [p.askKey] : p.kind === 'note' && p.itemKey ? [p.itemKey] : p.kind === 'dismiss' || p.kind === 'done' ? p.items.map((x) => x.key) : [])))
+  const open = useItems(m.id).filter((i) => i.status === 'open' && !theirs.has(i.key))
   const [warned, setWarned] = useState(false)
   useEffect(() => { if (!open.length) setWarned(false) }, [open.length])
   useEffect(() => setWarned(false), [m.id])
   const slash = useSlashMenu(m.id, c.text, (text) => setComposer(m.id, { text }))
   const isCommand = /^\/[\w:.-]+/.test(c.text.trim()) && !c.images.length
   const mine = isCommand ? 1 : queuedParts(m.id).length
-  const held = isCommand ? 0 : (m.held ?? []).reduce((a, h) => a + h.parts.length, 0)
+  const held = isCommand ? 0 : [...(m.held ?? []), ...othersLive(m)].reduce((a, h) => a + h.parts.length, 0)
   const n = mine + held
-  // Holding is for several people at one desk: only when Codiner knows who is who.
-  const canHold = !!state.me && m.kind === 'worker' && !isCommand && mine > 0
   // A send that would re-cache a big, expired context waits for "Send anyway" in the bar above.
   const now = useNow()
   const cache = cacheOf(m, now)
@@ -315,11 +320,6 @@ export function Composer({ m }: { m: SessionMeta }) {
         setComposer(m.id, { text: '' })
       } else await sendQueued(m.id, open.map((i) => ({ key: i.key, label: i.label })))
     } finally { setSending(false) }
-  }
-  const hold = async () => {
-    if (!canHold || sending) return
-    setSending(true)
-    try { await holdQueued(m.id) } finally { setSending(false) }
   }
   return (
     <div className="composer">
@@ -358,7 +358,6 @@ export function Composer({ m }: { m: SessionMeta }) {
           onKey={slash.onKey}
           minRows={1}
         />
-        {canHold && <button className="send hold" disabled={sending || !st.connected} onClick={() => void hold()} title="Hold your replies for one joint reply: others see them and add theirs, and the next send takes them all">Hold</button>}
         <button className="primary send" disabled={!n || sending || !st.connected} onClick={() => send()} title={costly ? 'Prompt cache expired: use Send anyway above' : undefined}>
           {sending ? 'Sending…' : isCommand ? 'Run' : warned && open.length ? 'Send anyway' : n > 1 ? `Send ${n}` : 'Send'}
         </button>

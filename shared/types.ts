@@ -72,6 +72,7 @@ export type SessionMeta = {
   // Set by a rewind: the next start resumes claudeSessionId cut at this entry, as a fork.
   resumeAt?: string | null
   held?: Held[]           // replies waiting for a joint turn (Held)
+  live?: Live[]           // what each person is writing now, as they write it (Live)
 }
 
 // Rolling notes on a session, and the keep-warm calls that keep its prompt cache
@@ -122,6 +123,11 @@ export type Part = ({ by?: Person }) & (
 // Replies someone held for a joint turn instead of sending them: they wait on the
 // server, everyone sees them, and the next send from anyone takes them along.
 export type Held = { id: string; by: Person | null; parts: Part[]; ts: number }
+// What one person is writing in a session now (id: their login): their comments, answers
+// and message, sent up as they type, so the others see them. The next send from anyone
+// takes everybody's along. rev: the browser's version of it (a time), so a late copy of
+// what already went can't come back.
+export type Live = Held & { rev: number }
 
 export type Block =
   | { type: 'text'; text: string }
@@ -187,6 +193,8 @@ export type ServerMsg =
   | { type: 'tasks'; tasks: Task[] }
   // Who has this page open now, once each (only people Codiner can name).
   | { type: 'people'; people: Person[] }
+  // A send took this person's live drafts up to rev: their browser clears what went.
+  | { type: 'taken'; sessionId: string; login: string; rev: number }
 
 // A long-running command an agent started with start_task (server/tasks.ts).
 // notify: how the agent hears that it ended: with its next message, in a turn of

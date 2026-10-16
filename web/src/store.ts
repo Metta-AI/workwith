@@ -2,7 +2,7 @@
 // Components re-render on any change; at this scale that's plenty.
 
 import { useSyncExternalStore } from 'react'
-import type { AgentInfo, Anchor, AuthState, Event, ImageRef, InboxItem, Part, Person, ServerMsg, SessionMeta, Settings, Task, Usage } from '../../shared/types.ts'
+import type { AgentInfo, Anchor, AuthState, Event, ImageRef, InboxItem, Live, Part, Person, ServerMsg, SessionMeta, Settings, Task, Usage } from '../../shared/types.ts'
 import { inboxParts } from '../../shared/inbox.ts'
 import { itemsOf } from '../../shared/blocks.ts'
 import { applyAppearance, holdingAppearance } from './appearance.ts'
@@ -116,6 +116,7 @@ export function changed() {
   version++
   for (const l of listeners) l()
   reportDrafting()
+  reportLive()
   clearTimeout(persistTimer)
   persistTimer = window.setTimeout(() => {
     localStorage.setItem('codiner.drafts', JSON.stringify(state.drafts))
@@ -144,6 +145,44 @@ function reportDrafting() {
     }
   }, 600)
 }
+
+// When Codiner knows who you are, what you write goes up as you write it (server 'live'),
+// so the others at the desk see it, and the next send from anyone takes it along.
+// What went up last, by session: the parts, and the drafts and message they came from,
+// so a send that took them clears just those (onServer 'taken').
+type Pushed = { rev: number; json: string; drafts: Map<string, string>; text: string; images: string }
+const pushed = new Map<string, Pushed[]>()
+let liveTimer: number | undefined
+function reportLive() {
+  if (liveTimer || !state.me || !state.connected) return
+  liveTimer = window.setTimeout(() => {
+    liveTimer = undefined
+    if (!state.me || !state.connected) return
+    for (const m of state.sessions) {
+      const c = composerOf(m.id)
+      // A slash command is for its writer alone: it shows no one and goes by itself.
+      const command = /^\/[\w:.-]+/.test(c.text.trim()) && !c.images.length
+      const parts = queuedParts(m.id, [], { lead: false, text: !command })
+      const json = JSON.stringify(parts)
+      const list = pushed.get(m.id) ?? []
+      if (json === (list.at(-1)?.json ?? '[]')) continue
+      const rev = Math.max(Date.now(), (list.at(-1)?.rev ?? 0) + 1)
+      pushed.set(m.id, [...list.slice(-9), { rev, json, drafts: new Map(draftsOf(m.id).map((d) => [d.id, JSON.stringify(d)])), text: command ? '' : c.text, images: command ? '[]' : JSON.stringify(c.images) }])
+      void api(`/api/sessions/${m.id}/live`, 'POST', { rev, parts }).catch(() => pushed.delete(m.id))
+    }
+  }, 250)
+}
+// A send took what you wrote, up to rev: what is still as it was then goes.
+function takenLive(sid: string, rev: number) {
+  const snap = pushed.get(sid)?.find((p) => p.rev === rev)
+  if (!snap) return
+  state.drafts[sid] = draftsOf(sid).filter((d) => snap.drafts.get(d.id) !== JSON.stringify(d))
+  const c = composerOf(sid)
+  if (c.text === snap.text && JSON.stringify(c.images) === snap.images) state.composer[sid] = { text: '', images: [] }
+  pushed.set(sid, (pushed.get(sid) ?? []).filter((p) => p.rev > rev))
+}
+// What the others at the desk are writing in a session now.
+export const othersLive = (m: SessionMeta | undefined): Live[] => (m?.live ?? []).filter((l) => l.id !== state.me?.login)
 
 export function useStore(): State {
   useSyncExternalStore((l) => { listeners.add(l); return () => listeners.delete(l) }, () => version)
@@ -202,6 +241,8 @@ function onServer(m: ServerMsg) {
       state.agent = m.agent ?? null; state.me = m.me ?? null; state.askName = !!m.askName; state.billing = m.billing ?? 'plan'
       if (state.billing === 'api') state.money = 'usd'
       state.seenAt = null; keepSeen()
+      // The server may have restarted and lost what was live: send it all again.
+      pushed.clear()
       if (!m.sessions.some((s) => s.id === state.selected)) state.selected = 'lead'
       break
     case 'sessions': state.sessions = m.sessions; keepSeen(); break
@@ -211,6 +252,7 @@ function onServer(m: ServerMsg) {
     case 'usage': state.usage = m.usage; break
     case 'tasks': state.tasks = m.tasks; break
     case 'people': state.people = m.people; break
+    case 'taken': if (m.login === state.me?.login) takenLive(m.sessionId, m.rev); break
     case 'auth': state.auth = m.auth; break
     case 'stale': state.stale = m.stale; break
     case 'file': state.fileTick = { ...state.fileTick, [m.path]: (state.fileTick[m.path] ?? 0) + 1 }; break
@@ -364,11 +406,12 @@ export function setDoneText(sid: string, key: string, text: string) {
 // order among your own, its message after yours.
 export const inboxOf = (sid: string): InboxItem[] => state.sessions.find((s) => s.id === sid)?.inbox ?? []
 
-export function queuedParts(sid: string, alsoDismiss: { key: string; label: string }[] = []): Part[] {
+// opts.lead false: only your own (no lead's drafts); opts.text false: not the composer.
+export function queuedParts(sid: string, alsoDismiss: { key: string; label: string }[] = [], opts: { lead?: boolean; text?: boolean } = {}): Part[] {
   const mine = draftsOf(sid)
   // Your own reply to an item wins over the lead's.
   const yours = new Set(mine.flatMap((d) => d.kind === 'note' && d.itemKey && hasContent(d) ? [d.itemKey] : d.kind === 'answer' && hasContent(d) ? [d.askKey] : d.kind === 'dismiss' || d.kind === 'done' ? [d.key] : []))
-  const lead = inboxOf(sid).filter((i) => !i.key || !yours.has(i.key))
+  const lead = opts.lead === false ? [] : inboxOf(sid).filter((i) => !i.key || !yours.has(i.key))
   const leadKeys = new Set(lead.flatMap((i) => i.key ? [i.key] : []))
   const dismissed = [
     ...mine.flatMap((d) => d.kind === 'dismiss' ? [{ key: d.key, label: d.label }] : []),
@@ -388,27 +431,17 @@ export function queuedParts(sid: string, alsoDismiss: { key: string; label: stri
   if (done.length) parts.push({ kind: 'done', text: '', items: done })
   if (dismissed.length) parts.push({ kind: 'dismiss', text: '', items: dismissed })
   const c = composerOf(sid)
-  if (c.text.trim() || c.images.length) parts.push({ kind: 'text', text: c.text, images: c.images })
+  if (opts.text !== false && (c.text.trim() || c.images.length)) parts.push({ kind: 'text', text: c.text, images: c.images })
   parts.push(...inboxParts(lead.filter((i) => !i.kind || i.kind === 'text')))
   return parts
 }
 
 export async function sendQueued(sid: string, alsoDismiss: { key: string; label: string }[] = []) {
   const parts = queuedParts(sid, alsoDismiss)
-  // Held replies alone make a message too: the server adds them (server/index.ts 'send').
-  if (!parts.length && !state.sessions.find((s) => s.id === sid)?.held?.length) return
+  // Held replies and the others' live ones alone make a message too: the server adds them (server/index.ts 'send').
+  const m = state.sessions.find((s) => s.id === sid)
+  if (!parts.length && !m?.held?.length && !othersLive(m).length) return
   await api(`/api/sessions/${sid}/send`, 'POST', { parts, inbox: inboxOf(sid).map((i) => i.id) })
-  state.drafts[sid] = []
-  state.composer[sid] = { text: '', images: [] }
-  changed()
-}
-
-// Hold everything queued for a joint turn: it waits on the server, where everyone
-// sees it, and goes with the next send from anyone (server/index.ts 'hold').
-export async function holdQueued(sid: string) {
-  const parts = queuedParts(sid)
-  if (!parts.length) return
-  await api(`/api/sessions/${sid}/hold`, 'POST', { parts })
   state.drafts[sid] = []
   state.composer[sid] = { text: '', images: [] }
   changed()

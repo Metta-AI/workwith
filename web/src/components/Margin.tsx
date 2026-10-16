@@ -8,7 +8,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { rangesFor, setHighlights } from '../anchoring.ts'
-import { addDraft, draftsOf, removeDraft, state, uid, updateDraft, useStore, type NoteDraft } from '../store.ts'
+import { addDraft, draftsOf, othersLive, removeDraft, state, uid, updateDraft, useStore, type NoteDraft } from '../store.ts'
 import type { Anchor, Event, Held, ImageRef } from '../../../shared/types.ts'
 import { isReaction, topEmoji, usedEmoji } from '../emoji.ts'
 import { renderMd } from '../util.ts'
@@ -53,13 +53,14 @@ type Props = { sid: string; inner: React.RefObject<HTMLDivElement | null>; colum
 // What the margin shows: comments being written, comments already sent (read
 // only), and reactions (an emoji alone), as small badges.
 // by: who wrote a sent or held comment; held: it waits for a joint turn (SessionView Held).
-type Entry = { id: string; anchor: Anchor; kind: 'draft' | 'sent' | 'badge'; text: string; images?: ImageRef[]; draft?: NoteDraft; by?: string; held?: boolean }
+// live: someone else is writing it now (meta.live).
+type Entry = { id: string; anchor: Anchor; kind: 'draft' | 'sent' | 'badge'; text: string; images?: ImageRef[]; draft?: NoteDraft; by?: string; held?: boolean; live?: boolean }
 
-function sentEntries(events: Event[], held: Held[] = []): Entry[] {
+function sentEntries(events: Event[], held: Held[] = [], live: Held[] = []): Entry[] {
   const out: Entry[] = []
-  for (const h of held) h.parts.forEach((p, i) => {
+  for (const [list, tag] of [[held, 'h'], [live, 'l']] as const) for (const h of list) h.parts.forEach((p, i) => {
     if (p.kind !== 'note' || !p.anchor.pieces.length) return
-    out.push({ id: `h${h.id}.${i}`, anchor: p.anchor, kind: 'sent', text: p.text, images: p.images, by: p.by?.name, held: true })
+    out.push({ id: `${tag}${h.id}.${i}`, anchor: p.anchor, kind: 'sent', text: p.text, images: p.images, by: p.by?.name, ...(tag === 'h' ? { held: true } : { live: true }) })
   })
   for (const e of events) {
     if (e.t !== 'user') continue
@@ -78,7 +79,7 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
   const st = useStore()
   const drafts = draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note')
   const notes: Entry[] = [
-    ...sentEntries(events, st.sessions.find((x) => x.id === sid)?.held),
+    ...sentEntries(events, st.sessions.find((x) => x.id === sid)?.held, othersLive(st.sessions.find((x) => x.id === sid))),
     ...drafts.filter((d) => !d.reaction).map((d): Entry => ({ id: d.id, anchor: d.anchor, kind: 'draft', text: d.text, images: d.images, draft: d })),
   ]
   const layer = useRef<HTMLDivElement>(null)
@@ -241,8 +242,8 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
           onClick={() => { if (n.draft) { focusPassage(sid, null); removeDraft(sid, n.id) } }}
         >{n.text.trim()}</button>
       ) : (
-        <div key={n.id} data-id={n.id} className={`note-card sent${n.held ? ' held' : ''}`} onMouseEnter={() => focusPassage(sid, n)} onMouseLeave={() => focusPassage(sid, null)}>
-          {(n.by || n.held) && <div className="note-by">{n.by ?? 'Someone'}{n.held && <span className="muted"> · held</span>}</div>}
+        <div key={n.id} data-id={n.id} className={`note-card sent${n.held ? ' held' : ''}${n.live ? ' live' : ''}`} onMouseEnter={() => focusPassage(sid, n)} onMouseLeave={() => focusPassage(sid, null)}>
+          {(n.by || n.held) && <div className="note-by">{n.by ?? 'Someone'}{n.held && <span className="muted"> · held</span>}{n.live && <span className="muted"> · writing</span>}</div>}
           <div className="md" dangerouslySetInnerHTML={{ __html: renderMd(n.text) }} />
           <Thumbs images={n.images} />
         </div>

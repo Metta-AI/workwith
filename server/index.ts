@@ -275,6 +275,8 @@ const AGENTS_BIN = path.join(os.homedir(), '.claude', 'bin', 'agents')
 // signed with a name; the first time a name shows up in a session, Claude also learns
 // whose login it is. Kept in memory: a restart tells it again.
 const introduced = new Map<string, Set<string>>()
+// "<session> <login>" → the rev of that person's live drafts that a send last took.
+const taken = new Map<string, number>()
 function speakerNote(s: Session, parts: Part[]): string {
   const seen = introduced.get(s.meta.id) ?? new Set<string>()
   introduced.set(s.meta.id, seen)
@@ -975,11 +977,14 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   switch (b) {
     case 'send': {
       const me = personOf(req)
-      // What others held for a joint turn goes first, then this person's own replies.
-      // A slash command must be the whole message, so held replies wait for the next one.
+      // What others held for a joint turn goes first, then what the others are writing now
+      // (live), then this person's own replies. A slash command must be the whole message,
+      // so the others' replies wait for the next one.
       const command = body.parts?.length === 1 && body.parts[0].kind === 'text' && /^\/[\w:.-]+/.test(String(body.parts[0].text).trim())
       const held = command ? [] : s.meta.held ?? []
-      const p: Part[] = [...held.flatMap((h) => h.parts), ...sign(Array.isArray(body.parts) ? body.parts : [], me)]
+      const live = command ? [] : s.meta.live ?? []
+      const p: Part[] = [...held.flatMap((h) => h.parts), ...live.filter((l) => l.id !== me?.login).flatMap((l) => l.parts),
+        ...sign(Array.isArray(body.parts) ? body.parts : [], me)]
       // The lead's drafts that went with your reply.
       if (Array.isArray(body.inbox) && body.inbox.length) { s.meta.inbox = s.meta.inbox.filter((i) => !body.inbox.includes(i.id)); metaChanged() }
       const opts: { hidden?: string; by?: Person } = { ...hiddenFor(s), ...(me ? { by: me } : {}) }
@@ -987,6 +992,26 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       if (who) opts.hidden = opts.hidden ? `${opts.hidden}\n\n${who}` : who
       s.send(p, opts)
       if (held.length) { s.meta.held = []; metaChanged() }
+      if (live.length) {
+        for (const l of live) {
+          taken.set(`${s.meta.id} ${l.id}`, l.rev)
+          broadcast({ type: 'taken', sessionId: s.meta.id, login: l.id, rev: l.rev })
+        }
+        s.meta.live = []; metaChanged()
+      }
+      return send(res, 200, { ok: true })
+    }
+    // What this person is writing now, as they write it: everyone sees it (meta.live).
+    case 'live': {
+      const me = personOf(req)
+      if (!me) throw new HttpError(400, 'Codiner does not know who you are')
+      const rev = Number(body.rev)
+      // A copy from before a send that already took it.
+      if (!(rev > (taken.get(`${s.meta.id} ${me.login}`) ?? 0))) return send(res, 200, { ok: true, stale: true })
+      const parts = sign(Array.isArray(body.parts) ? body.parts : [], me)
+      const others = (s.meta.live ?? []).filter((l) => l.id !== me.login)
+      s.meta.live = parts.length ? [...others, { id: me.login, by: me, parts, ts: Date.now(), rev }] : others
+      metaChanged()
       return send(res, 200, { ok: true })
     }
     // Hold replies for a joint turn: they wait here, signed, until someone sends.

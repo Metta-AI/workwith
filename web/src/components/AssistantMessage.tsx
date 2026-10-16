@@ -15,7 +15,7 @@ import type { Anchor } from '../../../shared/types.ts'
 import { marked, renderInline, renderText } from '../util.ts'
 import { anchorFromRange, rangesFor, setHighlights } from '../anchoring.ts'
 import { render as renderLive } from '../mdlive.ts'
-import { addDraft, api, changed, dismissItem, draftsOf, markDone, removeDraft, setDoneText, state, uid, undismissItem, updateDraft, useStore, type AnswerDraft, type DoneDraft, type NoteDraft } from '../store.ts'
+import { addDraft, api, changed, dismissItem, draftsOf, markDone, othersLive, removeDraft, setDoneText, state, uid, undismissItem, updateDraft, useStore, type AnswerDraft, type DoneDraft, type NoteDraft } from '../store.ts'
 import type { TrackedItem } from '../items.ts'
 import { RichInput, Thumbs } from './Inputs.tsx'
 import { CheckIcon, CommentIcon, TerminalIcon, UndoIcon, XIcon } from './Icons.tsx'
@@ -555,6 +555,22 @@ function DraftCard({ c, ask, compact }: { c: Ctx; ask: Ask & { draft: string }; 
         )}
         {edited && <span className="muted draft-edited" onMouseEnter={() => setPeek(true)} onMouseLeave={() => setPeek(false)}>Edited</span>}
       </div>
+      <OthersAnswers sid={c.sid} askKey={askKey} />
+    </div>
+  )
+}
+
+// What the others at the desk are answering to this question now (meta.live).
+function OthersAnswers({ sid, askKey }: { sid: string; askKey: string }) {
+  const st = useStore()
+  const answers = othersLive(st.sessions.find((x) => x.id === sid)).flatMap((l) =>
+    l.parts.flatMap((p) => p.kind === 'answer' && p.askKey === askKey ? [{ who: l.by?.name ?? 'Someone', p }] : []))
+  if (!answers.length) return null
+  return (
+    <div className="others-answers">
+      {answers.map(({ who, p }, i) => (
+        <div key={i} className="other-answer"><b>{who}</b>{p.choices?.length ? <> · {p.choices.join('; ')}</> : null}{p.text.trim() ? <> · {p.text}</> : null}</div>
+      ))}
     </div>
   )
 }
@@ -637,6 +653,7 @@ function QuestionCard({ c, ask, compact }: { c: Ctx; ask: Ask; compact?: boolean
         placeholder="Answer"
         minRows={1}
       />
+      <OthersAnswers sid={c.sid} askKey={askKey} />
     </div>
   )
 }
