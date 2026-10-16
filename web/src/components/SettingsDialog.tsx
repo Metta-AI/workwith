@@ -149,6 +149,10 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
               <input type="checkbox" checked={st.settings.notes !== false} onChange={(e) => void api('/api/settings', 'PUT', { notes: e.target.checked })} />
               Write notes on quiet sessions
             </label>
+            <label className="settings-check" data-tip="Claude may estimate work in agent time and dollars, and saves each estimate with what the work took. Applies when a session starts again.">
+              <input type="checkbox" checked={st.settings.estimates !== false} onChange={(e) => void api('/api/settings', 'PUT', { estimates: e.target.checked })} />
+              Estimates in agent time and cost, measured against the work
+            </label>
             <label className="settings-check" title="A short call keeps the 1-hour cache warm at the cache-read price. A later message then does not re-cache it all">
               Keep the cache warm for
               <select value={st.settings.keepWarmHours ?? KEEP_WARM.hours} onChange={(e) => void api('/api/settings', 'PUT', { keepWarmHours: Number(e.target.value) })}>

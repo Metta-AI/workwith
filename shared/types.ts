@@ -182,13 +182,14 @@ export type Usage = { fiveHour?: number; sevenDay?: number; resetsAt?: number; s
 // appearance: unset until you pick one, which the first load asks you to do.
 // groupOrder: the lead's folders, once you drag one. groups: the sidebar's groups you made, top first. cacheGuard: tokens; see shared/cache.ts.
 // notes, keepWarmHours, keepWarmMax, keepWarmUsage: see server/notes.ts.
+// estimates: agents may estimate in agent time and dollars, and save each estimate with what the work took (server/estimates.ts); on by default.
 // plan: what you pay a month (yearly: you pay for a year, usd is that over 12), for the plan
 // you confirmed it for. reviewSeen: the last weekly and monthly review you closed. See shared/costs.ts.
 export type SessionGroup = { id: string; name: string }
 export type Settings = {
   leadAutoSend: boolean; autoModeMigrated?: boolean; trackedFiles?: string[]; selfRestart?: boolean; resumeCut?: boolean
   appearance?: Appearance; groupOrder?: string[]; groups?: SessionGroup[]; cacheGuard?: number
-  notes?: boolean; keepWarmHours?: number; keepWarmMax?: number; keepWarmUsage?: number
+  notes?: boolean; estimates?: boolean; keepWarmHours?: number; keepWarmMax?: number; keepWarmUsage?: number
   // MCP servers: new sessions start with them off (default), except those always on;
   // Claude may turn one on itself (default) or must ask you.
   mcpStartOff?: boolean; mcpAlways?: string[]; mcpClaude?: boolean

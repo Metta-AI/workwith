@@ -34,6 +34,8 @@ import { configsFor, probe, serversFor } from './mcpservers.ts'
 import { DEFAULT_CACHE_GUARD, cacheLeft, knownTtl } from '../shared/cache.ts'
 import { AGENTS_FILE, agentsPrompt, readAgentsMd, writeAgentsMd } from './agentsmd.ts'
 import { handleMcp, type Tool } from './mcp.ts'
+import { spendSince, spendText } from './spend.ts'
+import { ESTIMATE_TOOLS, estimateTools, estimatesPrompt } from './estimates.ts'
 import { MAIL_TOOLS, flushMail, mailTools, release, startMail, stepped, takeMail, turnEnded, userWrote } from './mail.ts'
 import { AUTOPILOT_MODES, amount, nudge, startAutopilot, usedOf, verdict } from './autopilot.ts'
 import { blame, initFileHistory, moveHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
@@ -208,11 +210,11 @@ function launchFor(meta: SessionMeta): () => Launch {
         '--mcp-config', JSON.stringify({ mcpServers: { codinger: { type: 'http', url: `http://127.0.0.1:${PORT}/mcp/${MCP_TOKEN}/look/${meta.id}` } } }),
         // Started with your MCP servers off: only Codinger's, until one is turned on (server/mcpservers.ts).
         ...(meta.mcp ? ['--strict-mcp-config'] : []),
-        '--allowedTools', `mcp__codinger__set_look,mcp__codinger__set_title,mcp__codinger__start_task,mcp__codinger__stop_task,mcp__codinger__list_tasks,mcp__codinger__show_artifact,mcp__codinger__show_file,${MAIL_TOOLS.map((t) => `mcp__codinger__${t}`).join(',')}${meta.mcp && settings.mcpClaude !== false ? ',mcp__codinger__use_mcp_server' : ''}`,
+        '--allowedTools', `mcp__codinger__set_look,mcp__codinger__set_title,mcp__codinger__start_task,mcp__codinger__stop_task,mcp__codinger__list_tasks,mcp__codinger__show_artifact,mcp__codinger__show_file,${MAIL_TOOLS.map((t) => `mcp__codinger__${t}`).join(',')}${settings.estimates !== false ? ESTIMATE_TOOLS.map((t) => `,mcp__codinger__${t}`).join('') : ''}${meta.mcp && settings.mcpClaude !== false ? ',mcp__codinger__use_mcp_server' : ''}`,
         // Artifacts live in one folder for every session (server/artifacts.ts).
         '--add-dir', ARTIFACTS,
       ],
-      prompt: WORKER_PROMPT + lookPrompt(meta.look) + titlePrompt(meta) + mcpPrompt(meta) + artifactsPrompt() + (notes ? workerNotesPrompt(notesFile(meta.id)) : '') + agentsPrompt(),
+      prompt: WORKER_PROMPT + (settings.estimates !== false ? estimatesPrompt() : '') + lookPrompt(meta.look) + titlePrompt(meta) + mcpPrompt(meta) + artifactsPrompt() + (notes ? workerNotesPrompt(notesFile(meta.id)) : '') + agentsPrompt(),
     }
   }
   return () => ({
@@ -685,6 +687,22 @@ function artifactTool(id: string): Tool {
   }
 }
 
+// ---- what a session spent, for its own estimates (server/spend.ts) ----
+
+function spendTool(id: string): Tool {
+  return {
+    name: 'read_spend',
+    description: 'What this session has spent: API calls, tokens, dollars at API prices, and the share of the plan\'s usage limits. Call it before a piece of work and keep the "now" it returns; call it after with since set to that number, to report what the work took next to your estimate.',
+    inputSchema: { type: 'object', properties: { since: { type: 'number', description: 'The "now" from an earlier call (ms since 1970). Leave out for the whole conversation.' } } },
+    run: async (args) => {
+      const s = get(id), now = Date.now()
+      const since = Number(args?.since) || undefined
+      if (!s.meta.claudeSessionId) return 'This session has made no API calls yet.'
+      return spendText(await spendSince(s.meta.claudeSessionId, since), { since, now, usage })
+    },
+  }
+}
+
 // ---- files an agent shows the user (shared/media.ts) ----
 
 function fileTool(id: string): Tool {
@@ -1084,6 +1102,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       ...(Array.isArray(body.groups) ? { groups: body.groups.filter((g: any) => g && g.id).map((g: any) => ({ id: String(g.id), name: String(g.name ?? '').trim() || 'Group' })) } : {}),
       ...(Number.isFinite(body.cacheGuard) && body.cacheGuard >= 0 ? { cacheGuard: Math.round(body.cacheGuard) } : {}),
       ...(typeof body.notes === 'boolean' ? { notes: body.notes } : {}),
+      ...(typeof body.estimates === 'boolean' ? { estimates: body.estimates } : {}),
       ...(Number.isFinite(body.keepWarmHours) && body.keepWarmHours >= 0 ? { keepWarmHours: Math.min(48, body.keepWarmHours) } : {}),
       ...(Number.isFinite(body.keepWarmMax) && body.keepWarmMax > 0 ? { keepWarmMax: Math.round(body.keepWarmMax) } : {}),
       ...(Number.isFinite(body.keepWarmUsage) && body.keepWarmUsage > 0 ? { keepWarmUsage: Math.min(100, body.keepWarmUsage) } : {}),
@@ -1469,7 +1488,7 @@ const server = http.createServer(async (req, res) => {
       return await handleMcp(req, res, lead ? [...tools, lookTool(lead.meta.id)] : tools)
     }
     const look = url.pathname.startsWith(`/mcp/${MCP_TOKEN}/look/`) && url.pathname.split('/').pop()
-    if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look), mcpTool(look), artifactTool(look), fileTool(look), ...taskTools(look), ...mailTools(look)])
+    if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look), mcpTool(look), artifactTool(look), fileTool(look), ...(settings.estimates !== false ? [spendTool(look), ...estimateTools(look, () => get(look).meta)] : []), ...taskTools(look), ...mailTools(look)])
     // The web UI asks this first; here it is a machine's own page.
     if (url.pathname === '/_remote/whoami') return send(res, 200, { web: false })
     if (url.pathname.startsWith('/api/remote/m/') || url.pathname.startsWith('/api/remote/machines')) return await remoteProxy(req, res, url)
