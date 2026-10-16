@@ -72,7 +72,7 @@ meter.poll()
 setInterval(meter.poll, 60_000).unref()
 costs.start()
 usageLedger.start()
-let usage: Usage = { rate: meter.rate() }
+let usage: Usage = { ...meter.last(), rate: meter.rate() }
 const sockets = new Set<WebSocket>()
 // Slash commands differ by directory (project skills), so keep each session's
 // list, and the last one seen for sessions that haven't started yet.

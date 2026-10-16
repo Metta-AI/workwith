@@ -143,6 +143,15 @@ export function limit(u: Usage) {
   log({ ...s, cum: usd(s.cum), k: 'limit', status: u.status })
 }
 
+// The last report saved, so after a restart the limits show before a session sends the next one.
+// Not one older than the 5-hour window, nor a 5-hour share whose window has reset since.
+export function last(): Usage {
+  const s = samples.at(-1)
+  if (!s || Date.now() - s.t > 5 * 3600_000) return {}
+  const live = s.resetsAt == null || s.resetsAt * 1000 > Date.now()
+  return { fiveHour: live ? s.five : undefined, sevenDay: s.seven, resetsAt: live ? s.resetsAt : undefined }
+}
+
 // Consecutive reports in one run, with spend between them and the percentage
 // not reset in between: how much each moved.
 export function pairs(win: 'five' | 'seven') {
