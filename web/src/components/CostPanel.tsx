@@ -268,13 +268,13 @@ function Estimates() {
           const a = e.actual
           return <tr key={e.id}>
             <td>{e.task}</td>
-            <td>{e.title ?? e.sid}</td>
-            <td>{mins(e.minutes)}{e.usd != null && `, ${money(e.usd)}`}</td>
-            <td>{e.humanHours != null ? `${e.humanHours} h` : '–'}</td>
+            <td data-label="Session">{e.title ?? e.sid}</td>
+            <td data-label="Estimate">{mins(e.minutes)}{e.usd != null && `, ${money(e.usd)}`}</td>
+            <td data-label="Human">{e.humanHours != null ? `${e.humanHours} h` : '–'}</td>
             {a ? <>
-              <td>{mins(a.minutes)}, {money(a.usd)}</td><td>{a.calls}</td>
-              <td>{times(a.minutes / e.minutes)}</td><td>{e.usd ? times(a.usd / e.usd) : '–'}</td>
-            </> : <td colSpan={4} className="muted">open</td>}
+              <td data-label="Actual">{mins(a.minutes)}, {money(a.usd)}</td><td data-label="Calls">{a.calls}</td>
+              <td data-label="Time">{times(a.minutes / e.minutes)}</td><td data-label="Cost">{e.usd ? times(a.usd / e.usd) : '–'}</td>
+            </> : <td colSpan={4} className="muted" data-label="Actual">open</td>}
           </tr>
         })}</tbody>
       </table>

@@ -1225,6 +1225,20 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
   .artifact-detail .artifact-history { height: auto; max-height: 22%; }
   .artifacts-head { padding-left: 38px; }
   .modal { width: 94vw; max-height: 92vh; overflow-y: auto; }
+  /* Settings: the tabs go in one row above the page, and a wide table scrolls sideways. */
+  .settings-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 10px; }
+  .settings-tabs { flex-direction: row; overflow-x: auto; scrollbar-width: none; border-right: none; border-bottom: 1px solid var(--line); padding: 0 0 6px; }
+  .settings-tabs button { white-space: nowrap; flex: none; }
+  .settings-page { padding-right: 0; }
+  .settings-page .cost-table { display: block; overflow-x: auto; max-width: 100%; }
+  /* The estimates have too many columns for a phone: each one shows as a block of labelled lines. */
+  .settings-page .cost-estimates thead { display: none; }
+  .settings-page .cost-estimates :is(tbody, tr) { display: block; }
+  .settings-page .cost-estimates tr { border-top: 1px solid var(--line); padding: 6px 0; }
+  .settings-page .cost-estimates td { display: flex; gap: 8px; border-top: none; padding: 1px 0; text-align: left; white-space: normal; }
+  .settings-page .cost-estimates td:first-child { font-weight: 500; padding-bottom: 3px; }
+  .settings-page .cost-estimates td::before { content: attr(data-label); flex: none; width: 5.5em; color: var(--muted); }
+  .settings-page .cost-estimates td:first-child::before { content: none; }
 }
 
 /* A published transcript (web/src/share.tsx), and the dialog that publishes one (PublishDialog.tsx). */
