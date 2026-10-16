@@ -89,6 +89,16 @@ function failed(p: string, init: RequestInit, e: any): Error {
 
 // A request to Prolifica's API as the connected person. JSON comes back parsed.
 export async function call(p: string, init: RequestInit = {}): Promise<any> {
+  const text = await (await request(p, init)).text()
+  try { return JSON.parse(text) } catch { return text }
+}
+
+// A file on Prolifica as it is stored there, byte for byte (call() would parse it).
+export async function bytes(p: string): Promise<Buffer> {
+  return Buffer.from(await (await request(p)).arrayBuffer())
+}
+
+async function request(p: string, init: RequestInit = {}): Promise<Response> {
   if (!conn?.access) throw new Error('Codinger is not connected to Prolifica.')
   const go = () => fetch(`${ORIGIN}${p}`, { ...init, headers: { ...init.headers as Record<string, string>, authorization: `Bearer ${conn!.access}` } })
     .catch((e) => { throw failed(p, init, e) })
@@ -98,9 +108,9 @@ export async function call(p: string, init: RequestInit = {}): Promise<any> {
     try { await tokens({ grant_type: 'refresh_token', refresh_token: conn.refresh, client_id: conn.clientId }) } catch { disconnect(); throw new Error('The connection to Prolifica expired. Connect again.') }
     r = await go()
   }
+  if (r.ok) return r
   const text = await r.text()
   let j: any = text
   try { j = JSON.parse(text) } catch { /* not JSON */ }
-  if (!r.ok) throw Object.assign(new Error(`Prolifica: ${j?.error ?? text ?? r.status}`), { status: r.status })
-  return j
+  throw Object.assign(new Error(`Prolifica: ${j?.error ?? text ?? r.status}`), { status: r.status })
 }

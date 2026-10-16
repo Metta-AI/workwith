@@ -20,7 +20,7 @@ import http from 'node:http'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { DATA } from './store.ts'
-import { ORIGIN, call } from './prolifica.ts'
+import { ORIGIN, bytes as bytesThere, call } from './prolifica.ts'
 import type { Artifact, ArtifactPublished, ArtifactTouch, Visibility } from '../shared/artifacts.ts'
 
 export const ARTIFACTS = path.join(DATA, 'artifacts')
@@ -353,6 +353,50 @@ export function watchArtifacts(changed: () => void) {
 
 const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex')
 
+// What changed on Prolifica since the last publish, by hand or by an agent there: a squash
+// renumbers the versions, and a slot can show other data now. The record takes the page's
+// version from there. For each data file: the datasets that may hold it there now (the one it
+// went up as, then the ones its slots show), for send() to look in before it sends it again.
+// since: the dataset went up then, so unless it changed after, it holds what went up.
+type Where = Record<string, { id: string; since?: number }[]>
+async function sync(p: ArtifactPublished, m: Manifest): Promise<Where> {
+  const there = await call(`/api/isles/${encodeURIComponent(p.id)}`).then((j) => j?.isle ?? j).catch(() => null)
+  const where: Where = {}
+  for (const [file, d] of Object.entries(p.data)) where[file] = [{ id: d.id, since: p.at }]
+  if (!there) return where   // deleted there, or not reachable: publish() finds out
+  if (typeof there.version === 'number' && there.version !== p.version) {
+    for (const h of p.history ?? []) h.version = Math.min(h.version, there.version)
+    p.version = there.version
+  }
+  for (const [slot, file] of Object.entries(m.bindings ?? {})) {
+    const id = there.bindings?.[slot]?.id
+    if (typeof id !== 'string' || file.startsWith('prolifica:') || where[file]?.some((w) => w.id === id)) continue
+    ;(where[file] ??= []).push({ id })
+  }
+  return where
+}
+
+// JSON that says the same, whatever its spacing or the order of its keys: Prolifica writes JSON
+// again in its own way when it is edited there.
+const canon = (b: Buffer) => JSON.stringify(JSON.parse(b.toString('utf8')), (_, x) =>
+  x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([k], [l]) => (k < l ? -1 : k > l ? 1 : 0))) : x)
+
+// The dataset among these that holds this file as it is now, if one does: the same bytes, or
+// for JSON the same data. Only one that may hold it is downloaded to compare.
+async function holding(cands: Where[string], b: Buffer, hash: string, json: boolean): Promise<{ id: string; path?: string } | null> {
+  let mine: string | undefined
+  for (const { id, since } of cands) {
+    try {
+      const meta = await call(`/api/data/${encodeURIComponent(id)}`).then((j) => j?.data ?? j)
+      if (since && !(meta?.updatedAt > since)) continue
+      if (!json && meta?.size !== b.length) continue
+      const there = await bytesThere(`/api/data/${encodeURIComponent(id)}/raw`)
+      if (sha(there) === hash || (json && canon(there) === (mine ??= canon(b)))) return { id, path: meta.path }
+    } catch { /* gone, not readable, or not JSON after all: send it */ }
+  }
+  return null
+}
+
 // Send an artifact to Prolifica, as it is now or one of its versions (v): each data file
 // that changed since the last time, then the page. The first publish makes a new page
 // there; each later one a new version of it. A data file that changed goes up under a
@@ -367,6 +411,7 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
   const m = src.manifest()
   const r = recOf(name)
   const before = r.published
+  const where = before ? await sync(before, m) : {}
   const next = before ? before.version + 1 : 1
   const data: ArtifactPublished['data'] = {}
   // Send one file, unless it went up as it is already. Its dataset id. It keeps its path under
@@ -379,6 +424,12 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
     const hash = sha(bytes)
     const prev = before?.data[file]
     if (prev?.sha === hash) { data[file] = { ...prev }; return { id: prev.id, sent: false } }
+    // Already there as it is now, changed in place or bound there since: no second copy.
+    const held = await holding(where[file] ?? [], bytes, hash, /\.json$/i.test(file))
+    if (held) {
+      data[file] = held.id === prev?.id ? { ...prev, sha: hash } : { sha: hash, id: held.id, path: held.path }
+      return { id: held.id, sent: held.id !== prev?.id }
+    }
     const sub = path.posix.normalize(file).replace(/^data\//, ''), ext = path.posix.extname(sub)
     const dpath = `${name}/${prev ? `${sub.slice(0, sub.length - ext.length)}.v${next}${ext}` : sub}`
     const q = new URLSearchParams({ path: dpath })
