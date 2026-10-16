@@ -921,6 +921,8 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   const parts = url.pathname.split('/').slice(2) // after /api
   const method = req.method ?? 'GET'
   const [a, id, b, c, d] = parts
+  // A request no route answers says which one it was, so its error is of use where it shows.
+  const notFound = () => new HttpError(404, `Not found: ${method} ${url.pathname}`)
 
   // Remote access (server/remote.ts): set up on this machine only, not from the web.
   if (a === 'remote') {
@@ -1045,7 +1047,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       saveSettings(settings)
       return send(res, 200, { ok: true })
     }
-    throw new HttpError(404, 'Not found')
+    throw notFound()
   }
   if (a === 'agents-md' && method === 'GET') return send(res, 200, { path: AGENTS_FILE, text: readAgentsMd() })
   if (a === 'agents-md' && method === 'PUT') {
@@ -1230,7 +1232,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     if (!id) startLogin()
     else if (id === 'code') { try { submitCode(String((await json(req)).code ?? '')) } catch (e) { throw new HttpError(400, (e as Error).message) } }
     else if (id === 'cancel') cancelLogin()
-    else throw new HttpError(404, 'Not found')
+    else throw notFound()
     return send(res, 200, authState())
   }
   // Send the lead's drafts to every worker where nothing else holds them.
@@ -1248,7 +1250,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     get(LEAD_ID).forget('Fresh start: the lead forgot this conversation. It keeps LEAD_NOTES.md.')
     return send(res, 200, { ok: true })
   }
-  if (a !== 'sessions') throw new HttpError(404, 'Not found')
+  if (a !== 'sessions') throw notFound()
 
   if (!id && method === 'POST') return send(res, 200, createSession(await json(req)).meta)
   // The sidebar's order for a set of siblings, top first.
@@ -1331,7 +1333,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   }
   if (b === 'notes' && !c && method === 'GET') return send(res, 200, { path: notesPath(s.meta), text: readNotes(s.meta) })
   if (b === 'autopilot' && method === 'DELETE') { endAutopilot(s, 'you turned it off'); return send(res, 200, s.meta) }
-  if (method !== 'POST') throw new HttpError(404, 'Not found')
+  if (method !== 'POST') throw notFound()
   const body = await json(req)
   // A message you send to an archived session takes it out of the archive.
   const reopen = (s: Session) => { if (s.meta.archived) { s.meta.archived = false; metaChanged() } }
@@ -1446,7 +1448,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
         return send(res, 200, { ok: true })
       }
   }
-  throw new HttpError(404, 'Not found')
+  throw notFound()
 }
 
 const server = http.createServer(async (req, res) => {

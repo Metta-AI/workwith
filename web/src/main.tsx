@@ -130,7 +130,7 @@ function Restart() {
 function CoordinationAsk() {
   const st = useStore()
   const [missing, setMissing] = useState(false)
-  useEffect(() => { if (st.loaded && !st.web) void api<{ missing: boolean }>('/api/coordination').then((r) => setMissing(r.missing)).catch(() => {}) }, [st.loaded])
+  useEffect(() => { if (st.loaded && !st.web) void api<{ missing: boolean }>('/api/coordination', 'GET').then((r) => setMissing(r.missing)).catch(() => {}) }, [st.loaded])
   if (!missing) return null
   const answer = (a?: 'yes' | 'never') => { setMissing(false); if (a) void api('/api/coordination/pointer', 'POST', { answer: a }) }
   return (
