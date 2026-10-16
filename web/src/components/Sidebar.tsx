@@ -129,6 +129,7 @@ export function Sidebar({ width }: { width: number }) {
         <span>{st.agent?.name ?? 'Codiner'}</span>
         <span className={`conn ${st.connected ? 'on' : 'off'}`} title={st.connected ? 'Connected' : 'Reconnecting…'} />
       </div>
+      <HereNow />
       {lead && <Row s={lead} label="Lead" active={st.selected === lead.id} onMenu={openMenu} />}
       <div className="side-actions">
         <button className="primary" onClick={() => setNewIn('')}>+ New session</button>
@@ -293,4 +294,20 @@ function CacheHint({ s }: { s: SessionMeta }) {
   if (c.blocked) return <span className="cache-hint cold" title="Prompt cache expired. The next message re-caches the whole context"> · cache expired</span>
   if (!c.cold && c.left < (c.ttl >= 3_600_000 ? 10 : 2) * 60_000) return <span className="cache-hint soon" title="Prompt cache expires soon"> · cache {minutes(c.left)}</span>
   return null
+}
+
+// Who has the page open now, when Codiner knows people apart (a proxy's sign-in or names
+// people typed). Alone, you see nothing: the list is for when others are here too.
+function HereNow() {
+  const { people, me } = useStore()
+  if (people.length < 2 && (!people.length || people[0].login === me?.login)) return null
+  return (
+    <div className="here-now" title="Here now: people with this page open">
+      {people.map((p) => (
+        <span key={p.login} className={`here-person${p.login === me?.login ? ' me' : ''}`} title={p.guest ? `${p.name} (a typed name, not a sign-in)` : p.login}>
+          {p.name}{p.login === me?.login ? ' (you)' : ''}
+        </span>
+      ))}
+    </div>
+  )
 }

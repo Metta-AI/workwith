@@ -769,6 +769,10 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 /* An agent's desk (server/agent.ts): its face and name, who wrote what, and replies held for a joint turn. */
 .brand-avatar { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; margin-right: 8px; flex: none; }
 .brand-avatar + span { flex: 1; }
+.here-now { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 0 14px 8px; font-size: calc(12px * var(--fs, 1)); color: var(--muted); }
+.here-person { display: inline-flex; align-items: center; gap: 5px; }
+.here-person::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #3fb950; }
+.here-person.me { color: var(--text); }
 .user-turn .from.by { font-weight: 600; color: var(--text); opacity: .8; }
 .part-by, .note-by { font-size: calc(11px * var(--fs, 1)); font-weight: 600; color: var(--muted); margin-bottom: 2px; }
 .note-card.sent.held { border-left-color: var(--accent); border-left-style: dashed; }

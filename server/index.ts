@@ -53,6 +53,9 @@ setInterval(meter.poll, 60_000).unref()
 costs.start()
 let usage: Usage = { rate: meter.rate() }
 const sockets = new Set<WebSocket>()
+// Who is behind each open page, for the list of who is here (null: Codiner can't tell).
+const present = new Map<WebSocket, Person | null>()
+const people = (): Person[] => [...new Map([...present.values()].flatMap((p) => p ? [[p.login, p] as const] : [])).values()]
 // Slash commands differ by directory (project skills), so keep each session's
 // list, and the last one seen for sessions that haven't started yet.
 const COMMANDS_FILE = path.join(DATA, 'commands.json')
@@ -135,6 +138,11 @@ const hooks: Hooks = {
   mcpServers: (s) => s.meta.mcp ? configsFor(s.meta.cwd, s.meta.mcp.on) : null,
 }
 
+// CODINER_NO_SHELL=1: nothing here runs shell commands, for a page open to people you don't
+// fully trust: no Bash and no start_task for Claude, no Run in Terminal from the page.
+// (The lead never has Bash.)
+const NO_SHELL = process.env.CODINER_NO_SHELL === '1'
+
 function launchFor(meta: SessionMeta): () => Launch {
   // Every session gets Codiner's set_look tool, pre-approved; workers keep their own MCP servers too.
   if (meta.kind === 'worker') return () => {
@@ -147,6 +155,7 @@ function launchFor(meta: SessionMeta): () => Launch {
         // Started with your MCP servers off: only Codiner's, until one is turned on (server/mcpservers.ts).
         ...(meta.mcp ? ['--strict-mcp-config'] : []),
         '--allowedTools', `mcp__codiner__set_look,mcp__codiner__set_title,mcp__codiner__start_task,mcp__codiner__stop_task,mcp__codiner__list_tasks${meta.mcp && settings.mcpClaude !== false ? ',mcp__codiner__use_mcp_server' : ''}`,
+        ...(NO_SHELL ? ['--disallowedTools', 'Bash,mcp__codiner__start_task'] : []),
       ],
       prompt: WORKER_PROMPT + lookPrompt(meta.look) + titlePrompt(meta) + mcpPrompt(meta) + (notes ? workerNotesPrompt(notesFile(meta.id)) : '') + agentsPrompt(),
     }
@@ -1008,6 +1017,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     case 'run': {
       // A command Claude asked you to run, opened in a new Terminal window in the session's
       // directory. A .command file opens in the default terminal app and needs no Automation permission.
+      if (NO_SHELL) throw new HttpError(403, 'Commands are off here (CODINER_NO_SHELL)')
       if (process.platform !== 'darwin') throw new HttpError(400, 'Run in Terminal is macOS-only')
       const cmd = String(body.command ?? '').trim()
       if (!cmd) throw new HttpError(400, 'No command')
@@ -1120,9 +1130,11 @@ server.on('upgrade', (req, socket, head) => {
   if (!localHost(req) || !localOrigin(req)) { socket.destroy(); return }
   wss.handleUpgrade(req, socket, head, (ws) => {
     sockets.add(ws)
-    ws.on('close', () => sockets.delete(ws))
+    present.set(ws, personOf(req))
+    ws.on('close', () => { sockets.delete(ws); present.delete(ws); broadcast({ type: 'people', people: people() }) })
     ws.send(JSON.stringify({ type: 'hello', sessions: metas(), settings, usage, platform: process.platform, home: os.homedir(), auth: authState(), stale, agent: agentInfo(), me: personOf(req), askName: ASK_NAME, billing: billing() } satisfies ServerMsg))
     ws.send(JSON.stringify({ type: 'tasks', tasks: allTasks() } satisfies ServerMsg))
+    broadcast({ type: 'people', people: people() })
   })
 })
 

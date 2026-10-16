@@ -185,6 +185,8 @@ export type ServerMsg =
   | { type: 'usage'; usage: Usage }
   | { type: 'settings'; settings: Settings }
   | { type: 'tasks'; tasks: Task[] }
+  // Who has this page open now, once each (only people Codiner can name).
+  | { type: 'people'; people: Person[] }
 
 // A long-running command an agent started with start_task (server/tasks.ts).
 // notify: how the agent hears that it ended: with its next message, in a turn of

@@ -49,6 +49,7 @@ type State = {
   loaded: boolean                    // the server's hello came: sessions and settings are real
   agent: AgentInfo | null            // Codiner is this agent's desk (server/agent.ts)
   me: Person | null                  // who this browser is, as the proxy says
+  people: Person[]                   // who has the page open now (server: 'people')
   askName: boolean                   // nobody says: ask this browser's person for a name (CODINER_ASK_NAME)
   billing: 'api' | 'plan'            // 'api': billed per token, so no plan limits to show
   seenAt: number | null              // offline: when the session list shown was last current
@@ -86,6 +87,7 @@ export const state: State = {
   agent: null,
   me: null,
   askName: false,
+  people: [],
   billing: 'plan',
   seenAt: null,
 }
@@ -188,7 +190,7 @@ export function connect() {
     for (const id of Object.keys(state.events)) void loadEvents(id, true)
     changed()
   }
-  ws.onclose = () => { state.connected = false; changed(); setTimeout(connect, 1000) }
+  ws.onclose = () => { state.connected = false; state.people = []; changed(); setTimeout(connect, 1000) }
 }
 
 function onServer(m: ServerMsg) {
@@ -208,6 +210,7 @@ function onServer(m: ServerMsg) {
       state.settings = m.settings; applyAppearance(m.settings.appearance); break
     case 'usage': state.usage = m.usage; break
     case 'tasks': state.tasks = m.tasks; break
+    case 'people': state.people = m.people; break
     case 'auth': state.auth = m.auth; break
     case 'stale': state.stale = m.stale; break
     case 'file': state.fileTick = { ...state.fileTick, [m.path]: (state.fileTick[m.path] ?? 0) + 1 }; break
