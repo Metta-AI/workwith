@@ -36,6 +36,8 @@ const daysIn = (from: string, to: string) => Math.round((parse(to) - parse(from)
 const home = (p: string) => { const h = /^(\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:\\Users\\[^\\]+)/.exec(p)?.[1]; return h ? '~' + p.slice(h.length) : p }
 const count = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(Math.round(n))
 const bytes = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.round(n / 1e6)} MB`
+// The table shows this many folders until you ask for all of them.
+const FEW = 10
 const when = (t: number) => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 
 // price: what you pay a month. weekCeil: a full week of your plan, in dollars of API work.
@@ -45,6 +47,7 @@ export function UsageAudit({ price, weekCeil }: { price: number | null; weekCeil
   const [span, setSpan] = useState<Span>('30')
   const [by, setBy] = useState<'worked' | 'ran'>('worked')
   const [open, setOpen] = useState<string | null>(null)
+  const [more, setMore] = useState(false)
   useEffect(() => {
     let live = true, t: ReturnType<typeof setTimeout> | undefined
     // The first read of the transcripts takes a while: look again soon until it is done.
@@ -67,6 +70,8 @@ export function UsageAudit({ price, weekCeil }: { price: number | null; weekCeil
   for (const l of shown) for (const [d, x] of Object.entries(l[by])) if (inSpan(d)) for (const [p, t] of Object.entries(x)) addTok(folders.get(p) ?? (folders.set(p, noTok()), folders.get(p)!), t)
   const total = [...folders.values()].reduce((s, t) => s + t.usd, 0)
   const rows = [...folders].sort((a, b) => b[1].usd - a[1].usd)
+  const hidden = more || rows.length <= FEW + 1 ? [] : rows.slice(FEW)
+  const hiddenUsd = hidden.reduce((s, [, t]) => s + t.usd, 0)
   // What each conversation spent in the span for one folder.
   const convsOf = (folder: string) => shown.flatMap((l) => l.convs.map((c) => {
     let usd = 0
@@ -95,7 +100,7 @@ export function UsageAudit({ price, weekCeil }: { price: number | null; weekCeil
   }
 
   return (
-    <div>
+    <div className="usage-audit">
       <h3 className="cost-h">Where the work went</h3>
       <label className="settings-check">
         API work in
@@ -119,7 +124,7 @@ export function UsageAudit({ price, weekCeil }: { price: number | null; weekCeil
       </p>}
       {rows.length ? <table className="mcp-table cost-table usage-table">
         <thead><tr><th>Folder</th><th>API work</th><th>ETC</th><th>ITC</th><th>Share</th><th>Tokens in</th><th>Tokens out</th></tr></thead>
-        <tbody>{rows.map(([p, t]) => <Fragment key={p}>
+        <tbody>{(hidden.length ? rows.slice(0, FEW) : rows).map(([p, t]) => <Fragment key={p}>
           <tr className="usage-row" onClick={() => setOpen(open === p ? null : p)}>
             <td className="usage-folder"><span className="usage-caret">{open === p ? '▾' : '▸'}</span>{home(p)}</td>
             <td>{money(t.usd)}</td><td>{fee(t.usd, etc)}</td><td>{fee(t.usd, itc)}</td>
@@ -127,7 +132,15 @@ export function UsageAudit({ price, weekCeil }: { price: number | null; weekCeil
             <td>{count(tokIn(t))}</td><td>{count(t.out)}</td>
           </tr>
           {open === p && <tr className="usage-convs"><td colSpan={7}><Convs list={convsOf(p)} by={by} folder={p} rate={rate} /></td></tr>}
-        </Fragment>)}</tbody>
+        </Fragment>)}
+          {hidden.length > 0 && <tr className="usage-row usage-more" onClick={() => setMore(true)}>
+            <td><span className="usage-caret">▸</span>{hidden.length} more folders</td><td>{money(hiddenUsd)}</td><td>{fee(hiddenUsd, etc)}</td><td>{fee(hiddenUsd, itc)}</td>
+            <td>{total ? `${Math.round(hiddenUsd / total * 100)}%` : '–'}</td><td></td><td></td>
+          </tr>}
+          {more && rows.length > FEW + 1 && <tr className="usage-row usage-more" onClick={() => setMore(false)}>
+            <td colSpan={7}><span className="usage-caret">▴</span>Show only the first {FEW} folders</td>
+          </tr>}
+        </tbody>
         {outside.length > 0 && <tbody>{outside.map((o) => <tr key={o.key} className="usage-outside">
           <td>Outside Claude Code: {o.name}</td><td>{money(o.usd)}</td><td>{fee(o.usd, etc)}</td><td>{fee(o.usd, itc)}</td><td></td><td>–</td><td>–</td>
         </tr>)}</tbody>}
