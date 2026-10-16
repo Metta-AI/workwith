@@ -266,6 +266,9 @@ export function useStore(): State {
 // A call to a Codinger server: a session's own machine for /api/sessions/<id>/…,
 // else `machine`, else the current one.
 export async function api<T = any>(path: string, method = 'POST', body?: unknown, machine?: string): Promise<T> {
+  // Until /_remote/whoami answers, this page does not know if it is web.codinger.app, where a
+  // call to its own server goes to the hub; the panels that load at once ask before that.
+  if (whoami) await whoami
   const sid = /^\/api\/sessions\/([^/?]+)/.exec(path)?.[1]
   if (sid?.includes(SEP)) { machine = machineOf(sid); path = path.replace(sid, localId(sid)) }
   machine ??= currentMachine()
@@ -301,13 +304,17 @@ export async function uploadFile(file: File, dir: string, machine?: string): Pro
   return j.name
 }
 
+// Whether this page is web.codinger.app (and who you are there), once start() asks.
+let whoami: Promise<{ web?: boolean; email?: string | null }> | null = null
+
 // Start: on web.codinger.app, sign in and find your machines; on a machine, its own server
 // (and, once it is connected to web.codinger.app, the other machines).
 export async function start() {
-  const who = await fetch('/_remote/whoami').then((r) => r.json()).catch(() => ({ web: false }))
+  whoami = fetch('/_remote/whoami').then((r) => r.json()).catch(() => ({ web: false }))
+    .then((who) => { state.web = !!who.web; return who })
+  const who = await whoami
   if (who.web) {
     if (!who.email) { location.href = '/_remote/login'; return }
-    state.web = true
     state.email = who.email
   } else {
     state.machines[LOCAL] = blank(LOCAL)
