@@ -630,6 +630,10 @@ h1.rename { cursor: text; border-radius: 5px; } h1.rename:hover { background: rg
 
 /* ---- appearance ---- */
 .modal.appearance-modal { width: min(640px, 94vw); gap: 14px; }
+.modal.ask-name { width: min(380px, 92vw); align-items: stretch; text-align: center; }
+.modal.ask-name p { margin: 0; color: var(--muted); }
+.ask-name-face { width: 64px; height: 64px; align-self: center; }
+
 .appearance-head { display: flex; align-items: center; justify-content: space-between; }
 .appearance-head h2 { margin: 0; }
 .appearance-lead { margin: -6px 0 0; }

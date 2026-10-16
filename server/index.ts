@@ -27,7 +27,7 @@ import { notesFile } from '../shared/notes.ts'
 import { allTasks, endText, logPath, markTold, readLog, removeTask, searchLog, startTask, startTasks, statusLine, stopTask, taskOf } from './tasks.ts'
 import type { Task, TaskNotify } from '../shared/types.ts'
 import { configsFor, probe, serversFor } from './mcpservers.ts'
-import { agentInfo, billing, personOf, serveAgent } from './agent.ts'
+import { agentInfo, ASK_NAME, billing, personOf, serveAgent } from './agent.ts'
 import { DEFAULT_CACHE_GUARD, cacheLeft, knownTtl } from '../shared/cache.ts'
 import { AGENTS_FILE, agentsPrompt, readAgentsMd, writeAgentsMd } from './agentsmd.ts'
 import { handleMcp, type Tool } from './mcp.ts'
@@ -273,7 +273,7 @@ function speakerNote(s: Session, parts: Part[]): string {
   for (const p of parts) if (p.by && !seen.has(p.by.login)) fresh.set(p.by.login, p.by)
   for (const l of fresh.keys()) seen.add(l)
   if (!fresh.size) return ''
-  const who = [...fresh.values()].map((p) => `${p.name} is ${p.login}`).join('; ')
+  const who = [...fresh.values()].map((p) => p.guest ? `${p.name} typed that name in the browser (no sign-in)` : `${p.name} is ${p.login}`).join('; ')
   return `[Codiner] Several people may work with you here; each part of a message is signed with its writer's name. ${who}.`
 }
 
@@ -682,14 +682,18 @@ class HttpError extends Error {
 }
 
 // Behind a reverse proxy that does its own auth, CODINER_HOSTS names the hosts it
-// serves Codiner as (comma-separated, e.g. "workwith.synth.example.com").
-const LOCAL_HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`,
-  ...(process.env.CODINER_HOSTS ?? '').split(',').map((h) => h.trim()).filter(Boolean)])
-const localHost = (req: http.IncomingMessage) => LOCAL_HOSTS.has(req.headers.host ?? '')
+// serves Codiner as (comma-separated, e.g. "workwith.synth.example.com"). A name that
+// starts "*." takes any one name before it: "*.trycloudflare.com" for a quick tunnel.
+const HOSTS = (process.env.CODINER_HOSTS ?? '').split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)
+const LOCAL_HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`, ...HOSTS.filter((h) => !h.startsWith('*.'))])
+const WILD_HOSTS = HOSTS.filter((h) => h.startsWith('*.')).map((h) => h.slice(1))
+const knownHost = (h: string) => LOCAL_HOSTS.has(h)
+  || WILD_HOSTS.some((w) => h.endsWith(w) && /^[a-z0-9-]+$/.test(h.slice(0, -w.length)))
+const localHost = (req: http.IncomingMessage) => knownHost((req.headers.host ?? '').toLowerCase())
 const localOrigin = (req: http.IncomingMessage) => {
   const o = req.headers.origin
   if (!o) return true
-  try { return LOCAL_HOSTS.has(new URL(o).host) } catch { return false }
+  try { return knownHost(new URL(o).host) } catch { return false }
 }
 
 async function json(req: http.IncomingMessage): Promise<any> {
@@ -1117,7 +1121,7 @@ server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => {
     sockets.add(ws)
     ws.on('close', () => sockets.delete(ws))
-    ws.send(JSON.stringify({ type: 'hello', sessions: metas(), settings, usage, platform: process.platform, home: os.homedir(), auth: authState(), stale, agent: agentInfo(), me: personOf(req), billing: billing() } satisfies ServerMsg))
+    ws.send(JSON.stringify({ type: 'hello', sessions: metas(), settings, usage, platform: process.platform, home: os.homedir(), auth: authState(), stale, agent: agentInfo(), me: personOf(req), askName: ASK_NAME, billing: billing() } satisfies ServerMsg))
     ws.send(JSON.stringify({ type: 'tasks', tasks: allTasks() } satisfies ServerMsg))
   })
 })

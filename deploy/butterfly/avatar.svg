@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- The butterfly emoji, its blue turned violet. -->
+  <filter id="hue"><feColorMatrix type="hueRotate" values="70"/></filter>
+  <text x="64" y="108" font-size="104" text-anchor="middle" filter="url(#hue)">🦋</text>
+</svg>

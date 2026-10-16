@@ -8,6 +8,10 @@
 //   CODINER_USER_HEADER    the header the proxy names the signed-in person in
 //   CODINER_PEOPLE         names to show: "ada@example.com=Ada,grace@example.com=Grace"
 //                          (otherwise the login before the @, capitalised)
+//   CODINER_ASK_NAME       1: a browser that the proxy names nobody in asks its person for a
+//                          name and keeps it (cookie codiner.name). Nothing checks that name:
+//                          only for a page that people reach without a sign-in, e.g. a tunnel
+//   CODINER_HOSTS          (server/index.ts) may hold "*.trycloudflare.com" for such a tunnel
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -18,6 +22,8 @@ const env = process.env
 const AVATAR = env.CODINER_AGENT_AVATAR && fs.existsSync(env.CODINER_AGENT_AVATAR) ? env.CODINER_AGENT_AVATAR : null
 const AVATAR_TYPE = AVATAR ? { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml' }[path.extname(AVATAR).toLowerCase()] ?? 'application/octet-stream' : ''
 const THEME = env.CODINER_AGENT_CSS && fs.existsSync(env.CODINER_AGENT_CSS) ? env.CODINER_AGENT_CSS : null
+
+export const ASK_NAME = env.CODINER_ASK_NAME === '1'
 
 export const agentInfo = (): AgentInfo | undefined =>
   env.CODINER_AGENT_NAME ? { name: env.CODINER_AGENT_NAME, avatar: !!AVATAR, theme: !!THEME } : undefined
@@ -40,11 +46,20 @@ export function nameOf(login: string): string {
 }
 
 // The person behind a request, as the proxy names them; null when Codiner can't tell.
+// The proxy's word comes first; a name the browser gave (CODINER_ASK_NAME) only fills in.
 export function personOf(req: http.IncomingMessage): Person | null {
-  if (!HEADER) return null
-  const raw = req.headers[HEADER]
+  const raw = HEADER ? req.headers[HEADER] : undefined
   const login = (Array.isArray(raw) ? raw[0] : raw)?.trim()
-  return login ? { login, name: nameOf(login) } : null
+  if (login) return { login, name: nameOf(login) }
+  return ASK_NAME ? guestOf(req) : null
+}
+
+function guestOf(req: http.IncomingMessage): Person | null {
+  const m = /(?:^|;\s*)codiner\.name=([^;]*)/.exec(req.headers.cookie ?? '')
+  let name = ''
+  try { name = m ? decodeURIComponent(m[1]) : '' } catch { /* a broken cookie: no name */ }
+  name = name.replace(/[\p{C}]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 40)
+  return name ? { login: `guest:${name.toLowerCase()}`, name, guest: true } : null
 }
 
 // The avatar's size in pixels, for the manifest (PNG only; others say "any").

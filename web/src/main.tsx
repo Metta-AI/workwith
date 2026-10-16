@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import { useEffect } from 'react'
-import { api, changed, connect, select, state, useStore } from './store.ts'
+import { api, changed, connect, select, setGuestName, state, useStore } from './store.ts'
 import { useState } from 'react'
 import { Sidebar } from './components/Sidebar.tsx'
 import { SessionView } from './components/SessionView.tsx'
@@ -41,9 +41,31 @@ function App() {
           : sel ? <SessionView key={sel.id} id={sel.id} />
           : <div className="empty">Pick a session.</div>}
       </main>
-      {welcome && <AppearanceDialog welcome onClose={() => setWelcome(false)} />}
+      {st.connected && st.askName && !st.me ? <AskName />
+        : welcome && <AppearanceDialog welcome onClose={() => setWelcome(false)} />}
       {st.lightbox && <div className="lightbox" onClick={() => { state.lightbox = null; changed() }}><img src={st.lightbox} alt="" /></div>}
       {st.error && <div className="toast" onClick={() => { state.error = null; changed() }}>{st.error}</div>}
+    </div>
+  )
+}
+
+// Nobody signed this browser in: its person says who they are, so the others (and Claude)
+// can tell their replies apart. The page loads again to send the name with everything.
+function AskName() {
+  const st = useStore()
+  const [name, setName] = useState('')
+  const ok = name.trim().length > 0
+  const submit = () => { if (!ok) return; setGuestName(name.trim().slice(0, 40)); location.reload() }
+  return (
+    <div className="modal-back">
+      <div className="modal ask-name">
+        {st.agent?.avatar && <img className="ask-name-face" src="/agent/avatar" alt="" />}
+        <h2>Work with {st.agent?.name ?? 'Claude'}</h2>
+        <p>What is your name? The others here see it on what you write.</p>
+        <input autoFocus placeholder="Your name" value={name} maxLength={40}
+          onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') submit() }} />
+        <div className="modal-actions"><button className="primary" disabled={!ok} onClick={submit}>Join</button></div>
+      </div>
     </div>
   )
 }

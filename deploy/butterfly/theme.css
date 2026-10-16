@@ -1,0 +1,7 @@
+/* Butterfly's accent: one violet, like its face. Surfaces stay Codiner's own. */
+:root:root:root {
+  --accent: light-dark(#6b3fa0, #b993e6);
+  --on-accent: light-dark(#ffffff, #1e1030);
+}
+:root:root:root .brand { border-bottom: 3px solid; border-image: linear-gradient(90deg, #6b3fa0, #d46fb4) 1; }
+:root:root:root .answer-block { background: none; border-left: none; padding: 0; border-radius: 0; }

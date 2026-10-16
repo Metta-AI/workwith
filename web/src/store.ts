@@ -49,6 +49,7 @@ type State = {
   loaded: boolean                    // the server's hello came: sessions and settings are real
   agent: AgentInfo | null            // Codiner is this agent's desk (server/agent.ts)
   me: Person | null                  // who this browser is, as the proxy says
+  askName: boolean                   // nobody says: ask this browser's person for a name (CODINER_ASK_NAME)
   billing: 'api' | 'plan'            // 'api': billed per token, so no plan limits to show
   seenAt: number | null              // offline: when the session list shown was last current
 }
@@ -84,6 +85,7 @@ export const state: State = {
   restarting: false,
   agent: null,
   me: null,
+  askName: false,
   billing: 'plan',
   seenAt: null,
 }
@@ -166,6 +168,17 @@ export async function api<T = any>(path: string, method = 'POST', body?: unknown
   return j
 }
 
+// The name this browser's person gave (CODINER_ASK_NAME). The server reads the cookie;
+// localStorage keeps it if the cookie goes.
+export function setGuestName(name: string) {
+  localStorage.setItem('codiner.name', name)
+  document.cookie = `codiner.name=${encodeURIComponent(name)}; path=/; max-age=31536000; samesite=lax${location.protocol === 'https:' ? '; secure' : ''}`
+}
+{
+  const kept = localStorage.getItem('codiner.name')
+  if (kept && !document.cookie.split(/;\s*/).some((c) => c.startsWith('codiner.name='))) setGuestName(kept)
+}
+
 export function connect() {
   const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`)
   ws.onmessage = (m) => onServer(JSON.parse(m.data))
@@ -184,7 +197,7 @@ function onServer(m: ServerMsg) {
       state.sessions = m.sessions; state.settings = m.settings; state.usage = m.usage; state.loaded = true
       applyAppearance(m.settings.appearance)
       state.platform = m.platform; state.home = m.home; state.auth = m.auth ?? { state: 'ok' }; state.stale = !!m.stale; state.restarting = false
-      state.agent = m.agent ?? null; state.me = m.me ?? null; state.billing = m.billing ?? 'plan'
+      state.agent = m.agent ?? null; state.me = m.me ?? null; state.askName = !!m.askName; state.billing = m.billing ?? 'plan'
       if (state.billing === 'api') state.money = 'usd'
       state.seenAt = null; keepSeen()
       if (!m.sessions.some((s) => s.id === state.selected)) state.selected = 'lead'
