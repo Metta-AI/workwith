@@ -98,10 +98,25 @@ export async function bytes(p: string): Promise<Buffer> {
   return Buffer.from(await (await request(p)).arrayBuffer())
 }
 
+// Cloudflare can close a kept-alive connection before it passes the request on to Prolifica,
+// which then never sees it. curl and browsers send the request again on a new connection; Node's
+// fetch does not. Sent again here, after a moment (the other connections it closed are let go of
+// by then), when the request does the same if it arrives twice: not a new page, or a squash.
+const CLOSED = new Set(['UND_ERR_SOCKET', 'EPIPE', 'ECONNRESET'])
+const twiceSafe = (p: string, init: RequestInit) => (init.method ?? 'GET').toUpperCase() !== 'POST' || p.startsWith('/api/data?')
+
 async function request(p: string, init: RequestInit = {}): Promise<Response> {
   if (!conn?.access) throw new Error('Codinger is not connected to Prolifica.')
-  const go = () => fetch(`${ORIGIN}${p}`, { ...init, headers: { ...init.headers as Record<string, string>, authorization: `Bearer ${conn!.access}` } })
-    .catch((e) => { throw failed(p, init, e) })
+  const go = async () => {
+    for (let tries = 1; ; tries++) {
+      try {
+        return await fetch(`${ORIGIN}${p}`, { ...init, headers: { ...init.headers as Record<string, string>, authorization: `Bearer ${conn!.access}` } })
+      } catch (e: any) {
+        if (tries === 3 || !CLOSED.has(e?.cause?.code) || !twiceSafe(p, init)) throw failed(p, init, e)
+        await new Promise((r) => setTimeout(r, 250))
+      }
+    }
+  }
   if (conn.expires && conn.expires - Date.now() < 60_000 && conn.refresh) await tokens({ grant_type: 'refresh_token', refresh_token: conn.refresh, client_id: conn.clientId }).catch(() => {})
   let r = await go()
   if (r.status === 401 && conn.refresh) {
