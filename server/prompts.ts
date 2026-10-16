@@ -1,4 +1,5 @@
 import { describeLook, type Look } from '../shared/looks.ts'
+import { COORDINATION_SHOWN } from './coordination.ts'
 
 const WIN = process.platform === 'win32'
 const PORT = Number(process.env.PORT ?? 4545)
@@ -205,6 +206,9 @@ A message from another session comes in as "[Message \`m…\` from session …]"
 the reply tool: the sender does not see your chat. send_message starts a new exchange. Your
 inbox is open: any session can write to you. If you want quiet, close it with set_inbox; your
 parent and your children can always write to you.
+Before an action that can undo another session's work (a push, a deploy, a restart, an
+\`npm install\`), and when you deploy uncommitted work, follow ${COORDINATION_SHOWN}: its
+rules are at the top, and you grep its status lines for your topic, not read them all.
 `
 
 export const LEAD_PROMPT = `

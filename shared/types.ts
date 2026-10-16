@@ -193,6 +193,7 @@ export type Settings = {
   mcpStartOff?: boolean; mcpAlways?: string[]; mcpClaude?: boolean
   plan?: { tier: string; usd: number; yearly?: boolean }; reviewSeen?: { week?: string; month?: string }
   autoUpdate?: UpdateMode   // updates from origin/main (server/update.ts); unset: ask
+  coordinationPointer?: 'never'   // never ask to point ~/.claude/CLAUDE.md to COORDINATION.md (server/coordination.ts)
 }
 
 export type ServerMsg =
