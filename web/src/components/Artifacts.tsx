@@ -132,6 +132,7 @@ export function PublishControl({ a, v }: { a: Artifact; v?: number }) {
             : p && replace ? `This replaces v${p.version} of the page on Prolifica with v${local} here. Earlier versions there stay as they are.`
             : p ? `This makes v${p.version + 1} of the page on Prolifica, from v${local} here. v${p.version} there stays as it is, with its data.`
             : `This makes a new page on Prolifica, from v${local} here.`}</div>
+          {p?.there && <div className="small">Changed on Prolifica since the last publish: {p.there.changed.join('; ')}. Data that is there already as it is here is not sent again.</div>}
           <label>Who can see it
             <select value={vis} onChange={(e) => setVis(e.target.value as Visibility)}>
               <option value="public">Public: listed, anyone can remix</option>
@@ -327,7 +328,7 @@ export function ArtifactsView() {
               <span className="artifact-title">{x.title}</span>
               <span className="muted small">
                 {timeAgo(x.mtime)}{sids.size > 0 && ` · ${sids.size} ${sids.size === 1 ? 'session' : 'sessions'}`}
-                {x.published ? ` · published v${x.published.version}${x.published.mtime < x.mtime ? ', changed since' : ''}` : ' · not published'}
+                {x.published ? ` · published v${x.published.version}${x.published.mtime < x.mtime ? ', changed since' : ''}${x.published.there ? ', changed on Prolifica' : ''}` : ' · not published'}
               </span>
               {x.error && <span className="small err">{x.error}</span>}
             </button>

@@ -20,7 +20,7 @@ import http from 'node:http'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { DATA } from './store.ts'
-import { ORIGIN, bytes as bytesThere, call } from './prolifica.ts'
+import { ORIGIN, bytes as bytesThere, call, prolificaState } from './prolifica.ts'
 import type { Artifact, ArtifactPublished, ArtifactTouch, Visibility } from '../shared/artifacts.ts'
 
 export const ARTIFACTS = path.join(DATA, 'artifacts')
@@ -122,6 +122,7 @@ function mtimeOf(dir: string): number {
 }
 
 export function listArtifacts(): Artifact[] {
+  lookThere()
   const out: Artifact[] = []
   for (const e of fs.readdirSync(ARTIFACTS, { withFileTypes: true })) {
     if (!e.isDirectory() || !NAME_RE.test(e.name) || !fs.existsSync(path.join(dirOf(e.name), 'index.html'))) continue
@@ -364,16 +365,65 @@ async function sync(p: ArtifactPublished, m: Manifest): Promise<Where> {
   const where: Where = {}
   for (const [file, d] of Object.entries(p.data)) where[file] = [{ id: d.id, since: p.at }]
   if (!there) return where   // deleted there, or not reachable: publish() finds out
-  if (typeof there.version === 'number' && there.version !== p.version) {
-    for (const h of p.history ?? []) h.version = Math.min(h.version, there.version)
-    p.version = there.version
-  }
+  if (typeof there.version === 'number' && there.version !== p.version) renumber(p, there.version)
   for (const [slot, file] of Object.entries(m.bindings ?? {})) {
     const id = there.bindings?.[slot]?.id
     if (typeof id !== 'string' || file.startsWith('prolifica:') || where[file]?.some((w) => w.id === id)) continue
     ;(where[file] ??= []).push({ id })
   }
   return where
+}
+
+// The page's latest version there is v: after a squash there, versions past it are gone.
+function renumber(p: ArtifactPublished, v: number) {
+  for (const h of p.history ?? []) h.version = Math.min(h.version, v)
+  p.version = v
+}
+
+// Looked at when the artifacts are listed (the page loads, or the list changes), at most every
+// few minutes, in the background. A squash there renumbers the versions, which the record takes
+// at once. A version made there, a slot there that shows other data, or bound data edited there
+// after the last publish shows as changed on Prolifica, until the next publish.
+const LOOK_EVERY = 5 * 60_000
+let looked = 0, looking = false
+function lookThere() {
+  if (looking || Date.now() - looked < LOOK_EVERY || !prolificaState()) return
+  looking = true
+  void (async () => {
+    let any = false
+    for (const [name, r] of Object.entries(record)) {
+      const p = r.published
+      if (!p) continue
+      const was = JSON.stringify([p.version, p.there?.changed ?? []])
+      try { await look(name, p) } catch { continue }   // not reachable now: next time
+      any ||= JSON.stringify([p.version, p.there?.changed ?? []]) !== was
+    }
+    looked = Date.now(); looking = false
+    if (any) { saveRecord(); artifactsChanged() }
+  })()
+}
+
+async function look(name: string, p: ArtifactPublished) {
+  const there = await call(`/api/isles/${encodeURIComponent(p.id)}`).then((j) => j?.isle ?? j)
+    .catch((e) => { if (e.status === 404) return null; throw e })
+  const changed: string[] = []
+  if (!there) changed.push('the page was deleted there')
+  else {
+    if (typeof there.version === 'number' && there.version < p.version) renumber(p, there.version)
+    if (typeof there.version === 'number' && there.version > p.version) changed.push(`v${there.version} was made there`)
+    let m: Manifest | null = null
+    try { m = manifest(name) } catch { /* unreadable here now: compare with what went up only */ }
+    const mine = new Set([...Object.values(p.data).map((d) => d.id), ...Object.values(m?.bindings ?? {}).filter((f) => f.startsWith('prolifica:')).map((f) => f.slice(10))])
+    const bound = Object.values(there.bindings ?? {}).map((b: any) => b?.id).filter((id): id is string => typeof id === 'string')
+    if (bound.some((id) => !mine.has(id))) changed.push('a slot shows other data there')
+    else {
+      // A minute of slack: the clocks here and there need not agree.
+      const metas = await Promise.all(bound.map((id) => call(`/api/data/${encodeURIComponent(id)}`).then((j) => j?.data ?? j).catch(() => null)))
+      if (metas.some((d) => d?.updatedAt > p.at + 60_000)) changed.push('its data was edited there')
+    }
+  }
+  if (changed.length) p.there = { at: Date.now(), changed }
+  else delete p.there
 }
 
 // JSON that says the same, whatever its spacing or the order of its keys: Prolifica writes JSON
