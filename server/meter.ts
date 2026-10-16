@@ -76,7 +76,7 @@ function files(dir: string, depth: number, out: string[]) {
 // from their end; new files from their start.
 export function poll() {
   const all: string[] = []
-  files(PROJECTS, 3, all)
+  files(PROJECTS, 6, all)   // workflow agents: <project>/<session>/subagents/workflows/<run>/agent-….jsonl
   if (!started) {
     started = true
     load()

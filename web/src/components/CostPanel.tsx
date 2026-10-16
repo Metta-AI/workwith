@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import { api, changed, state, useStore } from '../store.ts'
 import { PLANS, cents, daysAgo, fmtDay, lastMonth, lastWeek, money, prevMonth, prevWeek, review, today, totals, weekOf, type CostsReply, type Period } from '../../../shared/costs.ts'
 import { XIcon } from './Icons.tsx'
+import { UsageAudit } from './UsageAudit.tsx'
 
 // One copy for the banner and the page, read again every half hour.
 let costs: CostsReply | null = null
@@ -115,8 +116,10 @@ export function CostPanel() {
           </tr>)}</tbody>
         </table>
         {c.scanning && <p className="muted cost-note">Codinger is still reading your transcripts. The numbers will go up.</p>}
-        {c.since && <p className="muted cost-note">The record starts on {fmtDay(c.since)}. Claude Code deletes transcripts after 30 days, so Codinger keeps its own record from now on.</p>}
+        {c.since && <p className="muted cost-note">The record starts on {fmtDay(c.since)}. Claude Code deletes transcripts after 30 days, so Codinger keeps its own record and a copy of the transcripts.</p>}
       </div>}
+
+      <UsageAudit price={price} weekCeil={weekCeil} />
 
       <div>
         <h3 className="cost-h">At full use</h3>

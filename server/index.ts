@@ -23,6 +23,7 @@ import { LOOK_OPTIONS, LOOK_SLOTS, cleanLook, describeLook } from '../shared/loo
 import { cleanAppearance } from '../shared/appearance.ts'
 import * as meter from './meter.ts'
 import * as costs from './costs.ts'
+import * as usageLedger from './usage.ts'
 import { notesDir, notesNow, notesPath, readNotes, resumeKeepWarm, startNotes } from './notes.ts'
 import { notesFile } from '../shared/notes.ts'
 import { flagProblem } from '../shared/flags.ts'
@@ -70,6 +71,7 @@ let settings: Settings = loadSettings()
 meter.poll()
 setInterval(meter.poll, 60_000).unref()
 costs.start()
+usageLedger.start()
 let usage: Usage = { rate: meter.rate() }
 const sockets = new Set<WebSocket>()
 // Slash commands differ by directory (project skills), so keep each session's
@@ -1088,6 +1090,13 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   }
   // Your plan, and day-by-day spend at API prices, for the cost view (shared/costs.ts).
   if (a === 'costs' && method === 'GET') return send(res, 200, await costs.reply())
+  // Tokens and spend by conversation and folder, from Codinger's copy of the transcripts (shared/usage.ts).
+  if (a === 'usage' && method === 'GET') {
+    const title = (id: string) => sessions.get(id)?.meta.title ?? null
+    if (id === 'ledger') return send(res, 200, usageLedger.ledger(title, Number(url.searchParams.get('after')) || 0))
+    if (id === 'sync') { await usageLedger.sync(); return send(res, 200, usageLedger.reply(title)) }
+    return send(res, 200, usageLedger.reply(title))
+  }
   if (a === 'meter' && method === 'GET') return send(res, 200, { rate: meter.rate(), five: meter.pairs('five'), seven: meter.pairs('seven') })
   if (a === 'history' && !id && method === 'GET') {
     const byClaude = new Map(metas().map((m) => [m.claudeSessionId, m.id]))

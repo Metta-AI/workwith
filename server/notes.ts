@@ -24,6 +24,7 @@ import type { SessionMeta, Settings, Usage } from '../shared/types.ts'
 import { DEFAULT_CACHE_GUARD } from '../shared/cache.ts'
 import { KEEP_WARM, notesFile } from '../shared/notes.ts'
 import { spend } from './meter.ts'
+import { offTranscript } from './usage.ts'
 import { addSpend, coldCost, costOf, priceOf, warmCost } from '../shared/prices.ts'
 import { DATA } from './store.ts'
 import { NOTES_SECTIONS } from './prompts.ts'
@@ -264,6 +265,7 @@ async function call(s: Session, kind: 'notes' | 'ping') {
     n.spent = (n.spent ?? 0) + costOf(u, model)
     addSpend(m, costOf(u, model), true)
     spend(u, model)
+    offTranscript(m.claudeSessionId, m.cwd, u, model)
     n.calls = (n.calls ?? 0) + 1
     // The call read the cache (or wrote it): its clock starts again at this call.
     if (m.cache) m.cache.at = Math.max(m.cache.at, started)

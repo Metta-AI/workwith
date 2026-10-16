@@ -924,6 +924,16 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .cost-review { border-top: 1px solid var(--line); padding: 6px 0; }
 .cost-review summary { cursor: pointer; font-size: calc(13px * var(--fs, 1)); }
 .cost-review[open] summary { margin-bottom: 6px; }
+.usage-table { width: 100%; }
+.usage-table th, .usage-inner th { white-space: nowrap; }
+.usage-row { cursor: pointer; }
+.usage-row:hover td { background: var(--card); }
+.usage-folder { word-break: break-all; }
+.usage-caret { display: inline-block; width: 14px; color: var(--muted); }
+.usage-convs > td { padding: 4px 0 8px 14px; }
+.usage-inner { width: 100%; font-size: calc(12px * var(--fs, 1)); }
+.usage-title { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usage-table tfoot td { font-weight: 600; border-top: 1px solid var(--line); }
 
 /* Autopilot (components/Autopilot.tsx) */
 /* The session menu (SessionView.tsx): the permission modes, with a check on the one in use. */
