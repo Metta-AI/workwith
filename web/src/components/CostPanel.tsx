@@ -1,13 +1,14 @@
 // What your plan costs you (shared/costs.ts): the price you pay, what a dollar
-// of API work and a prompt cost you, the least they could cost at full use,
+// of API work and a prompt cost you, the least they could cost at full utilization,
 // and the weekly and monthly reviews. CostBanner, in the sidebar, asks for the
 // price and says when a review is ready; Settings has the whole of it.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api, changed, state, useStore } from '../store.ts'
-import { PLANS, cents, daysAgo, fmtDay, lastMonth, lastWeek, money, prevMonth, prevWeek, review, today, totals, weekOf, type CostsReply, type Period } from '../../../shared/costs.ts'
+import { PLANS, cents, daysAgo, daysIn, fmtDay, lastMonth, lastWeek, money, prevMonth, prevWeek, review, today, totals, weekOf, type CostsReply, type Period } from '../../../shared/costs.ts'
 import { XIcon } from './Icons.tsx'
-import { UsageAudit } from './UsageAudit.tsx'
+import { UsageAudit, dayTotals, useUsage } from './UsageAudit.tsx'
+import { ChartHead, SLOTS, WorkChart, useView, util, type Totals } from './CostChart.tsx'
 
 // One copy for the banner and the page, read again every half hour.
 let costs: CostsReply | null = null
@@ -77,6 +78,9 @@ export function CostBanner({ open }: { open(): void }) {
 export function CostPanel() {
   const st = useStore()
   const c = useCosts(true)
+  const [payView, setPayView] = useView('pay')
+  const u = useUsage()
+  const work = useMemo(() => dayTotals(u), [u])
   if (!c) return <div className="muted">Reading your usage…</div>
   const price = priceOf(c)
   const tier = tierOf(c)
@@ -95,6 +99,11 @@ export function CostPanel() {
     const t = totals(c, from, today()), cost = price * 12 / 365 * t.days
     return { label, ...t, cost }
   })
+  // The graphs: dollars from the same record as the tables, tokens from the
+  // ledger. Each day of the record, the last 90 at most.
+  const payDays = c.since ? daysIn(c.since > daysAgo(89) ? c.since : daysAgo(89), today()) : []
+  const itc = price != null && weekCeil ? price * 12 / 52 / weekCeil : null
+  const tot = (d: string): Totals | undefined => { const w = work.get(d), x = c.days[d]; return w || x ? { usd: x?.usd ?? 0, tin: w?.tin ?? 0, tout: w?.tout ?? 0 } : undefined }
 
   return (
     <>
@@ -106,15 +115,16 @@ export function CostPanel() {
       </div>}
 
       {price != null && <div>
-        <h3 className="cost-h">What you pay for the work</h3>
-        <p className="muted cost-note">API work is what Claude Code used, at API prices. Your cost is your price over the same days.</p>
-        <table className="mcp-table cost-table">
-          <thead><tr><th></th><th>API work</th><th>Prompts</th><th>Your cost</th><th>For each API dollar</th><th>For each prompt</th></tr></thead>
+        <ChartHead title="What you pay for the work" view={payView} set={setPayView} />
+        {payView === 'table' && <p className="muted cost-note">API work is what Claude Code used, at API prices. Your cost is your price over the same days.</p>}
+        {payView === 'graph' ? <WorkChart id="pay" buckets={payDays.map((d) => ({ label: fmtDay(d), days: [d] }))} tot={tot} price={price} itc={itc} rolling />
+        : <table className="mcp-table cost-table">
+          <thead><tr><th></th><th>API work</th><th>Prompts</th><th>Your cost</th><th>For each API dollar</th><th>For each prompt</th><th>Utilization</th></tr></thead>
           <tbody>{now.map((r) => <tr key={r.label}>
             <td>{r.label}</td><td>{money(r.usd)}</td><td>{r.prompts}</td><td>{money(r.cost)}</td>
-            <td>{r.usd ? cents(r.cost / r.usd) : '–'}</td><td>{r.prompts ? cents(r.cost / r.prompts) : '–'}</td>
+            <td>{r.usd ? cents(r.cost / r.usd) : '–'}</td><td>{r.prompts ? cents(r.cost / r.prompts) : '–'}</td><td>{itc != null && r.cost ? util(r.usd * itc / r.cost * 100) : '–'}</td>
           </tr>)}</tbody>
-        </table>
+        </table>}
         {c.scanning && <p className="muted cost-note">Codinger is still reading your transcripts. The numbers will go up.</p>}
         {c.since && <p className="muted cost-note">The record starts on {fmtDay(c.since)}. Claude Code deletes transcripts after 30 days, so Codinger keeps its own record and a copy of the transcripts.</p>}
       </div>}
@@ -122,7 +132,7 @@ export function CostPanel() {
       <UsageAudit price={price} weekCeil={weekCeil} />
 
       <div>
-        <h3 className="cost-h">At full use</h3>
+        <h3 className="cost-h">At full utilization</h3>
         {weekCeil && price != null ? <>
           <p className="cost-line">
             A full week of your plan is about {money(weekCeil)} of API work{fiveCeil ? `, and a full 5-hour window about ${money(fiveCeil)}` : ''}.
@@ -132,14 +142,8 @@ export function CostPanel() {
         </> : <p className="muted cost-note">Codinger does not know your limits in dollars yet. It learns them as you use Claude Code.</p>}
       </div>
 
-      {months.length > 0 && <div>
-        <h3 className="cost-h">Monthly reviews</h3>
-        {months.map((m, i) => <Review key={m} p={review('month', m, c, price!, tier)} tier={tier} open={i === 0} />)}
-      </div>}
-      {weeks.length > 0 && <div>
-        <h3 className="cost-h">Weekly reviews</h3>
-        {weeks.map((w, i) => <Review key={w} p={review('week', w, c, price!, tier)} tier={tier} open={i === 0} />)}
-      </div>}
+      {months.length > 0 && <Reviews title="Monthly reviews" ps={months.map((m) => review('month', m, c, price!, tier))} tier={tier} tot={tot} price={price} itc={itc} since={c.since} />}
+      {weeks.length > 0 && <Reviews title="Weekly reviews" ps={weeks.map((w) => review('week', w, c, price!, tier))} tier={tier} tot={tot} price={price} itc={itc} since={c.since} />}
 
       <label className="settings-check">
         Show session costs as
@@ -168,7 +172,7 @@ function PriceForm({ c }: { c: CostsReply }) {
       <p className="cost-line">
         {c.plan ? <>Claude Code is logged in to <b>{c.plan.label}</b>. Its list price is {money(c.plan.usd)} a month.</> : <>Codinger can not tell your plan from Claude Code's login. Type what you pay.</>}
       </p>
-      <label className="settings-check">
+      <label className="settings-check cost-pay">
         You pay $
         <input className="cost-price" inputMode="decimal" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && dirty) setPlan(tier, usd, yearly) }} />
         <select value={yearly ? 'year' : 'month'} onChange={(e) => setYearly(e.target.value === 'year')}>
@@ -183,20 +187,50 @@ function PriceForm({ c }: { c: CostsReply }) {
   )
 }
 
-function Review({ p, tier, open }: { p: Period; tier: string | undefined; open: boolean }) {
+// The reviews of one kind, newest first, and a graph of the work in them: by
+// week for the weekly ones (with what each plan would have cost), by day for
+// the monthly ones.
+function Reviews({ title, ps, tier, tot, price, itc, since }: {
+  title: string; ps: Period[]; tier: string | undefined; tot(d: string): Totals | undefined; price: number | null; itc: number | null; since: string | null
+}) {
+  const [view, setView] = useView(ps[0].kind)
+  const weekly = ps[0].kind === 'week'
+  const can = !weekly || ps.length > 1
+  const v = can ? view : 'table'
+  const old = [...ps].reverse()
+  const buckets = weekly ? old.map((p) => ({ label: fmtDay(p.key), days: daysIn(p.from, p.to) })) : daysIn(old[0].from, ps[0].to).map((d) => ({ label: fmtDay(d), days: [d] }))
+  const plans = weekly && ps.some((p) => p.fits.length) ? PLANS.map((pl, i) => ({
+    key: pl.tier, label: pl.tier === tier ? `${pl.label} (your plan)` : pl.label, short: pl.label, bold: pl.tier === tier, color: SLOTS[i],
+    values: old.map((p) => p.fits.find((f) => f.plan.tier === pl.tier)?.cost ?? null),
+  })) : undefined
+  return (
+    <div>
+      <ChartHead title={title} view={v} set={can ? setView : undefined} />
+      {v === 'graph' && <WorkChart id={ps[0].kind} buckets={buckets} tot={tot} price={price} itc={itc} rolling={!weekly} plans={plans} />}
+      {ps.map((p, i) => <Review key={p.key} p={p} tier={tier} open={i === 0} itc={itc} since={since} />)}
+    </div>
+  )
+}
+
+function Review({ p, tier, open, itc, since }: { p: Period; tier: string | undefined; open: boolean; itc: number | null; since: string | null }) {
+  // Utilization over the days of the period that the record covers, at the plan cost of those days.
+  const from = since && since > p.from ? since : p.from, to = p.to < today() ? p.to : today()
+  const covered = from <= to ? daysIn(from, to).length : 0, all = daysIn(p.from, p.to).length
+  const cost = p.planCost * covered / all
+  const hits = (f: Period['fits'][number]) => f.weekHits + f.fiveHits
   return (
     <details className="cost-review" open={open}>
-      <summary><b>{p.label}</b> <span className="muted">· {money(p.usd)} of API work · {p.prompts} prompts{p.perDollar != null ? ` · ${cents(p.perDollar)} for each API dollar` : ''}</span></summary>
+      <summary><b>{p.label}</b> <span className="muted">· {money(p.usd)} of API work · {p.prompts} prompts{p.perDollar != null ? ` · ${cents(p.perDollar)} for each API dollar` : ''}{itc != null && cost ? ` · ${util(p.usd * itc / cost * 100)} utilization` : ''}</span></summary>
       <p className="cost-line">{p.advice}</p>
       {p.overage && <p className="cost-line">Claude Code used extra usage in this time.</p>}
       {p.extraUsed != null && p.extraUsed > 0 && <p className="cost-line">You spent {money(p.extraUsed)} on extra usage this month.</p>}
       {p.fits.length > 0 && <table className="mcp-table cost-table">
         <thead><tr><th>Plan</th><th>Price</th><th>Times past its limits</th><th>Extra usage</th><th>Total</th></tr></thead>
         <tbody>{p.fits.map((f) => <tr key={f.plan.tier} className={f.plan.tier === tier ? 'cost-cur' : ''}>
-          <td>{f.plan.label}</td><td>{money(f.cost - f.over)}</td><td>{f.weekHits + f.fiveHits || '–'}</td><td>{f.over ? `about ${money(f.over)}` : '–'}</td><td>{money(f.cost)}</td>
+          <td>{f.plan.label}</td><td>{money(f.cost - f.over)}</td><td>{hits(f) || '–'}</td><td>{f.over ? `about ${money(f.over)}` : '–'}</td><td>{money(f.cost)}</td>
         </tr>)}</tbody>
       </table>}
-      {p.weekShare != null && <p className="muted cost-note">The busiest week used about {Math.round(p.weekShare * 100)}% of your weekly limit. {p.days < (p.kind === 'week' ? 7 : 28) ? `The record has only ${p.days} days of this time.` : ''}</p>}
+      {p.weekShare != null && <p className="muted cost-note">The busiest week used about {Math.round(p.weekShare * 100)}% of your weekly limit. {covered < all ? `The record has only ${covered} days of this time.` : ''}</p>}
     </details>
   )
 }

@@ -15,8 +15,9 @@
 // transcripts, and a CSV of the whole ledger for an audit somewhere else.
 
 import { Fragment, useEffect, useState } from 'react'
-import { api } from '../store.ts'
-import { cents, daysAgo, fmtDay, money, today } from '../../../shared/costs.ts'
+import { api, changed, useStore } from '../store.ts'
+import { ChartHead, LineChart, MeasurePick, OTHER, SLOTS, dollars, useMeasure, useView, type Line, type Measure, type Totals, util } from './CostChart.tsx'
+import { cents, daysAgo, daysIn as dayList, fmtDay, money, today } from '../../../shared/costs.ts'
 import { addTok, noTok, tokIn, type Ledger, type Tok, type UsageConv, type UsageReply } from '../../../shared/usage.ts'
 
 type Span = '7' | '30' | 'month' | 'last-month' | 'all'
@@ -33,6 +34,7 @@ function range(s: Span): [string, string] {
 const parse = (k: string) => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d).getTime() }
 const daysIn = (from: string, to: string) => Math.round((parse(to) - parse(from)) / 86_400_000) + 1
 
+const base = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p
 const home = (p: string) => { const h = /^(\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:\\Users\\[^\\]+)/.exec(p)?.[1]; return h ? '~' + p.slice(h.length) : p }
 const count = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(Math.round(n))
 const bytes = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.round(n / 1e6)} MB`
@@ -40,22 +42,46 @@ const bytes = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.r
 const FEW = 10
 const when = (t: number) => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 
+// One copy of the ledger for the whole page, read again every 5 minutes while
+// the page shows (every 15 seconds while the first read of the transcripts runs).
+let usage: UsageReply | null = null, users = 0, timer: ReturnType<typeof setTimeout> | undefined
+function poll() {
+  void api<UsageReply>('/api/usage', 'GET').then((r) => { usage = r; changed(); return r.scanning || !r.archive.at }, () => false)
+    .then((soon) => { clearTimeout(timer); if (users) timer = setTimeout(poll, soon ? 15_000 : 5 * 60_000) })
+}
+export function useUsage() {
+  useStore()
+  useEffect(() => { if (!users++) poll(); return () => { if (!--users) clearTimeout(timer) } }, [])
+  return usage
+}
+// The work of each day on all machines.
+export function dayTotals(u: UsageReply | null) {
+  const out = new Map<string, Totals>()
+  if (u) for (const l of [u, ...u.others]) for (const [d, x] of Object.entries(l.ran)) for (const t of Object.values(x)) {
+    const s = out.get(d) ?? (out.set(d, { usd: 0, tin: 0, tout: 0 }), out.get(d)!)
+    s.usd += t.usd; s.tin += tokIn(t); s.tout += t.out
+  }
+  return out
+}
+
+// The folders the graph shows, each with its colour (an index in SLOTS), which
+// it keeps while others come and go. None saved: the three with the most work.
+type Pick = { p: string; slot: number }
+const PICKS = 'codinger.costFolders'
+
 // price: what you pay a month. weekCeil: a full week of your plan, in dollars of API work.
 export function UsageAudit({ price, weekCeil }: { price: number | null; weekCeil: number | null }) {
-  const [u, setU] = useState<UsageReply | null>(null)
+  const u = useUsage()
   const [on, setOn] = useState<string>('all')
   const [span, setSpan] = useState<Span>('30')
   const [by, setBy] = useState<'worked' | 'ran'>('worked')
   const [open, setOpen] = useState<string | null>(null)
   const [more, setMore] = useState(false)
-  useEffect(() => {
-    let live = true, t: ReturnType<typeof setTimeout> | undefined
-    // The first read of the transcripts takes a while: look again soon until it is done.
-    const get = () => api<UsageReply>('/api/usage', 'GET').then((r) => { if (live) setU(r); return r.scanning || !r.archive.at }, () => false)
-      .then((soon) => { if (live) t = setTimeout(get, soon ? 15_000 : 5 * 60_000) })
-    void get()
-    return () => { live = false; clearTimeout(t) }
-  }, [])
+  const [view, setView] = useView('where')
+  const [measure, setMeasure] = useMeasure('where', 'work')
+  const [picks, setPicks] = useState<Pick[] | null>(() => { try { return JSON.parse(localStorage.getItem(PICKS) ?? 'null') } catch { return null } })
+  const [q, setQ] = useState('')
+  const savePicks = (v: Pick[] | null) => { setPicks(v); if (v) localStorage.setItem(PICKS, JSON.stringify(v)); else localStorage.removeItem(PICKS) }
   if (!u) return <div className="muted">Reading the usage ledger…</div>
 
   const all: Ledger[] = [u, ...u.others]
@@ -79,7 +105,7 @@ export function UsageAudit({ price, weekCeil }: { price: number | null; weekCeil
     return { c, usd, machine: l === u ? null : l.label ?? l.machine }
   })).filter((x) => x.usd >= 0.005).sort((a, b) => b.usd - a.usd)
 
-  // Your plan's cost for each dollar of API work: over these days (ETC), and at full use (ITC).
+  // Your plan's cost for each dollar of API work: over these days (ETC), and at full utilization (ITC).
   // The plan pays for every machine's work, so ETC shares it over all of them.
   const days = from <= to ? daysIn(from, to) : 0
   const planCost = price != null ? price * 12 / 365 * days : null
@@ -88,6 +114,29 @@ export function UsageAudit({ price, weekCeil }: { price: number | null; weekCeil
   const etc = planCost != null && allUsd ? planCost / allUsd : null
   const itc = price != null && weekCeil ? price * 12 / 52 / weekCeil : null
   const rate = { etc, itc }
+  // Utilization: the plan usage of some work (its ITC) as a percent of the plan cost of the span.
+  const used = (usd: number) => itc != null && planCost ? util(usd * itc / planCost * 100) : '–'
+
+  // The graph: each day of the span, for the folders you pick and the rest together.
+  const dayKeys = from <= to ? dayList(from, to) : []
+  const chosen = picks ?? rows.slice(0, 3).map(([p], slot) => ({ p, slot }))
+  const picked = new Set(chosen.map((c) => c.p))
+  const add = (p: string) => {
+    setQ('')
+    if (chosen.length >= SLOTS.length || picked.has(p)) return
+    const used = new Set(chosen.map((c) => c.slot))
+    savePicks([...chosen, { p, slot: SLOTS.findIndex((_, i) => !used.has(i)) }])
+  }
+  const options: Measure[] = ['work', ...etc != null ? ['etc' as const] : [], ...itc != null && price != null ? ['used' as const] : [], 'tokens']
+  const m = options.includes(measure) ? measure : 'work'
+  const of = (t: Tok) => m === 'tokens' ? tokIn(t) + t.out : m === 'etc' ? t.usd * etc! : m === 'used' ? t.usd * itc! : t.usd
+  const daily = (pick: (p: string) => boolean) => dayKeys.map((d) => { let s = 0; for (const l of shown) for (const [p, t] of Object.entries(l[by][d] ?? {})) if (pick(p)) s += of(t); return s })
+  // Plan usage: dollars of your plan, and their share of what you pay for a day.
+  const fmt = m === 'tokens' ? count : m === 'used' ? (v: number) => `${money(v)} (${util(v / (price! * 12 / 365) * 100)} utilization)` : money
+  const lines: Line[] = chosen.map(({ p, slot }) => ({ key: p, label: home(p), short: base(p), color: SLOTS[slot], values: daily((x) => x === p), remove: () => savePicks(chosen.filter((c) => c.p !== p)) }))
+  if (rows.some(([p]) => !picked.has(p))) lines.push({ key: '', label: 'Other folders', color: OTHER, values: daily((x) => !picked.has(x)) })
+  const rest = rows.filter(([p]) => !picked.has(p))
+  const typed = (v: string) => rest.find(([p]) => home(p).toLowerCase().includes(v.toLowerCase()))
 
   // Use outside Claude Code, in dollars of API work: each product's share of the
   // weekly limit in the span, at what a full week is worth. All machines share it.
@@ -101,7 +150,7 @@ export function UsageAudit({ price, weekCeil }: { price: number | null; weekCeil
 
   return (
     <div className="usage-audit">
-      <h3 className="cost-h">Where the work went</h3>
+      <ChartHead title="Where the work went" view={view} set={setView} />
       <label className="settings-check">
         API work in
         <select value={span} onChange={(e) => setSpan(e.target.value as Span)}>{SPANS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
@@ -120,38 +169,53 @@ export function UsageAudit({ price, weekCeil }: { price: number | null; weekCeil
       {(etc != null || itc != null) && total > 0 && <p className="cost-line">
         {planCost != null && <>Your plan cost {money(planCost)} for these {days} days, for {money(allUsd)} of API work{u.others.length ? ' on all machines' : ''}. </>}
         {etc != null && <>ETC: {cents(etc)} for each API dollar. </>}
-        {itc != null && <>ITC: {cents(itc)} for each API dollar at full use.</>}
+        {itc != null && <>ITC: {cents(itc)} for each API dollar at full utilization. </>}
+        {itc != null && planCost != null && <>Utilization: {used(allUsd)}.</>}
       </p>}
-      {rows.length ? <table className="mcp-table cost-table usage-table">
-        <thead><tr><th>Folder</th><th>API work</th><th>ETC</th><th>ITC</th><th>Share</th><th>Tokens in</th><th>Tokens out</th></tr></thead>
+      {!rows.length ? <p className="muted cost-note">{u.scanning ? 'Codinger is still reading the transcripts.' : 'No API work in this time.'}</p> : view === 'graph' ? <>
+        <MeasurePick value={m} set={setMeasure} options={options} />
+        <LineChart key={m} x={dayKeys.map(fmtDay)} lines={lines} fmt={fmt} tick={m === 'tokens' ? count : dollars}
+          extra={(i) => <div className="muted">{fmt(lines.reduce((s, l) => s + (l.values[i] ?? 0), 0))} in all folders</div>}
+          more={<>
+            {chosen.length < SLOTS.length && rest.length > 0 && <span className="lc-add">
+              <input list="usage-folders" placeholder="Add a folder" value={q} onChange={(e) => { const hit = rest.find(([p]) => home(p) === e.target.value); if (hit) add(hit[0]); else setQ(e.target.value) }}
+                onKeyDown={(e) => { if (e.key === 'Enter' && q) { const hit = typed(q); if (hit) add(hit[0]) } }} />
+              <datalist id="usage-folders">{rest.map(([p]) => <option key={p} value={home(p)} />)}</datalist>
+            </span>}
+            {picks && <button className="link" onClick={() => savePicks(null)}>Show the top 3</button>}
+          </>} />
+        <p className="cost-line"><b>All folders: {money(total)}</b>{etc != null && <> · ETC {fee(total, etc)}</>}{itc != null && <> · ITC {fee(total, itc)}</>}{outside.map((o) => <span key={o.key} className="muted"> · Outside Claude Code: {o.name}, {money(o.usd)}</span>)}</p>
+      </> : <table className="mcp-table cost-table usage-table">
+        <thead><tr><th>Folder</th><th>API work</th><th>ETC</th><th>ITC</th><th>Utilization</th><th>Share</th><th>Tokens in</th><th>Tokens out</th></tr></thead>
         <tbody>{(hidden.length ? rows.slice(0, FEW) : rows).map(([p, t]) => <Fragment key={p}>
           <tr className="usage-row" onClick={() => setOpen(open === p ? null : p)}>
             <td className="usage-folder"><span className="usage-caret">{open === p ? '▾' : '▸'}</span>{home(p)}</td>
-            <td>{money(t.usd)}</td><td>{fee(t.usd, etc)}</td><td>{fee(t.usd, itc)}</td>
+            <td>{money(t.usd)}</td><td>{fee(t.usd, etc)}</td><td>{fee(t.usd, itc)}</td><td>{used(t.usd)}</td>
             <td>{!total ? '–' : t.usd / total < 0.005 ? '<1%' : `${Math.round(t.usd / total * 100)}%`}</td>
             <td>{count(tokIn(t))}</td><td>{count(t.out)}</td>
           </tr>
-          {open === p && <tr className="usage-convs"><td colSpan={7}><Convs list={convsOf(p)} by={by} folder={p} rate={rate} /></td></tr>}
+          {open === p && <tr className="usage-convs"><td colSpan={8}><Convs list={convsOf(p)} by={by} folder={p} rate={rate} /></td></tr>}
         </Fragment>)}
           {hidden.length > 0 && <tr className="usage-row usage-more" onClick={() => setMore(true)}>
-            <td><span className="usage-caret">▸</span>{hidden.length} more folders</td><td>{money(hiddenUsd)}</td><td>{fee(hiddenUsd, etc)}</td><td>{fee(hiddenUsd, itc)}</td>
+            <td><span className="usage-caret">▸</span>{hidden.length} more folders</td><td>{money(hiddenUsd)}</td><td>{fee(hiddenUsd, etc)}</td><td>{fee(hiddenUsd, itc)}</td><td>{used(hiddenUsd)}</td>
             <td>{total ? `${Math.round(hiddenUsd / total * 100)}%` : '–'}</td><td></td><td></td>
           </tr>}
           {more && rows.length > FEW + 1 && <tr className="usage-row usage-more" onClick={() => setMore(false)}>
-            <td colSpan={7}><span className="usage-caret">▴</span>Show only the first {FEW} folders</td>
+            <td colSpan={8}><span className="usage-caret">▴</span>Show only the first {FEW} folders</td>
           </tr>}
         </tbody>
         {outside.length > 0 && <tbody>{outside.map((o) => <tr key={o.key} className="usage-outside">
-          <td>Outside Claude Code: {o.name}</td><td>{money(o.usd)}</td><td>{fee(o.usd, etc)}</td><td>{fee(o.usd, itc)}</td><td></td><td>–</td><td>–</td>
+          <td>Outside Claude Code: {o.name}</td><td>{money(o.usd)}</td><td>{fee(o.usd, etc)}</td><td>{fee(o.usd, itc)}</td><td>{used(o.usd)}</td><td></td><td>–</td><td>–</td>
         </tr>)}</tbody>}
-        <tfoot><tr><td>All folders</td><td>{money(total)}</td><td>{fee(total, etc)}</td><td>{fee(total, itc)}</td><td></td><td></td><td></td></tr></tfoot>
-      </table> : <p className="muted cost-note">{u.scanning ? 'Codinger is still reading the transcripts.' : 'No API work in this time.'}</p>}
+        <tfoot><tr><td>All folders</td><td>{money(total)}</td><td>{fee(total, etc)}</td><td>{fee(total, itc)}</td><td>{used(total)}</td><td></td><td></td><td></td></tr></tfoot>
+      </table>}
       {u.scanning && rows.length > 0 && <p className="muted cost-note">Codinger is still reading the transcripts. The numbers will go up.</p>}
       <p className="muted cost-note">
         "The project it worked on" follows the files that the tools read or change. A call with no files counts for the last project the conversation worked on.
         Tokens in include the tokens read from the cache.
         ETC (effective token cost) is what the work cost you: your plan's price over these days, shared out over all the API work in them.
         ITC (ideal token cost) is what it would cost you if you used all of your plan's weekly limit.
+        Utilization is how much of your plan the work used: its ITC as a percent of what your plan cost for these days.
         {outside.length > 0 && <> "Outside Claude Code" is your use in other products, as claude.ai reports it for your weekly limit, in dollars of API work at what a full week is worth. It is not in the total. claude.ai gives whole percents, so it shows in steps of about {money((weekCeil ?? 0) / 100)}.{u.surfaces.resetsAt && <> Your weekly limit resets on {new Date(u.surfaces.resetsAt).toLocaleString(undefined, { weekday: 'long', hour: 'numeric', minute: '2-digit' })}.</>}</>}
         {u.others.length > 0 && <> Codinger reads the ledgers of your other machines every 30 minutes, through web.codinger.app, and keeps a copy: {u.others.map((l) => `${l.label ?? l.machine} (${l.at ? when(l.at) : 'not read yet'})`).join(', ')}.</>}
       </p>

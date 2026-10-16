@@ -981,6 +981,31 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 /* The head stays at the top of the page while you scroll through the table: 4px up, over the page's padding, which Chrome keeps clear of it. */
 .usage-table > thead th { position: sticky; top: -4px; padding-top: 6px; z-index: 1; background: var(--bg); box-shadow: inset 0 -1px var(--line); }
 .usage-more td { color: var(--muted); }
+/* The price, its period and Save: one height. */
+.settings-page .cost-pay > :is(input, select, button) { box-sizing: border-box; height: 26px; padding-top: 0; padding-bottom: 0; font-size: calc(12.5px * var(--fs, 1)); }
+/* Line graphs of the cost page (CostChart.tsx): the dataviz skill's reference palette without its orange, and grey. */
+:root {
+  --viz-1: light-dark(#2a78d6, #3987e5); --viz-2: light-dark(#1baf7a, #199e70); --viz-3: light-dark(#eda100, #c98500);
+  --viz-4: light-dark(#e87ba4, #d55181); --viz-5: light-dark(#008300, #008300); --viz-6: light-dark(#6250d6, #9085e9); --viz-other: var(--muted);
+}
+.cost-h-row { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; } .cost-h-row .cost-h { margin: 0; }
+.cost-view { margin-left: auto; } .cost-view button { padding: 2px 9px; font-size: calc(11.5px * var(--fs, 1)); }
+.line-chart { position: relative; margin: 2px 0 4px; } .line-chart svg { display: block; touch-action: pan-y; }
+.lc-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 2px 0 4px; font-size: calc(12px * var(--fs, 1)); }
+.lc-key { display: inline-flex; align-items: center; } .lc-key button { border: none; background: none; padding: 1px 2px; border-radius: 4px; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+.lc-key button:hover { color: var(--text); } .lc-key.bold button { color: var(--text); font-weight: 600; }
+.lc-key.off button { text-decoration: line-through; opacity: .55; } .lc-key.off i { background: var(--line) !important; }
+.lc-key .lc-x { padding: 0 3px; font-size: calc(13px * var(--fs, 1)); line-height: 1; }
+.lc-legend i, .lc-tip i { flex: none; display: inline-block; width: 12px; height: 3px; border-radius: 2px; }
+.lc-add input { width: 150px; padding: 2px 7px; font-size: calc(12px * var(--fs, 1)); }
+.lc-measure { margin: 0 0 2px !important; }
+.lc-grid { stroke: var(--line); stroke-width: 1; } .lc-cross { stroke: var(--muted); stroke-width: 1; }
+.lc-axis { fill: var(--muted); font-size: calc(11px * var(--fs, 1)); }
+.lc-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.lc-dot { stroke: var(--bg); stroke-width: 2; }
+.lc-end { fill: var(--muted); font-size: calc(11.5px * var(--fs, 1)); } .lc-end.bold { fill: var(--text); font-weight: 600; }
+.lc-tip { position: absolute; top: 24px; pointer-events: none; background: var(--card); border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; font-size: calc(12px * var(--fs, 1)); box-shadow: 0 4px 14px rgba(0, 0, 0, .18); white-space: nowrap; z-index: 2; }
+.lc-tip > div { display: flex; align-items: center; gap: 6px; margin-top: 2px; } .lc-tip > div.muted { display: block; }
 .usage-folder { word-break: break-all; }
 .usage-caret { display: inline-block; width: 14px; color: var(--muted); }
 .usage-convs > td { padding: 4px 0 8px 14px; }

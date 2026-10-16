@@ -36,10 +36,10 @@ export const planOf = (tier: string | undefined) => PLANS.find((p) => p.tier ===
 const DAY = 86_400_000
 export const dayKey = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 const parse = (k: string) => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d).getTime() }
-const addDays = (k: string, n: number) => dayKey(parse(k) + n * DAY + 12 * 3_600_000)   // noon: a DST change can't skip a day
+export const addDays = (k: string, n: number) => dayKey(parse(k) + n * DAY + 12 * 3_600_000)   // noon: a DST change can't skip a day
 // The Monday on or before a day.
 export const weekOf = (k: string) => addDays(k, -((new Date(parse(k)).getDay() + 6) % 7))
-const daysIn = (from: string, to: string) => { const out: string[] = []; for (let k = from; k <= to; k = addDays(k, 1)) out.push(k); return out }
+export const daysIn = (from: string, to: string) => { const out: string[] = []; for (let k = from; k <= to; k = addDays(k, 1)) out.push(k); return out }
 
 export type Fit = { plan: Plan; weekHits: number; fiveHits: number; over: number; cost: number }
 export type Period = {
