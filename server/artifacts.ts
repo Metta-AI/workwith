@@ -51,6 +51,9 @@ type Manifest = {
   title?: string; description?: string; short_title?: string; view_name?: string
   /** the Prolifica isle this page came from */
   parent?: string
+  /** the isle this page is, pulled down to change it: its first publish from here is that isle's
+   *  next version (when it is yours), not a new page */
+  isle?: string
   slots?: Record<string, { kind?: string; description?: string }>
   bindings?: Record<string, string>
   /** the data the bound files were made from (a scraper's export, a download), by file, with
@@ -169,7 +172,7 @@ export const artifactsPrompt = () => `
 When the user wants to see something (a chart, a table to explore, a dashboard, a report over data, a small tool), and whenever you analyse data, make an artifact: a page that Codinger shows in a pane next to this session. Each artifact is a folder in \`${ARTIFACTS}/<name>/\`, with a short lowercase name with hyphens:
 - \`index.html\`: one self-contained page. Use \`<script type="module">\` (top-level await works) and libraries from a CDN (https://esm.sh/..., https://cdn.jsdelivr.net/npm/...). There is no build step.
 - \`data/\`: the data, as files (csv, json, md, txt, images). Do not put data in the page. Subfolders are fine (\`data/media/a.jpg\`).
-- \`artifact.json\`: \`{"title": "...", "description": "Two to four short sentences on what it shows.", "slots": {"rows": {"kind": "csv", "description": "One row per ...: the columns the page uses"}}, "bindings": {"rows": "data/rows.csv"}}\`. When the page came from an isle on Prolifica, add \`"parent": "<isle id>"\`.
+- \`artifact.json\`: \`{"title": "...", "description": "Two to four short sentences on what it shows.", "slots": {"rows": {"kind": "csv", "description": "One row per ...: the columns the page uses"}}, "bindings": {"rows": "data/rows.csv"}}\`. When the page came from an isle on Prolifica, add \`"parent": "<isle id>"\`. When you pulled an isle down to change it (its page, data and instructions), add \`"isle": "<isle id>"\` too: the first Publish from Codinger then makes that isle's next version, not a new page. Do not publish it yourself; the user publishes when ready.
 - Source data: copy the data you started from (a scraper's export, a download, a file the user gave you) into \`data/\` as it is, even when no slot uses it, and list it in artifact.json: \`"sources": {"data/source.json": {"url": "...", "method": "...", "collected_at": "...", "notes": "..."}}\` (where it came from; each field optional). It is published with the page, and the bound data says it was made from it, so it goes public when the page does. When a source made only some of the slots' data, add \`"slots": ["..."]\` to it.
 - \`instructions.md\`: instructions for agents about this page, so the next agent does not have to learn it from the HTML. Write them for each artifact. Say which data fields drive the wording, what text is fixed in the page, the limits, and what breaks. Write about the page, not about this data. Update them when you learn something about the page. They are published with the page.
 
@@ -460,7 +463,9 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
   if (!src) throw new Error(`There is no version ${local} of ${name}.`)
   const m = src.manifest()
   const r = recOf(name)
-  const before = r.published
+  // Pulled down from an isle and not published from here yet: carry on from the isle as it is there.
+  const adopted = !r.published && m.isle ? await adopt(m.isle) : null
+  const before = r.published ?? adopted ?? undefined
   const where = before ? await sync(before, m) : {}
   const next = before ? before.version + 1 : 1
   const data: ArtifactPublished['data'] = {}
@@ -522,7 +527,8 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
   const body = (id?: string) => JSON.stringify({
     id, html: src.read('index.html')?.toString('utf8') ?? '', title: m.title ?? name, description: m.description,
     shortTitle: m.short_title, viewName: m.view_name, slots: m.slots ?? {}, bindings, visibility, note: opts.note || undefined,
-    parent: m.parent || undefined, instructions: src.read('instructions.md')?.toString('utf8'),
+    // an isle is never its own parent: when this updates the isle it came from, there is none to send
+    parent: [m.parent, m.isle].find((x) => x && x !== id), instructions: src.read('instructions.md')?.toString('utf8'),
   })
   const post = (id?: string) => call('/api/isles', { method: 'POST', headers: { 'content-type': 'application/json' }, body: body(id) })
   // Deleted on Prolifica since: publish it as a new page.
@@ -530,7 +536,7 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
   const ids = Object.values(data).map((d) => d.id)
   const earlier = out.isle.id === before?.id ? before?.history ?? (before ? [{ version: before.version, local: before.local ?? 0, at: before.at }] : []) : []
   let history = [...earlier.map((h) => ({ ...h, data: h.data ?? (h.version === before?.version ? Object.values(before.data).map((d) => d.id) : undefined) })), { version: out.isle.version, local, at: Date.now(), data: ids }]
-  if (opts.replace && before && out.isle.id === before.id) {
+  if (opts.replace && before && !adopted && out.isle.id === before.id) {
     const sq = await call(`/api/isles/${encodeURIComponent(before.id)}/squash`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from: before.version, to: out.isle.version, note: opts.note || null }) })
     out.isle = sq.isle
     history = [...history.slice(0, -2), { version: sq.isle.version, local, at: Date.now(), data: ids }]
@@ -550,6 +556,17 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
   r.published = { id: out.isle.id, url: `${ORIGIN}/i/${out.isle.id}`, version: out.isle.version, at: Date.now(), mtime: mtimeOf(dirOf(name)), visibility, data, local, history }
   saveRecord()
   return { published: r.published, madePublic: [...new Set([...madePublic, ...(out.madePublic ?? [])].map((d: { path?: string; id: string }) => d.path ?? d.id))] }
+}
+
+// The record of an isle pulled down from Prolifica, as if it had gone up from here: the next
+// publish is its next version, keeps its visibility, and finds its data there (sync, by the
+// slots) so data that did not change is not sent again. Null when it is gone or someone else's:
+// then the publish makes a new page, with the isle as its parent.
+async function adopt(id: string): Promise<ArtifactPublished | null> {
+  const there = await call(`/api/isles/${encodeURIComponent(id)}`).then((j) => j?.isle ?? j).catch(() => null)
+  const me = prolificaState()?.handle
+  if (!there || typeof there.version !== 'number' || !me || there.owner?.handle !== me) return null
+  return { id, url: `${ORIGIN}/i/${id}`, version: there.version, at: 0, mtime: 0, visibility: there.visibility ?? 'public', data: {}, history: [] }
 }
 
 // Change who can see the page on Prolifica, with no new version: what goes up is there already.
