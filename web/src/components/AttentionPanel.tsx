@@ -8,6 +8,7 @@ import { useState } from 'react'
 import { CheckIcon, ChevronIcon, CommentIcon, DashIcon, UndoIcon, XIcon } from './Icons.tsx'
 import { renderInline } from '../util.ts'
 import { withoutImages } from '../../../shared/images.ts'
+import type { Item } from '../../../shared/blocks.ts'
 
 const OPEN = new Set(['open', 'drafted', 'dismissing', 'completing'])
 
@@ -16,15 +17,16 @@ export function AttentionPanel({ sid, width, onHide }: { sid: string; width: num
   const toggleDone = () => { localStorage.setItem('codinger.panel.done', showDone ? '0' : '1'); setShowDone(!showDone) }
   const items = useItems(sid)
   const map = new Map(items.map((i) => [i.key, i]))
-  const open = items.filter((i) => OPEN.has(i.status))
+  // Critical items first.
+  const open = items.filter((i) => OPEN.has(i.status)).sort((a, b) => +isCritical(b) - +isCritical(a))
   // Newest message first; within a message, reading order.
   const msgs = [...new Set(items.map((i) => i.msg))].reverse()
   const done = msgs.flatMap((m) => items.filter((i) => i.msg === m && !OPEN.has(i.status)))
-  const waiting = open.filter((i) => i.status === 'open').length
+  const waiting = open.filter((i) => i.status === 'open')
   return (
     <aside className="attention" style={{ width }}>
       <div className="attention-top">
-        <span className="attention-head">Open {waiting > 0 && <span className="count">{waiting}</span>}</span>
+        <span className="attention-head">Open {waiting.length > 0 && <ItemCount items={waiting} />}</span>
         <button className="icon-btn" title="Hide" onClick={onHide}><XIcon size={13} /></button>
       </div>
       {!open.length && <div className="attention-empty muted">Nothing open</div>}
@@ -45,6 +47,36 @@ export function AttentionPanel({ sid, width, onHide }: { sid: string; width: num
   )
 }
 
+const isCritical = (i: Item) => i.kind === 'consider' && i.critical
+
+// The number of open items, on a pie of their kinds.
+export function ItemCount({ items }: { items: Item[] }) {
+  const critical = items.filter(isCritical).length, asks = items.filter((i) => i.kind === 'ask').length
+  return <span className="count pie" style={{ background: pieOf([['var(--bad)', critical], ['var(--blue)', asks], ['var(--warn)', items.length - critical - asks]]) }}>{items.length}</span>
+}
+
+// A pie of the open items by kind, in their colours (critical items red, questions blue, other
+// items yellow), with soft edges between the slices. oklab blends them through gray; oklch would go through green.
+function pieOf(parts: [string, number][]): string {
+  const shown = parts.filter(([, n]) => n > 0)
+  const total = shown.reduce((t, [, n]) => t + n, 0)
+  if (shown.length < 2) return shown[0]?.[0] ?? 'var(--blue)'
+  // The gradient starts in the middle of the first slice, so each edge between slices blends.
+  const sweeps = shown.map(([c, n]) => [c, (n / total) * 360] as const)
+  const half = sweeps[0][1] / 2
+  const blend = (s: number) => Math.min(30, s * 0.4)
+  const stops = [`${sweeps[0][0]} 0deg`]
+  let at = half
+  sweeps.forEach(([c, s], i) => {
+    const [next, ns] = sweeps[(i + 1) % sweeps.length]
+    at = i === 0 ? half : at + s
+    const b = Math.min(blend(s), blend(ns))
+    stops.push(`${c} ${at - b}deg`, `${next} ${at + b}deg`)
+  })
+  stops.push(`${sweeps[0][0]} 360deg`)
+  return `conic-gradient(from ${half}deg in oklab, ${stops.join(', ')})`
+}
+
 function PanelConsider({ sid, item }: { sid: string; item: TrackedItem }) {
   // Commenting happens on the item itself, so its margin card sits beside it.
   const comment = () => {
@@ -52,11 +84,11 @@ function PanelConsider({ sid, item }: { sid: string; item: TrackedItem }) {
     document.querySelector<HTMLButtonElement>(`[data-item="${CSS.escape(item.key)}"] > .consider-foot > .item-reply`)?.click()
   }
   return (
-    <div className={`panel-item consider st-${item.status}`}>
+    <div className={`panel-item consider st-${item.status}${isCritical(item) ? ' critical' : ''}`}>
       <div className="consider-head">
         <button className="link panel-title" onClick={() => revealItem(item.key)} dangerouslySetInnerHTML={{ __html: renderInline(item.label) }} />
         <span className="item-actions">
-          {item.status === 'open' && <button className="icon-btn" title="Dismiss" onClick={() => dismissItem(sid, item.key, item.label)}><XIcon size={13} /></button>}
+          {item.status === 'open' && !isCritical(item) && <button className="icon-btn" title="Dismiss" onClick={() => dismissItem(sid, item.key, item.label)}><XIcon size={13} /></button>}
           {(item.status === 'dismissing' || item.status === 'completing') && <button className="icon-btn pop-in" title="Undo" onClick={() => undismissItem(sid, item.key)}><UndoIcon size={14} /></button>}
         </span>
       </div>

@@ -127,8 +127,11 @@ export function commandOf(sec: Section): string {
 // Things in a message that want a response: questions and items to consider.
 // Ids match what the UI renders: asks by their id (or q1, q2…), items c1, c2…
 // done: the item is something to do, so it can be marked done (`done`, or it holds a <run>).
+// critical: the agent marked the item a big deal (`critical`), shown in red.
 // parent: the item to consider it sits in, if any.
-export type Item = ({ kind: 'ask'; id: string; label: string; ask: Ask } | { kind: 'consider'; id: string; label: string; done: boolean }) & { parent?: string }
+export type Item = ({ kind: 'ask'; id: string; label: string; ask: Ask } | { kind: 'consider'; id: string; label: string; done: boolean; critical: boolean }) & { parent?: string }
+
+export const isCritical = (sec: Section): boolean => 'critical' in sec.attrs
 
 export const isTask = (sec: Section): boolean => 'done' in sec.attrs || sec.body.some((s) => !('text' in s) && (s.kind === 'run' || isTask(s)))
 
@@ -147,7 +150,7 @@ export function itemsOf(text: string): Item[] {
         out.push({ kind: 'ask', id: a.id, label: a.question.split('\n')[0], ask: a, ...under })
       } else if (s.kind === 'consider') {
         const id = `c${++considers}`
-        out.push({ kind: 'consider', id, label: s.title || 'Item', done: isTask(s), ...under })
+        out.push({ kind: 'consider', id, label: s.title || 'Item', done: isTask(s), critical: isCritical(s), ...under })
         walk(s.body, id)
       } else walk(s.body, parent)
     }

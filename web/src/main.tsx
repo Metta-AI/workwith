@@ -41,6 +41,7 @@ function App() {
         <SignIn />
         <Update />
         <Restart />
+        <Reload />
         <CoordinationAsk />
         {!st.connected && !st.sessions.length ? <div className="empty">Connecting to the Codinger server…</div>
           : st.page === 'artifacts' ? <ArtifactsView />
@@ -97,6 +98,39 @@ function Update() {
           <button className="primary" onClick={agent}>Ask an agent to update</button>
         </>}
       {u.state !== 'updating' && <button className="link" onClick={close}>Not now</button>}
+    </div>
+  )
+}
+
+// Where this page came from serves a newer one: the machine's server after a restart, the hub
+// after a deploy (web.codinger.app), or a machine's page through the hub (/m/<machine>/). Its
+// index.html names another main script. Reload to use it: drafts and the message box are kept
+// in localStorage, so a reload loses nothing.
+const OWN_BUILD = new URL(import.meta.url).pathname.split('/').pop()
+let newer = false
+async function checkBuild() {
+  if (import.meta.env.DEV || newer || document.hidden) return
+  try {
+    const html = await (await fetch((window as { __base?: string }).__base || '/', { cache: 'no-store' })).text()
+    const build = /\/assets\/(main-[\w-]+\.js)/.exec(html)?.[1]
+    if (build && build !== OWN_BUILD) { newer = true; changed() }
+  } catch { /* offline: the next check tries again */ }
+}
+function Reload() {
+  const st = useStore()
+  // When the server comes back (a restart), when the page shows again, and every ten minutes.
+  useEffect(() => { if (st.connected) void checkBuild() }, [st.connected])
+  useEffect(() => {
+    const t = setInterval(() => void checkBuild(), 10 * 60_000)
+    const seen = () => void checkBuild()
+    document.addEventListener('visibilitychange', seen)
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', seen) }
+  }, [])
+  if (!newer) return null
+  return (
+    <div className="signin restart">
+      <span>Codinger has a newer version of this page. Reload to use it.</span>
+      <span className="banner-btns"><button className="primary" onClick={() => location.reload()}>Reload</button></span>
     </div>
   )
 }

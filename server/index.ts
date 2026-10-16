@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { InboxItem, Part, PermissionMode, ServerMsg, SessionMeta, Settings, Usage } from '../shared/types.ts'
-import { inboxLabel, inboxParts, openItemsOf } from '../shared/inbox.ts'
+import { criticalUnanswered, inboxLabel, inboxParts, openItemsOf } from '../shared/inbox.ts'
 import { execFile, execFileSync, spawn } from 'node:child_process'
 import os from 'node:os'
 import { Session, slashCommand, type Hooks, type Launch, type SlashCommand } from './session.ts'
@@ -34,7 +34,7 @@ import { configsFor, probe, serversFor } from './mcpservers.ts'
 import { DEFAULT_CACHE_GUARD, cacheLeft, knownTtl } from '../shared/cache.ts'
 import { AGENTS_FILE, agentsPrompt, readAgentsMd, writeAgentsMd } from './agentsmd.ts'
 import { handleMcp, type Tool } from './mcp.ts'
-import { MAIL_TOOLS, flushMail, mailTools, release, startMail, stepped, turnEnded, userWrote } from './mail.ts'
+import { MAIL_TOOLS, flushMail, mailTools, release, startMail, stepped, takeMail, turnEnded, userWrote } from './mail.ts'
 import { AUTOPILOT_MODES, amount, nudge, startAutopilot, usedOf, verdict } from './autopilot.ts'
 import { blame, initFileHistory, moveHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
 import { CLAUDE, authState, cancelLogin, childEnv, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
@@ -486,7 +486,7 @@ function taskTools(id: string): Tool[] {
 function board(): string {
   const lines = metas().filter((m) => m.kind === 'worker' && !m.archived).map((m) => {
     const ctx = Math.round((m.context.used / (m.context.window || 1)) * 100)
-    return `- ${m.id} "${m.title}" ${m.cwd} status=${m.status} ctx=${ctx}%${m.pendingAsks ? ` open_questions=${m.pendingAsks}` : ''}${m.parentId ? ` parent=${m.parentId}` : ''}${m.inbox.length ? ` drafts_waiting=${m.inbox.length}` : ''}`
+    return `- ${m.id} "${m.title}" ${m.cwd} status=${m.status} ctx=${ctx}%${m.pendingAsks ? ` open_questions=${m.pendingAsks}` : ''}${m.pendingCritical ? ` critical=${m.pendingCritical}` : ''}${m.parentId ? ` parent=${m.parentId}` : ''}${m.inbox.length ? ` drafts_waiting=${m.inbox.length}` : ''}`
   })
   return `<board>\n${lines.length ? lines.join('\n') : '(no worker sessions)'}\n</board>`
 }
@@ -504,6 +504,8 @@ function holdReasons(s: Session, now = false, approved = false): string[] {
   const left = cacheLeft(s.meta, Date.now(), knownTtl(metas()))
   const why: string[] = []
   if (guard && left != null && left <= 0 && s.meta.context.used >= guard) why.push('its prompt cache has expired, so a send would write its whole context to the cache again; that is the user\'s call')
+  // Not even send_now: nothing goes in before the user's next message there.
+  if (s.meta.pendingCritical) why.push('Claude left an item marked critical for the user, so nothing goes in before the user\'s next message there')
   if (now) return why
   if (!settings.leadAutoSend && !approved) why.push('auto-send is off')
   if (s.meta.status === 'working' || s.meta.status === 'permission') why.push('it is mid-turn (the drafts go when the turn ends, if nothing else holds them)')
@@ -529,8 +531,10 @@ type Draft = Omit<InboxItem, 'id' | 'from' | 'ts'>
 
 function deliver(s: Session, drafts: Draft[], opts: { now?: boolean; urgent?: boolean } = {}): string {
   const id = s.meta.id
+  // An item marked critical holds everything, urgent or not, for the user's next message.
+  const critical = !!s.meta.pendingCritical
   // Urgent: stop the worker and send just this message. The rest wait as usual.
-  if (opts.urgent) {
+  if (opts.urgent && !critical) {
     const text = drafts.filter((d) => !d.kind || d.kind === 'text').map((d) => d.text.trim()).filter(Boolean).join('\n\n')
     if (!text) throw new Error('An urgent send needs a message')
     if (s.meta.status === 'working' || s.meta.status === 'permission') s.interrupt()
@@ -546,8 +550,8 @@ function deliver(s: Session, drafts: Draft[], opts: { now?: boolean; urgent?: bo
   const why = holdReasons(s, opts.now)
   if (!why.length) { flushInbox(s); return `${opts.urgent ? 'Sent the urgent message; then sent' : 'Sent'} the drafts to ${id}.` }
   const n = s.meta.inbox.length
-  const ask = !opts.now && why.some((w) => w.startsWith('Claude left')) && !why[0].startsWith('its prompt cache')
-  return `Held in ${id}'s reply tray (${n} draft${n === 1 ? '' : 's'} there now); they go with the user's next message there. Held because: ${why.join('; ')}.`
+  const ask = !opts.now && !critical && why.some((w) => w.startsWith('Claude left')) && !why[0].startsWith('its prompt cache')
+  return `${critical && (opts.urgent || opts.now) ? `Not sent now: ${id} has an item marked critical open for the user. The only delivery there is with the user's next message. ` : ''}Held in ${id}'s reply tray (${n} draft${n === 1 ? '' : 's'} there now); they go with the user's next message there. Held because: ${why.join('; ')}.`
     + (ask ? ' If this should go now anyway, ask the user; with their yes, call again with send_now.' : '')
 }
 
@@ -726,7 +730,7 @@ const tools: Tool[] = [
     run: ({ include_archived }) => metas().filter((m) => m.kind === 'worker' && (include_archived || !m.archived)).map((m) => ({
       id: m.id, title: m.title, cwd: m.cwd, parent: m.parentId, status: m.status,
       context: `${Math.round(m.context.used / 1000)}k of ${Math.round(m.context.window / 1000)}k`,
-      open_items: openItemsOf(get(m.id).getEvents()).map((i) => ({ id: i.id, kind: i.kind, label: i.label.slice(0, 120), ...(i.kind === 'ask' && i.ask.options.length ? { choices: i.ask.options } : {}) })),
+      open_items: openItemsOf(get(m.id).getEvents()).map((i) => ({ id: i.id, kind: i.kind, label: i.label.slice(0, 120), ...(i.kind === 'ask' && i.ask.options.length ? { choices: i.ask.options } : {}), ...(i.kind === 'consider' && i.critical ? { critical: true } : {}) })),
       your_drafts: m.inbox.map(inboxLabel), user_drafting: !!m.drafting, last_said: m.lastText.slice(-240),
     })),
   },
@@ -759,7 +763,7 @@ const tools: Tool[] = [
             },
           },
         },
-        send_now: { type: 'boolean', description: 'Send now, past open questions, a reply the user is writing, or auto-send being off. Only with the user\'s yes, asked in this conversation.' },
+        send_now: { type: 'boolean', description: 'Send now, past open questions, a reply the user is writing, or auto-send being off. Only with the user\'s yes, asked in this conversation. Not past an item marked critical: nothing goes in before the user\'s next message there.' },
         urgent: { type: 'boolean', description: 'Stop the worker\'s turn and send `message` at once. Very rare: only to prevent harm the user would not want to wait on, such as a commit or a deletion about to go wrong.' },
       },
     },
@@ -1339,7 +1343,12 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   const reopen = (s: Session) => { if (s.meta.archived) { s.meta.archived = false; metaChanged() } }
   switch (b) {
     case 'send': {
-      const p: Part[] = Array.isArray(body.parts) ? body.parts : []
+      let p: Part[] = Array.isArray(body.parts) ? body.parts : []
+      // An item marked critical needs a comment with text, or Done, before anything goes (a page with old code may not check).
+      const missing = criticalUnanswered(s.getEvents(), p)
+      if (missing.length) throw new HttpError(409, `Comment on the critical item first: "${missing[0].label.slice(0, 80)}"`)
+      // Messages from other sessions that waited on it go in with this one.
+      if (s.meta.pendingCritical) p = [...p, ...takeMail(s)]
       // The lead's drafts that went with your reply.
       if (Array.isArray(body.inbox) && body.inbox.length) { s.meta.inbox = s.meta.inbox.filter((i) => !body.inbox.includes(i.id)); metaChanged() }
       reopen(s)

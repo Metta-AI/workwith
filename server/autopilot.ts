@@ -66,6 +66,7 @@ export function verdict(ap: Autopilot, m: SessionMeta, ev: Event[], usage: Usage
   ap.used = usedOf(ap, m, usage)
   if (!AUTOPILOT_MODES.includes(m.permissionMode)) return 'the permission mode is no longer auto'
   if (error) return `the turn ended with an error${m.error ? `: ${m.error.slice(0, 200)}` : ''}`
+  if (m.pendingCritical) return 'Claude left an item marked critical for the user'
   const turn = lastTurn(ev)
   const stop = autopilotStop(turn.text)
   if (stop != null) return `Claude stopped${stop ? `: ${stop}` : ''}`

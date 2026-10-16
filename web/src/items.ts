@@ -34,7 +34,8 @@ export function foldItems(events: Event[]): ItemFold {
   return f
 }
 
-export function draftStatus(sid: string, key: string): ItemStatus | null {
+// critical: only a comment with text counts as a reply to the item, not a reaction.
+export function draftStatus(sid: string, key: string, critical = false): ItemStatus | null {
   // Set aside or done wins over a reply, which can come first (a reaction in the item).
   for (const d of draftsOf(sid)) {
     if (d.kind === 'dismiss' && d.key === key) return 'dismissing'
@@ -42,7 +43,7 @@ export function draftStatus(sid: string, key: string): ItemStatus | null {
   }
   for (const d of draftsOf(sid)) {
     if (d.kind === 'answer' && d.askKey === key && hasContent(d)) return 'drafted'
-    if (d.kind === 'note' && d.itemKey === key && hasContent(d)) return 'drafted'
+    if (d.kind === 'note' && d.itemKey === key && hasContent(d) && (!critical || (!d.reaction && /[\p{L}\p{N}]/u.test(d.text)))) return 'drafted'
   }
   // A draft of the lead's counts as one of yours.
   const i = inboxOf(sid).find((x) => x.key === key)
@@ -61,12 +62,13 @@ export function trackItems(sid: string, events: Event[], fold: ItemFold): Tracke
       for (const it of itemsOf(b.text)) {
         const key = `${msg}:${it.id}`
         const reply = fold.replies.get(key)
+        const critical = it.kind === 'consider' && it.critical
         const status: ItemStatus = fold.done.has(key) ? 'completed'
           : reply ? 'answered'
           // A reply drafted after the dismissal went shows as one.
-          : fold.dismissed.has(key) ? draftStatus(sid, key) ?? 'dismissed'
+          : fold.dismissed.has(key) ? draftStatus(sid, key, critical) ?? 'dismissed'
           : idx < lastUser ? 'skipped'
-          : draftStatus(sid, key) ?? 'open'
+          : draftStatus(sid, key, critical) ?? 'open'
         out.push({ ...it, key, msg, status, reply })
       }
     })

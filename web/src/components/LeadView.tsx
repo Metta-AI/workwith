@@ -26,7 +26,7 @@ export function LeadView({ id }: { id: string }) {
     })
     setTimeout(() => setSentNote(null), 8000)
   }
-  const needsYou = sessions.filter((s) => s.kind === 'worker' && !s.archived && ['permission', 'asking', 'waiting', 'error'].includes(s.status))
+  const needsYou = sessions.filter((s) => s.kind === 'worker' && !s.archived && (['permission', 'asking', 'waiting', 'error'].includes(s.status) || !!s.pendingCritical))
 
   return (
     <div className="lead">
@@ -40,7 +40,7 @@ export function LeadView({ id }: { id: string }) {
             <div className="board-group-head" title={cwd}>{shortPath(cwd)}</div>
             <div className="cards">
               {treeOf(list).map(({ s, depth }) => (
-                <button key={s.id} className={`card st-${s.status}`} style={{ marginLeft: depth * 18 }} onClick={() => select(s.id)}>
+                <button key={s.id} className={`card st-${s.status}${s.pendingCritical ? ' critical' : ''}`} style={{ marginLeft: depth * 18 }} onClick={() => select(s.id)}>
                   <div className="card-top">
                     <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={34} child={!!s.parentId} />
                     <div>

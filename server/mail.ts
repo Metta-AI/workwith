@@ -109,14 +109,23 @@ function sent(to: Session, m: Mail, reopened = false): string {
   return (reopened ? `Took ${t} out of the archive: it resumes with its whole context. ` : '') + (
     m.held ? `Held for the user's OK as \`${m.id}\`: ${t} got ${MAX_RUN} messages in a row from you, and the user wrote in neither session since. Ask the user to press Send on it in ${t}.`
     : m.step ? `Sent to ${t} as \`${m.id}\`. It goes in at your next tool call, or when your turn ends: then it also tells ${t} that you are idle.`
+    : to.meta.pendingCritical && to.meta.mail?.some((x) => x.id === m.id) ? `Waiting as \`${m.id}\`: ${t} has an item marked critical open for the user. Nothing goes in before the user's next message there; yours goes in with it. This is the only delivery there is until then.`
     : to.meta.mail?.some((x) => x.id === m.id) ? `Queued as \`${m.id}\`: ${t} is in the middle of a turn, and gets it when the turn ends.`
     : `Delivered to ${t} as \`${m.id}\`.`)
 }
 
 // Send the messages waiting for a session, in one turn, if it is between turns.
+// An item marked critical holds them for the user's next message there (takeMail).
 export function flushMail(s: Session) {
+  if (busy(s.meta) || s.meta.archived || s.meta.pendingCritical) return
+  const parts = takeMail(s)
+  if (parts.length) s.send(parts, { from: 'mail', ...ctx.hidden(s, parts) })
+}
+
+// The messages ready to go in, taken off the session's list.
+export function takeMail(s: Session): Part[] {
   const ready = (s.meta.mail ?? []).filter((m) => !m.held && !m.step)
-  if (!ready.length || busy(s.meta) || s.meta.archived) return
+  if (!ready.length) return []
   s.meta.mail = s.meta.mail!.filter((m) => m.held || m.step)
   const run = { ...s.meta.mailRun }
   for (const m of ready) if (!m.idle) run[m.from] = (run[m.from] ?? 0) + 1
@@ -128,7 +137,7 @@ export function flushMail(s: Session) {
     return { kind: 'mail', text: m.text, id: m.id, from: m.from, title: f?.title ?? m.title, ...(rel ? { relation: rel } : {}), ...(m.replyTo ? { replyTo: m.replyTo } : {}), ...(m.idle ? { idle: true } : {}), ...(m.endTurn ? { endTurn: true } : {}) }
   })
   ctx.changed()
-  s.send(parts, { from: 'mail', ...ctx.hidden(s, parts) })
+  return parts
 }
 
 // A child's messages to its parent that wait for its next step.
@@ -234,7 +243,7 @@ export function mailTools(id: string): Tool[] {
     },
     {
       name: 'send_message',
-      description: 'Send a message to another session. It goes in at once if the session is between turns, or when its turn ends. Any session takes your messages, unless it closed its inbox with set_inbox (see list_sessions); your parent and your children always do. A message to your archived child takes it out of the archive. To answer a message you got, use reply.',
+      description: 'Send a message to another session. It goes in at once if the session is between turns, or when its turn ends. A session with an item marked critical for the user takes nothing before the user\'s next message there: yours goes in with it. Any session takes your messages, unless it closed its inbox with set_inbox (see list_sessions); your parent and your children always do. A message to your archived child takes it out of the archive. To answer a message you got, use reply.',
       inputSchema: { type: 'object', required: ['to', 'message'], properties: { to: { type: 'string', description: 'The session id' }, message: { type: 'string' } } },
       run: ({ to, message }) => {
         const m = me().meta, s = session(to)

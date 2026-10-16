@@ -130,16 +130,18 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
       it.card.style.top = `${Math.max(0, top[i])}px`
       bottom = Math.max(bottom, Math.max(0, top[i]) + it.h)
     })
-    // Cards hanging below the last message make room for themselves.
-    const min = bottom ? `${bottom + 40}px` : ''
+    // Cards hanging below the last message make room for themselves, with space to spare.
+    const min = bottom ? `${bottom + 96}px` : ''
     if (box.style.minHeight !== min) box.style.minHeight = min
   }
   const layoutRef = useRef(layout)
   layoutRef.current = layout
 
   // The card you write in stays in view as it grows, and when the keyboard comes up: the transcript scrolls to show all of it.
+  // So does a card you open.
   const keepInView = () => {
     const card = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('.note-card')
+      ?? (openRef.current ? layer.current?.querySelector<HTMLElement>(`.note-card[data-id="${CSS.escape(openRef.current)}"]`) : null)
     const sc = inner.current?.closest<HTMLElement>('.transcript')
     if (!card || !sc || !layer.current?.contains(card)) return
     const over = card.getBoundingClientRect().bottom + 8 - Math.min(sc.getBoundingClientRect().bottom, visibleBox().bottom)
@@ -155,6 +157,7 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
     return () => { ro.disconnect(); visualViewport?.removeEventListener('resize', keepInView) }
   }, [notes.length, gutter])
   useEffect(() => { layoutRef.current() }, [events, open, peek])
+  useEffect(() => { if (open) keepInView() }, [open])
 
   // A click on a highlight puts the caret in its card (and without a gutter, shows the card).
   useEffect(() => {

@@ -6,7 +6,7 @@ import { fatigue, kTokens } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { RichInput } from './Inputs.tsx'
 import { Transcript } from './Transcript.tsx'
-import { AttentionPanel } from './AttentionPanel.tsx'
+import { AttentionPanel, ItemCount } from './AttentionPanel.tsx'
 import { ArtifactIcon, ArtifactPane, hasPreview } from './Artifacts.tsx'
 import { FilesPanel, filesOf } from './FilesPanel.tsx'
 import { revealItem, useItems } from '../items.ts'
@@ -375,6 +375,8 @@ function DismissedChip({ sid }: { sid: string }) {
   )
 }
 
+const resolve = (n: number) => `Resolve ${n} ${n === 1 ? 'issue' : 'issues'} ↑`
+
 export function Composer({ m, attachRef }: { m: SessionMeta; attachRef?: React.RefObject<((files: File[]) => void) | null> }) {
   useStore()
   const c = composerOf(m.id)
@@ -388,6 +390,8 @@ export function Composer({ m, attachRef }: { m: SessionMeta; attachRef?: React.R
   // Sending while questions or items are still open warns once; sending again
   // dismisses the rest.
   const open = useItems(m.id).filter((i) => i.status === 'open')
+  // An item marked critical has to get a comment with text (or Done) before anything goes, a slash command too.
+  const critical = open.filter((i) => i.kind === 'consider' && i.critical)
   const [warned, setWarned] = useState(false)
   useEffect(() => { if (!open.length) setWarned(false) }, [open.length])
   useEffect(() => setWarned(false), [m.id])
@@ -400,6 +404,7 @@ export function Composer({ m, attachRef }: { m: SessionMeta; attachRef?: React.R
   const costly = cache.blocked && (!isCommand || /^\/compact\b/.test(c.text.trim()))
   const [nudge, setNudge] = useState(0)
   const send = async (force = false) => {
+    if (critical.length) { revealItem(critical[0].key); return }
     if (!n || sending) return
     if (costly && !force) { setNudge((x) => x + 1); return }
     if (!isCommand && open.length && !warned) { setWarned(true); revealItem(open[0].key); return }
@@ -455,8 +460,8 @@ export function Composer({ m, attachRef }: { m: SessionMeta; attachRef?: React.R
           uploadDir={m.cwd}
           attachRef={attachRef}
         />
-        <button className="primary send" disabled={!n || sending} onClick={() => send()} title={costly ? 'Prompt cache expired: use Send anyway above' : undefined}>
-          {sending ? 'Sending…' : isCommand ? 'Run' : warned && open.length ? 'Send anyway' : n > 1 ? `Send ${n}` : 'Send'}
+        <button className={`primary send${critical.length ? ' critical' : ''}`} disabled={(!n && !critical.length) || sending} onClick={() => send()} title={costly ? 'Prompt cache expired: use Send anyway above' : undefined}>
+          {sending ? 'Sending…' : critical.length ? resolve(critical.length) : isCommand ? 'Run' : open.length && n ? (warned ? 'Send anyway' : resolve(open.length)) : n > 1 ? `Send ${n}` : 'Send'}
         </button>
       </div>
     </div>
@@ -534,7 +539,7 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
         {extra}
         {canPreview && <button className={`panel-toggle icon-tall${preview ? ' on' : ''}`} title="Preview" onClick={togglePreview}><ArtifactIcon size={15} /></button>}
         {files > 0 && <button className={`panel-toggle icon-tall${filesOn ? ' on' : ''}`} title="Attached files" onClick={toggleFiles}><ClipIcon size={15} /></button>}
-        {items.length > 0 && <button className={`panel-toggle icon-tall${panel ? ' on' : ''}`} title="Questions and items" onClick={togglePanel}><PanelIcon size={15} />{open > 0 && <span className="count">{open}</span>}</button>}
+        {items.length > 0 && <button className={`panel-toggle icon-tall${panel ? ' on' : ''}`} title="Questions and items" onClick={togglePanel}><PanelIcon size={15} />{open > 0 && <ItemCount items={items.filter((i) => i.status === 'open')} />}</button>}
       </>} />
       <div className={`session-body${preview && canPreview && wide ? ' preview-wide' : ''}`}>
         <DropZone m={m}>

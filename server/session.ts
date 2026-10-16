@@ -338,6 +338,7 @@ export class Session {
     this.outstanding++
     this.meta.unread = false
     this.meta.pendingAsks = 0
+    this.meta.pendingCritical = 0
     this.meta.error = null
     this.record('user', { parts, uuid, csid: this.meta.claudeSessionId, ...(from ? { from } : {}), ...(tasks?.length ? { tasks } : {}) })
     this.refresh()
@@ -386,7 +387,7 @@ export class Session {
     writeEvents(m.id, ev)
     m.error = null
     m.unread = false
-    m.pendingAsks = this.openAsks()
+    Object.assign(m, this.openAsks())
     const last = ev.findLast((x) => x.t === 'assistant' && x.blocks.some((b) => b.type === 'text'))
     m.lastText = last?.t === 'assistant' ? overview(last.blocks.flatMap((b) => b.type === 'text' ? [b.text] : []).join('\n')) : ''
     this.hooks.truncate(this, seq)
@@ -401,7 +402,7 @@ export class Session {
     this.seqFrom = this.nextSeq()
     this.events = []
     writeEvents(m.id, [])
-    Object.assign(m, { claudeSessionId: randomUUID(), started: false, resumeAt: null, context: { used: 0, window: m.context.window }, error: null, unread: false, pendingAsks: 0, lastText: '' })
+    Object.assign(m, { claudeSessionId: randomUUID(), started: false, resumeAt: null, context: { used: 0, window: m.context.window }, error: null, unread: false, pendingAsks: 0, pendingCritical: 0, lastText: '' })
     this.hooks.truncate(this, 0)
     this.notice(note)
     this.refresh()
@@ -574,7 +575,7 @@ export class Session {
         if (msg.num_turns > 0 || msg.is_error) {
           this.record('result', { durationMs: msg.duration_ms ?? 0, isError: !!msg.is_error, ...(msg.is_error ? { text: m.error! } : {}) })
           m.unread = true
-          m.pendingAsks = this.openAsks()
+          Object.assign(m, this.openAsks())
         }
         this.hooks.delta(this, '', true)
         this.refresh()
@@ -594,6 +595,7 @@ export class Session {
       case 'conversation_reset': {
         m.context.used = 0
         m.pendingAsks = 0
+        m.pendingCritical = 0
         this.notice('Conversation cleared. Claude starts fresh from here.')
         this.refresh()
         return
@@ -631,15 +633,15 @@ export class Session {
   }
 
   // Questions and items to consider in Claude's text since the user last spoke.
-  private openAsks(): number {
+  private openAsks(): { pendingAsks: number; pendingCritical: number } {
     const ev = this.getEvents()
-    let n = 0
+    let n = 0, critical = 0
     for (let i = ev.length - 1; i >= 0; i--) {
       const e = ev[i]
       if (e.t === 'user') break
-      if (e.t === 'assistant') for (const b of e.blocks) if (b.type === 'text') n += itemsOf(b.text).length
+      if (e.t === 'assistant') for (const b of e.blocks) if (b.type === 'text') for (const it of itemsOf(b.text)) { n++; if (it.kind === 'consider' && it.critical) critical++ }
     }
-    return n
+    return { pendingAsks: n, pendingCritical: critical }
   }
 
   // A plain-text rendering of the recent transcript, for the lead agent.

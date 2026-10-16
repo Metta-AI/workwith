@@ -15,9 +15,12 @@ import type { Page } from './SettingsDialog.tsx'
 import { shortPath } from './DirPicker.tsx'
 import { NEEDS_YOU } from '../favicon.tsx'
 
-// Sessions that need you come first, then the ones at work, then the finished ones.
-// A session nested under another lifts it to its own tier.
-const own = (s: SessionMeta) => s.status === 'working' ? 1 : s.status === 'idle' || s.status === 'new' ? 2 : 0
+// A session that stopped with an error, or that left an item marked critical: shown in red.
+const alertOf = (s: SessionMeta) => s.status === 'error' || !!s.pendingCritical
+
+// Sessions in alert come first, then the others that need you, then the ones at work, then the
+// finished ones. A session nested under another lifts it to its own tier.
+const own = (s: SessionMeta) => alertOf(s) ? -1 : s.status === 'working' ? 1 : s.status === 'idle' || s.status === 'new' ? 2 : 0
 function tiers(list: SessionMeta[], same = (a: SessionMeta, b: SessionMeta) => a.cwd === b.cwd) {
   const t = new Map(list.map((s) => [s.id, own(s)]))
   const byId = new Map(list.map((s) => [s.id, s]))
@@ -33,7 +36,7 @@ function tiers(list: SessionMeta[], same = (a: SessionMeta, b: SessionMeta) => a
 }
 // On a shut machine or group: how many sessions in it wait on you, as the tab's icon counts them.
 function NeedBadge({ list }: { list: SessionMeta[] }) {
-  const n = list.filter((s) => s.kind === 'worker' && !s.archived && NEEDS_YOU.includes(s.status)).length
+  const n = list.filter((s) => s.kind === 'worker' && !s.archived && (NEEDS_YOU.includes(s.status) || alertOf(s))).length
   return n > 0 ? <span className="need-badge">{Math.min(n, 99)}</span> : null
 }
 
@@ -349,10 +352,10 @@ function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: s
     const shutKey = `group:${machine}:${g.id}`
     const shut = st.collapsed.includes(shutKey)
     const sg = g.id ? sortable(`${machine}|groups`, g.id) : null
-    const needs = list.filter((s) => own(s) === 0)
+    const needs = list.filter((s) => own(s) <= 0)
     const rows = shut ? [] : all ? list : needs
     // The rest in the order they came, so that a critter keeps its place in the line.
-    const rest = all ? [] : list.filter((s) => own(s) !== 0).sort((a, b) => a.createdAt - b.createdAt)
+    const rest = all ? [] : list.filter((s) => own(s) > 0).sort((a, b) => a.createdAt - b.createdAt)
     // Shown as a tree, a session and those nested under it move as one.
     const ids = new Set(rows.map((x) => x.id))
     const nest = all && !shut
@@ -387,7 +390,7 @@ function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: s
               const d = sortable(`${machine}|dock`, s.id)
               const parent = s.parentId && m?.sessions.find((x) => x.id === s.parentId)
               return (
-                <button key={s.id} {...d} className={`face${st.selected === s.id ? ' active' : ''}${d.className}`}
+                <button key={s.id} {...d} className={`face${st.selected === s.id ? ' active' : ''}${alertOf(s) ? ' alert' : ''}${d.className}`}
                   data-tip={`${s.title}${parent ? ` (from ${parent.title})` : ''} · ${s.compacting ? 'compacting' : STATUS_LABEL[s.status]}`} data-tip-at="right" data-tip-touch
                   onClick={() => select(s.id)} onPointerDown={(e) => start(e, `${machine}|dock`, s.id, g.id, true)} onContextMenu={(e) => onMenu(e, rowItems(s))}>
                   <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={22} child={!!s.parentId} />
@@ -421,12 +424,13 @@ function GroupName({ name, onDone }: { name: string; onDone(name: string): void 
 function Row({ s, depth = 0, active, label, onPointerDown, onMenu }: { s: SessionMeta; depth?: number; active: boolean; label?: string; onPointerDown?(e: React.PointerEvent): void; onMenu?(e: React.MouseEvent, items: MenuItem[]): void }) {
   const parent = useStore().sessions.find((x) => x.id === s.parentId)
   return (
-    <button className={`row${active ? ' active' : ''}${s.unread ? ' unread' : ''}`} style={{ paddingLeft: 10 + depth * 16 }} onClick={() => select(s.id)} onPointerDown={onPointerDown} onContextMenu={onMenu && ((e) => onMenu(e, rowItems(s)))}>
+    <button className={`row${active ? ' active' : ''}${s.unread ? ' unread' : ''}${alertOf(s) ? ' alert' : ''}${s.status === 'error' ? ' error' : ''}`} style={{ paddingLeft: 10 + depth * 16 }} onClick={() => select(s.id)} onPointerDown={onPointerDown} onContextMenu={onMenu && ((e) => onMenu(e, rowItems(s)))}>
       <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={26} title={STATUS_LABEL[s.status]} child={!!s.parentId} />
       <span className="row-main">
         <span className="row-title">{machineOf(s.id) !== LOCAL && <GlobeIcon size={11} className="row-remote" title={`On ${machineOf(s.id)}`} />}{label ?? s.title}{parent && <span className="row-from"> (from {parent.title})</span>}</span>
         <span className="row-sub">{s.compacting ? 'compacting' : STATUS_LABEL[s.status]} · {timeAgo(s.lastActivity)}<SpendHint s={s} /><CacheHint s={s} /></span>
       </span>
+      {!!s.pendingCritical && <span className="count critical" data-tip="Critical items" data-tip-at="right">{s.pendingCritical}</span>}
       {s.inbox.length > 0 && <span className="count" title="Drafts from the lead">{s.inbox.length}</span>}
       {s.kind === 'worker' && !s.archived && (
         <span className="row-close" role="button" title="Archive session" onClick={(e) => { e.stopPropagation(); void closeSession(s.id) }}><XIcon size={12} /></span>

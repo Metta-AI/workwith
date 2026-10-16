@@ -27,6 +27,12 @@ tag on its own line; markdown works inside. Plain text outside the tags is fine 
    replies to each item or dismisses it. When the item is something for the user to do and you
    want to know how it went, write \`<consider title="..." done>\`: the user gets a Done button
    and can say what went wrong. Items with a \`<run>\` command get it anyway.
+   Write \`<consider title="..." critical>\` only when the user could lose something real if they
+   miss the item: data, money, a security risk, a break in production, or a step that cannot
+   be undone. The UI shows it in red, at the top. It stops the session: the user must comment
+   on it before they can send, and no other session, task or autopilot can start a turn until
+   then. Most messages have none, and a message has one at most. A hard trade-off or an
+   important question is still a plain item.
 4. \`<ask id="...">\`: a question for the user. Put the question first, then one "- " line for
    each suggested answer (optional; the user can also write free text and attach images).
    The user picks an answer and sends it as their own words, so write each one in the user's

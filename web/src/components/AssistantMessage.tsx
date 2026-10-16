@@ -11,7 +11,7 @@ import { flushSync } from 'react-dom'
 import type { Token, Tokens } from 'marked'
 import DOMPurify from 'dompurify'
 import { parseAskBody, type Ask } from '../../../shared/asks.ts'
-import { askOf, commandOf, draftOf, isTask, segmentsOf, type Segment } from '../../../shared/blocks.ts'
+import { askOf, commandOf, draftOf, isCritical, isTask, segmentsOf, type Segment } from '../../../shared/blocks.ts'
 import type { Anchor } from '../../../shared/types.ts'
 import { holdKeyboard, marked, renderInline, renderText, served } from '../util.ts'
 import { anchorFromRange, mediaIn, passageQuote, rangesFor, setHighlights } from '../anchoring.ts'
@@ -54,7 +54,7 @@ function useFold(status: string, compact?: boolean) {
 const AsideMark = ({ sid, itemKey, status }: { sid: string; itemKey: string; status: string }) =>
   status === 'dismissing' ? <button className="icon-btn pop-in" title="Undo" onClick={() => undismissItem(sid, itemKey)}><UndoIcon size={14} /></button> : <Done status={status} />
 
-type SectionPiece = { kind: 'answer' | 'details' | 'consider'; title: string; id: string; pieces: Piece[]; block: number; closed: boolean; task: boolean }
+type SectionPiece = { kind: 'answer' | 'details' | 'consider'; title: string; id: string; pieces: Piece[]; block: number; closed: boolean; task: boolean; critical: boolean }
 type Piece =
   | { kind: 'html'; html: string; block: number }
   | { kind: 'ask'; ask: Ask; block: number }
@@ -70,7 +70,7 @@ function piecesOf(text: string): Piece[] {
       if (s.kind === 'draft') return [{ kind: 'ask', block: base++, ask: draftOf(s, drafts++) }]
       if (s.kind === 'run') return [{ kind: 'run', block: base++, title: s.title, command: commandOf(s), closed: s.closed }]
       const id = s.kind === 'consider' ? `c${++considers}` : ''
-      return [{ kind: s.kind, title: s.title, id, block: base++, closed: s.closed, task: s.kind === 'consider' && isTask(s), pieces: walk(s.body) }]
+      return [{ kind: s.kind, title: s.title, id, block: base++, closed: s.closed, task: s.kind === 'consider' && isTask(s), critical: s.kind === 'consider' && isCritical(s), pieces: walk(s.body) }]
     }
     const tokens = marked.lexer(s.text)
     // marked.parse would run the extensions' token pass (code highlighting); lexer + parser don't.
@@ -634,11 +634,11 @@ function ConsiderCard({ c, p }: { c: Ctx; p: SectionPiece }) {
   }
 
   return (
-    <div className={`consider st-${status}${fold.cls}`} data-item={key}>
+    <div className={`consider st-${status}${p.critical ? ' critical' : ''}${fold.cls}`} data-item={key}>
       <div className="consider-head">
         {fold.chevron}
         <div data-block={p.block} className="md-block consider-title" onClick={fold.onTitle} dangerouslySetInnerHTML={{ __html: renderInline(title) }} />
-        {status === 'open' && !ro && <span className="item-actions"><button className="icon-btn" title="Dismiss" onClick={() => dismissItem(c.sid, key, title)}><XIcon size={13} /></button></span>}
+        {status === 'open' && !ro && !p.critical && <span className="item-actions"><button className="icon-btn" title="Dismiss" onClick={() => dismissItem(c.sid, key, title)}><XIcon size={13} /></button></span>}
         {(status === 'dismissing' || status === 'completing') && <span className="item-actions"><button className="icon-btn pop-in" title="Undo" onClick={() => undismissItem(c.sid, key)}><UndoIcon size={14} /></button></span>}
         <Done status={status} />
       </div>
