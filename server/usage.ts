@@ -328,8 +328,10 @@ export function reply(title: (codingerId: string) => string | null): UsageReply 
 // used so far in this window; what grew since the last report counts for the
 // day of this one. A new window (after the weekly reset) counts from zero.
 export function surfaces(j: any) {
-  const used = j?.seven_day?.utilization, rows = j?.seven_day_breakdown?.rows, win = j?.seven_day_breakdown?.window_started_at
-  if (typeof used !== 'number' || !Array.isArray(rows) || typeof win !== 'string') return
+  const used = j?.seven_day?.utilization, rows = j?.seven_day_breakdown?.rows, start = Date.parse(j?.seven_day_breakdown?.window_started_at)
+  if (typeof used !== 'number' || !Array.isArray(rows) || !start) return
+  // The start comes a little different in each report (18:59:59.9, then 19:00:00.2): to the minute.
+  const win = new Date(Math.round(start / 60_000) * 60_000).toISOString()
   const sf = (saved.surfaces ??= { days: {}, names: {} })
   if (sf.last?.window !== win) sf.last = { window: win, top: {} }
   const day = dayKey(Date.now())
@@ -345,7 +347,8 @@ export function surfaces(j: any) {
     }
   }
   sf.windowStart = win
-  if (typeof j.seven_day?.resets_at === 'string') sf.resetsAt = j.seven_day.resets_at
+  const resets = Date.parse(j.seven_day?.resets_at)
+  if (resets) sf.resetsAt = new Date(Math.round(resets / 60_000) * 60_000).toISOString()
   save()
 }
 
