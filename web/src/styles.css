@@ -148,8 +148,10 @@ body.resizing-v .splitter-v::after { background: var(--accent); }
 .row-close:hover { color: var(--text); background: rgba(127, 127, 127, .18); }
 .count { background: var(--blue); color: #fff; border-radius: 9px; font-size: calc(11px * var(--fs, 1)); padding: 0 6px; }
 .side-bottom { position: relative; }
-.side-foot { border-top: 1px solid var(--line); padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; font-size: calc(12px * var(--fs, 1)); }
-.side-foot button.link { display: inline-flex; align-items: center; gap: 3px; }
+.side-foot { border-top: 1px solid var(--line); padding: 6px 8px; display: flex; justify-content: space-between; align-items: center; font-size: calc(12px * var(--fs, 1)); }
+.side-foot button.link { display: inline-flex; align-items: center; gap: 3px; padding: 4px; }
+.side-foot button.link + button.link { margin-left: 4px; }
+.side-foot button.link .icon { width: 16px; height: 16px; }
 /* The archived view: a strip across the top of the list, and the toggle shows it is on. */
 .archive-toggle.on { color: var(--text); }
 .archive-banner { display: flex; align-items: center; gap: 6px; padding: 6px 12px; margin-bottom: 4px; background: color-mix(in srgb, var(--text) 6%, transparent); border-bottom: 1px solid var(--line); color: var(--muted); font-size: calc(12px * var(--fs, 1)); }
@@ -178,6 +180,7 @@ body.resizing-v .splitter-v::after { background: var(--accent); }
 .machine.sliding { transition: transform .18s ease; }
 .remote-panel p { margin: 0 0 10px; }
 .remote-panel label { display: block; margin-bottom: 12px; }
+.remote-panel label.toggle { display: flex; gap: 8px; color: var(--text); font-size: calc(13px * var(--fs, 1)); }
 .remote-machine { padding: 10px 0; border-top: 1px solid var(--line); }
 .remote-machine:last-of-type { border-bottom: 1px solid var(--line); margin-bottom: 12px; }
 .remote-machine .remote-names { margin: 0; }
@@ -1101,6 +1104,11 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
   /* A finger holds a row to move it (Sidebar.tsx): no text selection or callout then. */
   .sidebar nav { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   .row-close { visibility: visible; }
+  /* Footer buttons big enough for a finger, with room between them. */
+  .side-foot { padding: 4px 8px; }
+  .side-foot button.link { padding: 9px; gap: 4px; }
+  .side-foot button.link + button.link { margin-left: 8px; }
+  .side-foot button.link .icon { width: 20px; height: 20px; }
   main { padding-top: env(safe-area-inset-top); }
 
   /* Banners and the head leave room for the button that shows the sidebar. */
@@ -1111,7 +1119,9 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
   .session-head .mascot { width: 30px; height: 33px; }
   .head-main h1 { font-size: calc(15.5px * var(--fs, 1)); }
   .head-sub { flex-wrap: wrap; row-gap: 2px; }
-  .session-head:not(.head-open) .head-sub > :not(.status-pill) { display: none; }
+  /* Shut, the line under the title keeps the status and the folder; the folder shrinks to fit. */
+  .session-head:not(.head-open) .head-sub { flex-wrap: nowrap; }
+  .session-head:not(.head-open) .head-sub > :not(.status-pill):not(.path) { display: none; }
   /* The buttons stay on the first line; the gauges and the mode open on lines below. */
   .head-side, .head-actions { display: contents; }
   /* They start at the title, not under the mascot (30px wide, then the 6px gap). */
