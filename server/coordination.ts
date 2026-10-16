@@ -59,8 +59,9 @@ what its actions change, above all where two actions change the same thing. Add 
 first time you work in it, and update its entry when you learn more.
 
 - \`codinger\`: ~/Projects/codinger. \`push\` to main also deploys web.codinger.app
-  (.github/workflows/deploy-web.yml), so \`push\` and \`deploy\` change the same thing.
-  \`deploy\`: \`npx wrangler deploy\` in remote/ (web.codinger.app, from the working tree).
+  (.github/workflows/deploy-web.yml), so \`push\` and \`deploy\` change the same thing. Do not
+  deploy by hand: to test on a phone, restart Codinger and open
+  web.codinger.app/m/<machine>/, which loads that machine's own build through the hub.
   \`restart\`: \`curl -s -X POST http://127.0.0.1:4545/api/restart\` (Codinger itself).
 
 ## Status
