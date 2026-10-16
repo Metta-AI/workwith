@@ -79,10 +79,19 @@ export function disconnect() {
   if (conn) { delete conn.access; delete conn.refresh; delete conn.expires; delete conn.handle; save() }
 }
 
+// Node's fetch says only "fetch failed"; what went wrong (a reset connection, a timeout, a name
+// that did not resolve) is in its cause. Say that, and which request it was.
+function failed(p: string, init: RequestInit, e: any): Error {
+  const c = e?.cause, why = c ? [c.code, c.message].filter(Boolean).join(': ') : ''
+  const size = init.body instanceof Uint8Array ? ` (${(init.body.length / 1048576).toFixed(1)} MB)` : ''
+  return new Error(`Prolifica ${init.method ?? 'GET'} ${p.split('?')[0]}${size}: ${e?.message ?? e}${why ? ` (${why})` : ''}`, { cause: e })
+}
+
 // A request to Prolifica's API as the connected person. JSON comes back parsed.
 export async function call(p: string, init: RequestInit = {}): Promise<any> {
   if (!conn?.access) throw new Error('Codinger is not connected to Prolifica.')
   const go = () => fetch(`${ORIGIN}${p}`, { ...init, headers: { ...init.headers as Record<string, string>, authorization: `Bearer ${conn!.access}` } })
+    .catch((e) => { throw failed(p, init, e) })
   if (conn.expires && conn.expires - Date.now() < 60_000 && conn.refresh) await tokens({ grant_type: 'refresh_token', refresh_token: conn.refresh, client_id: conn.clientId }).catch(() => {})
   let r = await go()
   if (r.status === 401 && conn.refresh) {
