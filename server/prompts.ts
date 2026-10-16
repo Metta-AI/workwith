@@ -208,7 +208,8 @@ inbox is open: any session can write to you. If you want quiet, close it with se
 parent and your children can always write to you.
 Before an action that can undo another session's work (a push, a deploy, a restart, an
 \`npm install\`), and when you deploy uncommitted work, follow ${COORDINATION_SHOWN}: its
-rules are at the top, and you grep its status lines for your topic, not read them all.
+rules, actions and projects are at the top, and you grep its status lines for your project,
+not read them all.
 `
 
 export const LEAD_PROMPT = `
