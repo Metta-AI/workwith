@@ -9,7 +9,7 @@ import { Splitter, useWidth } from './components/Splitter.tsx'
 import { AppearanceDialog } from './components/AppearanceDialog.tsx'
 import { ArtifactCheck, ArtifactsView } from './components/Artifacts.tsx'
 import { useFavicon } from './favicon.tsx'
-import { MenuIcon } from './components/Icons.tsx'
+import { ChevronIcon, MenuIcon } from './components/Icons.tsx'
 import { initTooltips } from './tooltip.ts'
 import { initPeek } from './peek.ts'
 import './styles.css'
@@ -28,9 +28,12 @@ function App() {
   useEffect(() => { if (st.loaded && !st.settings.appearance) setWelcome(true) }, [st.loaded])
 
   return (
-    <div className={`app${st.sideOpen ? ' side-open' : ''}`}>
+    <div className={`app${st.sideOpen ? ' side-open' : ''}${st.sideHidden ? ' side-hidden' : ''}`}>
       <Sidebar width={side} />
-      <Splitter width={side} setWidth={setSide} min={180} max={560} initial={260} />
+      {/* On a wide screen a click on the splitter hides the sidebar; the strip in its place shows it again. */}
+      <Splitter width={side} setWidth={setSide} min={180} max={560} initial={260} tip="Drag to resize · click to hide (⌘\)"
+        onClick={() => { state.sideHidden = true; changed() }} />
+      <button className="side-reveal" aria-label="Show sessions (⌘\)" onClick={() => { state.sideHidden = false; changed() }}><ChevronIcon size={12} /></button>
       <main>
         {/* On a phone the sidebar covers the page; this shows it again. */}
         <button className="icon-btn side-show" aria-label="Sessions" onClick={() => { state.sideOpen = true; changed() }}><MenuIcon size={18} /></button>
@@ -178,6 +181,10 @@ document.addEventListener('click', (e) => {
   if (s) select(s.id)
 })
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && state.lightbox) { state.lightbox = null; changed() } })
+// ⌘\ (Ctrl+\ off a Mac) hides the sidebar on a wide screen, or shows it again.
+document.addEventListener('keydown', (e) => {
+  if (e.key === '\\' && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && !phone.matches) { e.preventDefault(); state.sideHidden = !state.sideHidden; changed() }
+})
 // No zoom on a phone: iOS Safari ignores user-scalable=no in the viewport tag, so stop the pinch here.
 for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false })
 document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault() }, { passive: false })

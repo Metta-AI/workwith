@@ -93,6 +93,13 @@ body.resizing { cursor: col-resize; user-select: none; }
 .splitter-v::after { inset: 2px 0; }
 body.resizing-v { cursor: row-resize; user-select: none; }
 body.resizing-v .splitter-v::after { background: var(--accent); }
+/* A click on the sidebar's splitter hides the sidebar (main.tsx); a slim strip at the left edge shows it again. Not on a phone. */
+.side-reveal { display: none; }
+@media (min-width: 721px) {
+  .app.side-hidden > .sidebar, .app.side-hidden > .splitter { display: none; }
+  .app.side-hidden > .side-reveal { display: flex; flex: none; align-items: center; justify-content: center; width: 14px; height: 100%; padding: 0; border: none; border-right: 1px solid var(--line); border-radius: 0; background: var(--panel); color: var(--muted); cursor: pointer; }
+  .app.side-hidden > .side-reveal:hover { color: var(--text); background: var(--card); }
+}
 
 /* ---- sidebar ---- */
 .sidebar { flex: none; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }

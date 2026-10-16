@@ -84,6 +84,7 @@ type State = {
   self: string                       // this machine's name on web.codinger.app, once connected
   sideTab: 'local' | 'remote'        // the sidebar's tab, on a machine's own page
   sideOpen: boolean                  // on a phone the sidebar covers the page: is it showing
+  sideHidden: boolean                // on a wide screen you hid the sidebar (a click on its splitter, main.tsx)
   collapsed: string[]                // machines whose sessions you hid in the sidebar, and groups (group:<machine>:<id>)
   sideAll: boolean                   // the sidebar shows every session as a row, not only those that need you
   machineOrder: string[]             // other machines, in the order you dragged them to
@@ -123,6 +124,7 @@ export const state = {
   sideTab: saved('codinger.sideTab', 'local'),
   collapsed: saved('codinger.collapsed', []),
   sideAll: saved('codinger.sideAll', false),
+  sideHidden: saved('codinger.sideHidden', false),
   machineOrder: saved('codinger.machineOrder', []),
   share: null,
 } as Partial<State> as State
@@ -210,6 +212,7 @@ export function changed() {
     localStorage.setItem('codinger.sideTab', JSON.stringify(state.sideTab))
     localStorage.setItem('codinger.collapsed', JSON.stringify(state.collapsed))
     localStorage.setItem('codinger.sideAll', JSON.stringify(state.sideAll))
+    localStorage.setItem('codinger.sideHidden', JSON.stringify(state.sideHidden))
     localStorage.setItem('codinger.machineOrder', JSON.stringify(state.machineOrder))
   }, 300)
 }
