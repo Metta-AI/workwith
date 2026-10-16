@@ -52,6 +52,8 @@ let connected = false
 let linking: { code: string; url: string } | null = null
 let retry: NodeJS.Timeout | null = null
 
+// This machine's name on the hub: its page comes through at <hub>/m/<name>/.
+export const remoteName = () => saved.name
 export function remoteStatus(): RemoteStatus {
   return { hub: hubUrl(), name: saved.name, ...(saved.label ? { label: saved.label } : {}), on: saved.on, linked: !!saved.token, connected, ...(linking ? { linking } : {}) }
 }

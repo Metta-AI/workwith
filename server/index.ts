@@ -39,7 +39,7 @@ import { AUTOPILOT_MODES, amount, nudge, startAutopilot, usedOf, verdict } from 
 import { blame, initFileHistory, moveHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
 import { CLAUDE, authState, cancelLogin, childEnv, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
 import { deviceType, findDevice } from './device.ts'
-import { remoteCancelLink, remoteForget, remoteHub, remoteLink, remoteOn, remoteProxy, remoteStatus, remoteUpgrade, startRemote } from './remote.ts'
+import { remoteCancelLink, remoteForget, remoteHub, remoteLink, remoteName, remoteOn, remoteProxy, remoteStatus, remoteUpgrade, startRemote } from './remote.ts'
 import { startUpdates, updateModeChanged, updateNow, updatePrompt, updateStatus } from './update.ts'
 import {
   DATA, LEAD_DIR, LEAD_NOTES, OLD_LEAD_NOTES, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, leadRenamed, resolveModel, loadSessions, promptFile, loadSettings, saveImage, saveSessions, saveSettings,
@@ -1464,7 +1464,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/api/remote/m/') || url.pathname.startsWith('/api/remote/machines')) return await remoteProxy(req, res, url)
     if (url.pathname.startsWith('/api/')) return await api(req, res, url)
     if (vite) return vite.middlewares(req, res)
-    serveStatic(url.pathname, res)
+    serveStatic(url.pathname, res, req.headers['x-codinger-remote'] ? `/m/${remoteName()}` : '')
   } catch (e) {
     const status = e instanceof HttpError ? e.status : 500
     if (status === 500) console.error(e)
@@ -1474,14 +1474,22 @@ const server = http.createServer(async (req, res) => {
 
 const DIST = path.join(ROOT, 'dist')
 const TYPES: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' }
-function serveStatic(p: string, res: http.ServerResponse) {
+// base: where the browser sees this machine's files, when the hub passes its page through
+// (/m/<name>, vite.config.ts): the page's root paths go under it, and so do its scripts' loads.
+function serveStatic(p: string, res: http.ServerResponse, base = '') {
   let file = path.join(DIST, path.normalize(p).replace(/^(\.\.[/\\])+/, ''))
   const missing = !file.startsWith(DIST) || !fs.existsSync(file) || fs.statSync(file).isDirectory()
   // A build since the page loaded removed its old files: a 404, not the page, which no import can use.
   if (missing && p.startsWith('/assets/')) { res.writeHead(404).end(); return }
   if (missing) file = path.join(DIST, 'index.html')
   if (!fs.existsSync(file)) { res.writeHead(500).end('Run `npm run build` first, or start with --dev.'); return }
-  res.writeHead(200, { 'content-type': TYPES[path.extname(file)] ?? 'application/octet-stream' })
+  const type = TYPES[path.extname(file)] ?? 'application/octet-stream'
+  if (base && type === 'text/html') {
+    const html = fs.readFileSync(file, 'utf8').replaceAll('"/assets/', `"${base}/assets/`).replace('<head>', `<head><script>window.__base=${JSON.stringify(base + '/')}</script>`)
+    res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' }).end(html)
+    return
+  }
+  res.writeHead(200, { 'content-type': type })
   fs.createReadStream(file).pipe(res)
 }
 
