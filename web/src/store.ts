@@ -268,11 +268,17 @@ export function useStore(): State {
 export async function api<T = any>(path: string, method = 'POST', body?: unknown, machine?: string): Promise<T> {
   const sid = /^\/api\/sessions\/([^/?]+)/.exec(path)?.[1]
   if (sid?.includes(SEP)) { machine = machineOf(sid); path = path.replace(sid, localId(sid)) }
-  const r = await fetch(urlOf(path, machine ?? currentMachine()), {
+  machine ??= currentMachine()
+  // On web.codinger.app every server is a machine's: until the list of machines comes there is
+  // none to ask, and the hub would answer with its page.
+  if (state.web && !machine) throw new Error(`${method} ${path}: no machine yet`)
+  const r = await fetch(urlOf(path, machine), {
     method,
     headers: body === undefined ? {} : { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
+  // A page, not an answer: the request went to a server that does not have this route.
+  if (r.ok && r.headers.get('content-type')?.startsWith('text/html')) showError(`${method} ${path}: the server sent a page, not an answer`)
   const j = await r.json().catch(() => ({}))
   if (!r.ok) showError(j.error ?? `${r.status} ${r.statusText}`)
   return j

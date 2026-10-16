@@ -43,10 +43,11 @@ const FEW = 10
 const when = (t: number) => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 
 // One copy of the ledger for the whole page, read again every 5 minutes while
-// the page shows (every 15 seconds while the first read of the transcripts runs).
+// the page shows (every 15 seconds while the first read of the transcripts runs, and
+// until a first copy comes: on web.codinger.app there is no machine to ask before its list comes).
 let usage: UsageReply | null = null, users = 0, timer: ReturnType<typeof setTimeout> | undefined
 function poll() {
-  void api<UsageReply>('/api/usage', 'GET').then((r) => { usage = r; changed(); return r.scanning || !r.archive.at }, () => false)
+  void api<UsageReply>('/api/usage', 'GET').then((r) => { if (!r.ran) return !usage; usage = r; changed(); return r.scanning || !r.archive?.at }, () => !usage)
     .then((soon) => { clearTimeout(timer); if (users) timer = setTimeout(poll, soon ? 15_000 : 5 * 60_000) })
 }
 export function useUsage() {

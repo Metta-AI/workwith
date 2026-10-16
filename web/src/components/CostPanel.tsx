@@ -4,25 +4,32 @@
 // price and says when a review is ready; Settings has the whole of it.
 
 import { useEffect, useMemo, useState } from 'react'
-import { api, changed, state, useStore } from '../store.ts'
+import { api, changed, currentMachine, state, useStore } from '../store.ts'
 import { PLANS, cents, daysAgo, daysIn, fmtDay, lastMonth, lastWeek, money, prevMonth, prevWeek, review, today, totals, weekOf, type CostsReply, type Period } from '../../../shared/costs.ts'
 import { XIcon } from './Icons.tsx'
 import { UsageAudit, dayTotals, useUsage } from './UsageAudit.tsx'
 import { ChartHead, SLOTS, WorkChart, useView, util, type Totals } from './CostChart.tsx'
 
-// One copy for the banner and the page, read again every half hour.
+// One copy for the banner and the page, of the current machine, read again every half hour.
 let costs: CostsReply | null = null
+let costsOf = ''
 let loading: Promise<void> | null = null
 let readAt = 0
 function load(force = false) {
+  const m = currentMachine()
+  if (m !== costsOf) { costs = null; costsOf = m; readAt = 0; loading = null }
   if (loading || (!force && Date.now() - readAt < 30 * 60_000)) return loading
-  loading = api<CostsReply>('/api/costs', 'GET').then((c) => { costs = c; readAt = Date.now() }).catch(() => {}).finally(() => { loading = null; changed() })
-  return loading
+  const p: Promise<void> = api<CostsReply>('/api/costs', 'GET', undefined, m)
+    .then((c) => { if (m === costsOf && c.days) { costs = c; readAt = Date.now() } }).catch(() => {})
+    .finally(() => { if (loading === p) loading = null; changed() })
+  return loading = p
 }
 function useCosts(force = false) {
   useStore()
-  useEffect(() => { void load(force); const t = setInterval(() => void load(), 30 * 60_000); return () => clearInterval(t) }, [])
-  return costs
+  // Again when the machine changes; on web.codinger.app there is none until its list comes.
+  const m = currentMachine()
+  useEffect(() => { void load(force); const t = setInterval(() => void load(), 30 * 60_000); return () => clearInterval(t) }, [m])
+  return costsOf === m ? costs : null
 }
 
 // The price Codinger works with, a month: the one you confirmed, else the list price of your plan.
