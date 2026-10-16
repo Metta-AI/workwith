@@ -1101,7 +1101,11 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   // Tokens and spend by conversation and folder, from Codinger's copy of the transcripts (shared/usage.ts).
   if (a === 'usage' && method === 'GET') {
     const title = (id: string) => sessions.get(id)?.meta.title ?? null
-    if (id === 'ledger') return send(res, 200, usageLedger.ledger(title, Number(url.searchParams.get('after')) || 0))
+    if (id === 'ledger') {
+      let sums: Record<string, string> | undefined
+      try { sums = JSON.parse(url.searchParams.get('sums') ?? 'null') ?? undefined } catch {}
+      return send(res, 200, usageLedger.ledger(title, Number(url.searchParams.get('after')) || 0, sums))
+    }
     if (id === 'sync') { await usageLedger.sync(); return send(res, 200, usageLedger.reply(title)) }
     return send(res, 200, usageLedger.reply(title))
   }

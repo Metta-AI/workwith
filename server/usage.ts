@@ -17,7 +17,7 @@ import { isPrompt } from './meter.ts'
 import { costOf } from '../shared/prices.ts'
 import { dayKey } from '../shared/costs.ts'
 import { hubAuth, remoteStatus } from './remote.ts'
-import { addTok, noTok, type Ledger, type Tok, type UsageConv, type UsageReply } from '../shared/usage.ts'
+import { addTok, differ, digest, noTok, type Ledger, type Tok, type UsageConv, type UsageReply } from '../shared/usage.ts'
 
 const FILE = path.join(DATA, 'usage.json')
 const HOME = os.homedir()
@@ -41,6 +41,7 @@ type Saved = {
   worked: Record<string, Record<string, Tok>>
   ran: Record<string, Record<string, Tok>>
   stamps?: Record<string, number>          // day → when a call last changed its totals
+  surfaces?: { days: Record<string, Record<string, number>>; names: Record<string, string>; last?: { window: string; top: Record<string, number> }; windowStart?: string; resetsAt?: string }
 }
 const blank = (): Saved => ({ v: 1, offsets: {}, targets: {}, seen: {}, convs: {}, worked: {}, ran: {} })
 let saved = blank()
@@ -282,13 +283,18 @@ export function offTranscript(claudeId: string, cwd: string, u: any, model: stri
 // This machine's ledger, with each Codinger session's Claude Code sessions
 // together. title: a Codinger session's title, from its id.
 // after: only the days and conversations a call changed from that time on
-// (the upTo of the last reply), for the sync.
-export function ledger(title: (codingerId: string) => string | null, after = 0): Ledger {
+// (the upTo of the last reply), for the sync. theirs: the reader's checksums
+// of its copy; a month that differs from ours goes whole, so a copy that
+// missed a part (or got one twice) is set right.
+export function ledger(title: (codingerId: string) => string | null, after = 0, theirs?: Record<string, string>): Ledger {
   if (!scanning && (!at || Date.now() - at > 2 * 60_000)) void pass()
-  const upTo = Date.now()
+  const upTo = Date.now(), sums = digest(saved.ran)
+  const repaired = after && theirs ? differ(sums, theirs) : []
+  const fix = new Set(repaired)
+  const changed = (d: string) => (saved.stamps?.[d] ?? 0) >= after || fix.has(d.slice(0, 7))
   // A Codinger session goes whole, with all its Claude Code sessions, if any of them changed.
-  const keys = new Set(Object.entries(saved.convs).filter(([, c]) => (c.at ?? 0) >= after).map(([id, c]) => c.codinger ?? id))
-  const days = (x: Record<string, Record<string, Tok>>) => after ? Object.fromEntries(Object.entries(x).filter(([d]) => (saved.stamps?.[d] ?? 0) >= after)) : x
+  const keys = new Set(Object.entries(saved.convs).filter(([, c]) => (c.at ?? 0) >= after || Object.keys(c.spend).some((d) => fix.has(d.slice(0, 7)))).map(([id, c]) => c.codinger ?? id))
+  const days = (x: Record<string, Record<string, Tok>>) => after ? Object.fromEntries(Object.entries(x).filter(([d]) => changed(d))) : x
   const by = new Map<string, UsageConv>()
   for (const [id, c] of Object.entries(saved.convs)) {
     if (after && !keys.has(c.codinger ?? id)) continue
@@ -307,13 +313,40 @@ export function ledger(title: (codingerId: string) => string | null, after = 0):
     for (const d in c.spend) for (const p in c.spend[d]) { const x = (o.spend[d] ??= {}); x[p] = (x[p] ?? 0) + c.spend[d][p] }
   }
   const r = remoteStatus()
-  return { v: 1, machine: r.name, ...(r.label ? { label: r.label } : {}), at, upTo, after, since: Object.keys(saved.ran).sort()[0] ?? null, worked: days(saved.worked), ran: days(saved.ran), convs: [...by.values()] }
+  return { v: 1, machine: r.name, ...(r.label ? { label: r.label } : {}), at, upTo, after, sums, ...(repaired.length ? { repaired } : {}), since: Object.keys(saved.ran).sort()[0] ?? null, worked: days(saved.worked), ran: days(saved.ran), convs: [...by.values()] }
 }
 
 export function reply(title: (codingerId: string) => string | null): UsageReply {
   const own = ledger(title)
   const others = [...synced.values()].filter((l) => l.machine !== own.machine)
-  return { ...own, archive: archiveInfo(), scanning, others }
+  const sf = saved.surfaces
+  return { ...own, archive: archiveInfo(), scanning, others, surfaces: { days: sf?.days ?? {}, names: sf?.names ?? {}, windowStart: sf?.windowStart, resetsAt: sf?.resetsAt } }
+}
+
+// The weekly limit by product, from claude.ai's report (server/costs.ts reads
+// it about once an hour). Each report gives the share of the week each product
+// used so far in this window; what grew since the last report counts for the
+// day of this one. A new window (after the weekly reset) counts from zero.
+export function surfaces(j: any) {
+  const used = j?.seven_day?.utilization, rows = j?.seven_day_breakdown?.rows, win = j?.seven_day_breakdown?.window_started_at
+  if (typeof used !== 'number' || !Array.isArray(rows) || typeof win !== 'string') return
+  const sf = (saved.surfaces ??= { days: {}, names: {} })
+  if (sf.last?.window !== win) sf.last = { window: win, top: {} }
+  const day = dayKey(Date.now())
+  for (const r of rows) {
+    if (typeof r?.key !== 'string' || typeof r.percent !== 'number') continue
+    sf.names[r.key] = String(r.display_name ?? r.key)
+    // Both numbers are whole percents, so a share can step back: count only what passes the highest so far.
+    const share = used / 100 * r.percent / 100, top = sf.last.top[r.key] ?? 0
+    if (share > top) {
+      const d = (sf.days[day] ??= {})
+      d[r.key] = (d[r.key] ?? 0) + share - top
+      sf.last.top[r.key] = share
+    }
+  }
+  sf.windowStart = win
+  if (typeof j.seven_day?.resets_at === 'string') sf.resetsAt = j.seven_day.resets_at
+  save()
 }
 
 // ---- sync ---------------------------------------------------------------------
@@ -339,7 +372,8 @@ export async function sync() {
     if (m.name === self || !m.connected) continue
     try {
       const prev = synced.get(m.name)
-      const r = await get(`/m/${m.name}/api/usage/ledger?after=${prev?.upTo ?? 0}`)
+      // What we have of its ledger: a part of what changed since, and the months our copy has wrong.
+      const r = await get(`/m/${m.name}/api/usage/ledger?after=${prev?.upTo ?? 0}` + (prev ? `&sums=${encodeURIComponent(JSON.stringify(digest(prev.ran)))}` : ''))
       if (!r.ok || !/json/.test(r.headers.get('content-type') ?? '')) continue
       let l = await r.json() as Ledger
       if (l?.v !== 1 || !l.ran || !Array.isArray(l.convs)) continue
@@ -348,7 +382,11 @@ export async function sync() {
         for (const c of l.convs) convs.set(c.id, c)
         l = { ...l, worked: { ...prev.worked, ...l.worked }, ran: { ...prev.ran, ...l.ran }, convs: [...convs.values()], since: [prev.since, l.since].filter((x): x is string => !!x).sort()[0] ?? null }
       }
-      delete l.after
+      // Check the copy against the sender's checksums; if a month still differs, read it all next time.
+      const wrong = l.sums ? differ(digest(l.ran), l.sums) : []
+      l.check = { at: Date.now(), ok: !wrong.length, ...(l.repaired?.length ? { repaired: l.repaired } : {}) }
+      if (wrong.length) l.upTo = 0
+      delete l.after; delete l.repaired
       l.machine = m.name
       if (m.label) l.label = m.label
       synced.set(m.name, l)

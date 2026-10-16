@@ -30,9 +30,34 @@ export type ArchiveInfo = { dir: string; bytes: number; files: number; at: numbe
 export type Ledger = {
   v: 1; machine: string; label?: string; at: number | null; since: string | null
   upTo?: number; after?: number                   // a part: what changed from after to upTo (its server's clock)
+  sums?: Record<string, string>                   // the sender's checksum of each month (digest)
+  repaired?: string[]                             // months sent whole because the reader's checksum differed
+  check?: { at: number; ok: boolean; repaired?: string[] }   // the reader's last check of its copy
   worked: Record<string, Record<string, Tok>>     // day → project worked on → tokens
   ran: Record<string, Record<string, Tok>>        // day → folder the conversation ran in → tokens
   convs: UsageConv[]
 }
+// Your weekly limit by product, as claude.ai reports it (the endpoint Claude
+// Code's /usage reads): day → product key → the share of a week's limit it
+// used that day. The same for all your machines, so it is not synced.
+export type Surfaces = { days: Record<string, Record<string, number>>; names: Record<string, string>; windowStart?: string; resetsAt?: string }
 // This machine's ledger, with the last copy of each other machine's.
-export type UsageReply = Ledger & { archive: ArchiveInfo; scanning: boolean; others: Ledger[] }
+export type UsageReply = Ledger & { archive: ArchiveInfo; scanning: boolean; others: Ledger[]; surfaces: Surfaces }
+
+// A checksum of each month of a ledger's totals, so two machines can tell
+// which months of a copy differ from the original (the sync sends those again).
+export function digest(ran: Record<string, Record<string, Tok>>): Record<string, string> {
+  const months: Record<string, string[]> = {}
+  for (const d of Object.keys(ran).sort()) for (const f of Object.keys(ran[d]).sort()) {
+    const t = ran[d][f]
+    ;(months[d.slice(0, 7)] ??= []).push(`${d}|${f}|${t.usd.toFixed(6)}|${t.calls}`)
+  }
+  const out: Record<string, string> = {}
+  for (const [m, lines] of Object.entries(months)) {
+    let h = 0x811c9dc5   // FNV-1a
+    for (const ch of lines.join('\n')) { h ^= ch.codePointAt(0)!; h = Math.imul(h, 0x01000193) >>> 0 }
+    out[m] = h.toString(16)
+  }
+  return out
+}
+export const differ = (a: Record<string, string>, b: Record<string, string>) => [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((m) => a[m] !== b[m]).sort()

@@ -22,6 +22,7 @@ import { costOf } from '../shared/prices.ts'
 import { PLANS, dayKey, type CostDay, type CostsReply, type Extra, type Plan } from '../shared/costs.ts'
 import type { Usage } from '../shared/types.ts'
 import { isPrompt, onCount, rate, startOffsets } from './meter.ts'
+import { surfaces } from './usage.ts'
 
 const FILE = path.join(DATA, 'costs.json')
 const CONFIG = path.join(process.env.CLAUDE_CONFIG_DIR ?? os.homedir(), '.claude.json')
@@ -158,6 +159,7 @@ async function fetchExtra() {
     const r = await fetch('https://api.anthropic.com/api/oauth/usage', { headers: { authorization: `Bearer ${tok}`, 'anthropic-beta': 'oauth-2025-04-20' }, signal: AbortSignal.timeout(10_000) })
     if (!r.ok) return
     const j: any = await r.json()
+    surfaces(j)
     const x = j.extra_usage
     if (x) {
       const unit = 10 ** (x.decimal_places ?? 2), month = dayKey(Date.now()).slice(0, 7)

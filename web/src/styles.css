@@ -972,6 +972,7 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .usage-inner { width: 100%; font-size: calc(12px * var(--fs, 1)); }
 .usage-title { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .usage-table tfoot td { font-weight: 600; border-top: 1px solid var(--line); }
+.usage-outside td { font-style: italic; color: var(--muted); }
 
 /* Autopilot (components/Autopilot.tsx) */
 /* The session menu (SessionView.tsx): the permission modes, with a check on the one in use. */

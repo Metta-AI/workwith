@@ -9,8 +9,10 @@
 //   over the API work all your machines did in them.
 // - ITC, ideal token cost: what the work would cost you if you used all of
 //   your plan's weekly limit.
-// Also the size of Codinger's copy of the transcripts, and a CSV of the whole
-// ledger for an audit somewhere else.
+// And the use outside Claude Code (chats on claude.ai and in the apps,
+// Cowork): claude.ai reports the weekly limit by product, as a share of a
+// week, and a full week is worth weekCeil of API work. Also the size of Codinger's copy of the
+// transcripts, and a CSV of the whole ledger for an audit somewhere else.
 
 import { Fragment, useEffect, useState } from 'react'
 import { api } from '../store.ts'
@@ -82,6 +84,16 @@ export function UsageAudit({ price, weekCeil }: { price: number | null; weekCeil
   const itc = price != null && weekCeil ? price * 12 / 52 / weekCeil : null
   const rate = { etc, itc }
 
+  // Use outside Claude Code, in dollars of API work: each product's share of the
+  // weekly limit in the span, at what a full week is worth. All machines share it.
+  const outside: { key: string; name: string; usd: number }[] = []
+  if (weekCeil && on === 'all') {
+    const share: Record<string, number> = {}
+    for (const [d, x] of Object.entries(u.surfaces.days)) if (inSpan(d)) for (const [k, n] of Object.entries(x)) if (k !== 'claude_code') share[k] = (share[k] ?? 0) + n
+    for (const [k, n] of Object.entries(share)) if (n > 0) outside.push({ key: k, name: u.surfaces.names[k] ?? k, usd: n * weekCeil })
+    if (!outside.length && Object.keys(u.surfaces.days).some(inSpan)) outside.push({ key: '-', name: 'none', usd: 0 })
+  }
+
   return (
     <div>
       <h3 className="cost-h">Where the work went</h3>
@@ -116,6 +128,9 @@ export function UsageAudit({ price, weekCeil }: { price: number | null; weekCeil
           </tr>
           {open === p && <tr className="usage-convs"><td colSpan={7}><Convs list={convsOf(p)} by={by} folder={p} rate={rate} /></td></tr>}
         </Fragment>)}</tbody>
+        {outside.length > 0 && <tbody>{outside.map((o) => <tr key={o.key} className="usage-outside">
+          <td>Outside Claude Code: {o.name}</td><td>{money(o.usd)}</td><td>{fee(o.usd, etc)}</td><td>{fee(o.usd, itc)}</td><td></td><td>–</td><td>–</td>
+        </tr>)}</tbody>}
         <tfoot><tr><td>All folders</td><td>{money(total)}</td><td>{fee(total, etc)}</td><td>{fee(total, itc)}</td><td></td><td></td><td></td></tr></tfoot>
       </table> : <p className="muted cost-note">{u.scanning ? 'Codinger is still reading the transcripts.' : 'No API work in this time.'}</p>}
       {u.scanning && rows.length > 0 && <p className="muted cost-note">Codinger is still reading the transcripts. The numbers will go up.</p>}
@@ -124,6 +139,7 @@ export function UsageAudit({ price, weekCeil }: { price: number | null; weekCeil
         Tokens in include the tokens read from the cache.
         ETC (effective token cost) is what the work cost you: your plan's price over these days, shared out over all the API work in them.
         ITC (ideal token cost) is what it would cost you if you used all of your plan's weekly limit.
+        {outside.length > 0 && <> "Outside Claude Code" is your use in other products, as claude.ai reports it for your weekly limit, in dollars of API work at what a full week is worth. It is not in the total. claude.ai gives whole percents, so it shows in steps of about {money((weekCeil ?? 0) / 100)}.{u.surfaces.resetsAt && <> Your weekly limit resets on {new Date(u.surfaces.resetsAt).toLocaleString(undefined, { weekday: 'long', hour: 'numeric', minute: '2-digit' })}.</>}</>}
         {u.others.length > 0 && <> Codinger reads the ledgers of your other machines every 30 minutes, through web.codinger.app, and keeps a copy: {u.others.map((l) => `${l.label ?? l.machine} (${l.at ? when(l.at) : 'not read yet'})`).join(', ')}.</>}
       </p>
       <p className="muted cost-note">
