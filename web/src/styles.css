@@ -976,6 +976,9 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .cost-price { width: 70px; padding: 2px 6px; }
 .cost-table td:not(:first-child), .cost-table th:not(:first-child) { text-align: right; }
 .cost-table tr.cost-cur td { font-weight: 600; }
+.cost-estimates td:nth-child(2) { text-align: left; } .cost-estimates th:nth-child(2) { text-align: left; }
+.cost-estimates td.muted { text-align: center; }
+.cost-estimates td:nth-child(n+3) { white-space: nowrap; }
 .cost-review { border-top: 1px solid var(--line); padding: 6px 0; }
 .cost-review summary { cursor: pointer; font-size: calc(13px * var(--fs, 1)); }
 .cost-review[open] summary { margin-bottom: 6px; }

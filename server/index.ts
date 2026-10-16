@@ -35,7 +35,7 @@ import { DEFAULT_CACHE_GUARD, cacheLeft, knownTtl } from '../shared/cache.ts'
 import { AGENTS_FILE, agentsPrompt, readAgentsMd, writeAgentsMd } from './agentsmd.ts'
 import { handleMcp, type Tool } from './mcp.ts'
 import { spendSince, spendText } from './spend.ts'
-import { ESTIMATE_TOOLS, estimateTools, estimatesPrompt } from './estimates.ts'
+import { ESTIMATE_TOOLS, estimateTools, estimatesPrompt, estimatesReply } from './estimates.ts'
 import { MAIL_TOOLS, flushMail, mailTools, release, startMail, stepped, takeMail, turnEnded, userWrote } from './mail.ts'
 import { AUTOPILOT_MODES, amount, nudge, startAutopilot, usedOf, verdict } from './autopilot.ts'
 import { blame, initFileHistory, moveHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
@@ -1139,6 +1139,8 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   }
   // Your plan, and day-by-day spend at API prices, for the cost view (shared/costs.ts).
   if (a === 'costs' && method === 'GET') return send(res, 200, await costs.reply())
+  // Estimates in agent time and dollars, next to what the work took (server/estimates.ts).
+  if (a === 'estimates' && method === 'GET') return send(res, 200, estimatesReply((sid) => sessions.get(sid)?.meta.title))
   // Tokens and spend by conversation and folder, from Codinger's copy of the transcripts (shared/usage.ts).
   if (a === 'usage' && method === 'GET') {
     const title = (id: string) => sessions.get(id)?.meta.title ?? null

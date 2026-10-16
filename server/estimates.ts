@@ -12,6 +12,7 @@ import { DATA } from './store.ts'
 import { spendSince } from './spend.ts'
 import type { Tool } from './mcp.ts'
 import type { SessionMeta } from '../shared/types.ts'
+import type { EstimatesFound, EstimatesReply } from '../shared/estimates.ts'
 
 const FILE = path.join(DATA, 'estimates.jsonl')
 export const ESTIMATE_TOOLS = ['read_spend', 'save_estimate', 'save_actual']
@@ -36,7 +37,7 @@ const round = (x: number, d = 2) => Math.round(x * 10 ** d) / 10 ** d
 const ratio = (x: number) => x >= 10 ? `${Math.round(x)}×` : `${round(x, x < 1 ? 2 : 1)}×`
 
 // The medians over every saved pair.
-function found() {
+function found(): EstimatesFound {
   const { est, act } = load()
   const pairs = [...act.values()].flatMap((a) => { const e = est.get(a.id); return e ? [{ e, a }] : [] })
   return {
@@ -46,6 +47,19 @@ function found() {
     perHour: median(pairs.filter((p) => p.e.humanHours).map((p) => p.a.minutes / p.e.humanHours!)),
     usdPerHour: median(pairs.filter((p) => p.e.humanHours).map((p) => p.a.usd / p.e.humanHours!)),
   }
+}
+
+// Every estimate, newest first, with its actual once there is one.
+export function estimatesReply(title: (sid: string) => string | undefined): EstimatesReply {
+  const { est, act } = load()
+  const rows = [...est.values()].sort((a, b) => b.t - a.t).map((e) => {
+    const a = act.get(e.id)
+    return {
+      id: e.id, t: e.t, sid: e.sid, title: title(e.sid), task: e.task, minutes: e.minutes, usd: e.usd, humanHours: e.humanHours,
+      ...(a ? { actual: { minutes: a.minutes, usd: a.usd, calls: a.calls, note: a.note } } : {}),
+    }
+  })
+  return { rows, found: found() }
 }
 
 export function estimatesPrompt(): string {
