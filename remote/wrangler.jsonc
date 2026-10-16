@@ -5,7 +5,8 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "assets": { "directory": "../dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/_remote/*", "/m/*", "/s/*"] },
-  "routes": [{ "pattern": "web.codinger.app", "custom_domain": true }],
+  // artifacts.codinger.app: a machine's artifacts, on a host of their own (src/index.ts).
+  "routes": [{ "pattern": "web.codinger.app", "custom_domain": true }, { "pattern": "artifacts.codinger.app", "custom_domain": true }],
   // Also at codinger-web.<account>.workers.dev, for networks where web.codinger.app does not resolve.
   "workers_dev": true,
   "preview_urls": false,

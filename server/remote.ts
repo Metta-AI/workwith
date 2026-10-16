@@ -5,7 +5,8 @@
 //   everything for web.codinger.app/m/<name>/. Each request is replayed on this
 //   server at 127.0.0.1, and each browser WebSocket gets its own local one, so
 //   the server sees what it sees from a local page. Nothing listens for
-//   connections from outside.
+//   connections from outside. artifacts.codinger.app/m/<name>/… goes the same
+//   way to the artifacts server (server/artifacts.ts).
 // - Reaching your other machines: /api/remote/m/<other>/… on this server goes to
 //   the hub's /m/<other>/… with this machine's token, so the local page needs no
 //   sign-in of its own.
@@ -44,6 +45,7 @@ const unlink = () => { saved = { on: false, name: saved.name, ...(saved.hub ? { 
 const save = () => fs.writeFileSync(FILE, JSON.stringify(saved, null, 1), { mode: 0o600 })
 
 let port = 0
+let artPort = 0
 let changed: (s: RemoteStatus) => void = () => {}
 let hub: WebSocket | null = null
 let connected = false
@@ -58,8 +60,9 @@ const tell = () => changed(remoteStatus())
 // The hub and this machine's token, to publish there (server/share.ts); null before it is connected.
 export const hubAuth = () => saved.token ? { hub: hubUrl(), token: saved.token } : null
 
-export function startRemote(localPort: number, onChange: (s: RemoteStatus) => void) {
+export function startRemote(localPort: number, artifactsPort: number, onChange: (s: RemoteStatus) => void) {
   port = localPort
+  artPort = artifactsPort
   changed = onChange
   if (saved.on && saved.token) connect()
 }
@@ -218,7 +221,11 @@ type Out = { ack(): void; cancel(): void }
 // takes them (outs), so a file of any size gets through.
 function request(local: string, m: Extract<HubMsg, { t: 'req' }>, send: (m: MachineMsg) => void, outs: Map<string, Out> | null) {
   const fail = (status: number, text: string) => send({ t: 'res', id: m.id, status, headers: { 'content-type': 'text/plain' }, body: Buffer.from(text).toString('base64') })
-  const r = http.request({
+  // The artifacts server puts its own links under the path the browser sees.
+  const r = http.request(m.art ? {
+    host: '127.0.0.1', port: artPort, method: m.method, path: m.path,
+    headers: { ...m.headers, host: `127.0.0.1:${artPort}`, 'x-codinger-base': `/m/${saved.name}` },
+  } : {
     host: '127.0.0.1', port, method: m.method, path: m.path,
     headers: { ...m.headers, host: local, origin: `http://${local}`, 'x-codinger-remote': '1' },
   }, (res) => {

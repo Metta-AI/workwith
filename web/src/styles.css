@@ -89,6 +89,10 @@ main > .session, main > .lead { flex: 1; height: auto; min-height: 0; }
 .splitter::after { content: ''; position: absolute; inset: 0 2px; background: transparent; transition: background .15s; }
 .splitter:hover::after, body.resizing .splitter::after { background: var(--accent); }
 body.resizing { cursor: col-resize; user-select: none; }
+.splitter-v { width: auto; height: 5px; margin: -2px 0; cursor: row-resize; }
+.splitter-v::after { inset: 2px 0; }
+body.resizing-v { cursor: row-resize; user-select: none; }
+body.resizing-v .splitter-v::after { background: var(--accent); }
 
 /* ---- sidebar ---- */
 .sidebar { flex: none; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
@@ -625,6 +629,9 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 h1.rename { cursor: text; border-radius: 5px; } h1.rename:hover { background: rgba(127, 127, 127, .12); }
 .signin.restart { background: var(--accent-soft); border-bottom-color: var(--accent); }
 .signin .banner-x { margin-left: auto; padding: 6px; }
+/* The restart banner: the text takes the line, the buttons sit at its right end. */
+.signin.restart > span:first-child { flex: 1 1 320px; }
+.signin .banner-btns { display: flex; gap: 8px; margin-left: auto; }
 .update-remember { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
 .signin.st-failed { background: rgba(229, 83, 75, .1); border-bottom-color: var(--bad); }
 .signin input { width: 220px; font-size: calc(12.5px * var(--fs, 1)); }
@@ -983,6 +990,11 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .picker-caret { flex: none; transform: rotate(90deg); color: var(--muted); }
 .picker-menu { left: 0; right: auto; min-width: 200px; max-width: 340px; max-height: 60vh; overflow-y: auto; }
 .artifact-detail-actions .picker-menu { left: auto; right: 0; }
+.artifact-detail-actions { gap: 4px; }
+.artifact-detail-actions .icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 5px; }
+.artifact-detail-actions .icon-btn.on { color: var(--text); }
+.artifact-detail-actions .artifact-sep + * { margin-left: 4px; }
+.artifacts-view.full .artifacts-list, .artifacts-view.no-history .artifact-history { display: none; }
 .picker-menu button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; border: none; background: none; text-align: left; padding: 6px 10px; border-radius: 5px; font-size: calc(13px * var(--fs, 1)); }
 .picker-menu button:hover { background: rgba(127, 127, 127, .12); }
 .picker-menu button.on { background: var(--accent-soft); }
@@ -1022,7 +1034,7 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .prolifica-conn { display: inline-flex; align-items: center; gap: 4px; font-size: calc(12.5px * var(--fs, 1)); }
 .side-artifacts.on { color: var(--accent); }
 .artifacts-view { display: flex; height: 100%; min-height: 0; }
-.artifacts-list { flex: none; width: 300px; overflow-y: auto; border-right: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+.artifacts-list { flex: none; width: 300px; min-width: 0; overflow-y: auto; border-right: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 4px; }
 .artifacts-head { display: flex; justify-content: space-between; align-items: center; }
 .artifacts-head h1 { font-size: calc(18px * var(--fs, 1)); margin: 0; }
 .artifacts-conn { margin: 4px 0 10px; }
@@ -1030,13 +1042,21 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .artifact-row { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; border: none; background: none; padding: 8px; border-radius: 6px; }
 .artifact-row:hover { background: rgba(127, 127, 127, .1); }
 .artifact-row.active { background: var(--accent-soft); }
-.artifact-title { font-weight: 600; }
+.artifact-title { font-weight: 600; white-space: normal; overflow-wrap: anywhere; }
 .artifact-row .err { color: var(--bad); }
 .artifact-detail { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.artifact-back, .artifact-more, .artifact-more-title, .artifact-more-desc { display: none; flex: none; }
+.artifact-detail-head > .grow { flex: 1; min-width: 0; }
 .artifact-detail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
 .artifact-detail-head h2 { margin: 0 0 4px; font-size: calc(16px * var(--fs, 1)); }
 .artifact-detail-head p { margin: 0; font-size: calc(13px * var(--fs, 1)); }
-.artifact-history { flex: none; max-height: 30%; overflow-y: auto; padding: 8px 16px 12px; border-top: 1px solid var(--line); }
+.artifact-history { flex: none; height: var(--hist-h, 180px); max-height: 70%; overflow-y: auto; padding: 8px 16px 12px; border-top: 1px solid var(--line); }
+.artifacts-view.no-history .splitter-v { display: none; }
+.artifact-desc { display: flex; align-items: baseline; gap: 8px; }
+.artifact-desc p { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.artifact-desc.open { display: block; }
+.artifact-desc.open p { white-space: normal; }
+.artifact-desc button.link { flex: none; padding: 0; color: var(--accent); }
 .artifact-history h3 { font-size: calc(11.5px * var(--fs, 1)); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 4px 0 6px; }
 .artifact-history ul { list-style: none; margin: 0 0 6px; padding: 0; font-size: calc(13px * var(--fs, 1)); }
 .artifact-history li { padding: 2px 0; }
@@ -1090,7 +1110,29 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
   .session-body > .splitter { display: none; }
   .session-body > .attention, .session-body > .artifact-pane { position: fixed; inset: 0; z-index: 20; width: auto !important; border-left: none; padding-top: env(safe-area-inset-top); }
   .artifacts-view { flex-direction: column; }
-  .artifacts-list { width: auto; max-height: 40%; border-right: none; border-bottom: 1px solid var(--line); }
+  .artifacts-list { flex: 1; width: auto !important; border-right: none; }
+  .artifacts-view > .splitter, .artifact-detail > .splitter-v { display: none; }
+  .artifacts-view.picked .artifacts-list, .artifacts-view:not(.picked) .artifact-detail { display: none; }
+  /* The full width and the history button are for the desktop: here the menu shows the history. */
+  .artifacts-view:not(.picked) .artifacts-list { display: flex; }
+  .artifact-detail-actions .artifact-desk, .artifact-detail-actions .artifact-sep { display: none; }
+  .artifacts-view.no-history .more-open .artifact-history { display: block; }
+  /* One line, 48px high, so its middle lines up with the button that shows the sidebar: back, the title, the menu. */
+  .artifact-detail-head { flex: none; flex-wrap: wrap; align-items: center; gap: 0 4px; min-height: 48px; padding: 4px 8px 4px 42px; }
+  .artifact-back, .artifact-more { display: inline-flex; padding: 6px; }
+  .artifact-detail-head > .grow { min-height: 40px; display: flex; flex-direction: column; justify-content: center; }
+  .artifact-detail-head h2 { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .artifact-detail-head .artifact-desc { display: none; }
+  /* The menu opens the whole title and the description below, across the full width (the head's
+     left padding is for the sidebar button), then the version and Publish, and the history at the bottom.
+     The title moves down: the line at the top keeps only the buttons. */
+  .artifact-detail-actions, .artifact-detail:not(.more-open) .artifact-history { display: none; }
+  .more-open .artifact-detail-head > .grow h2 { visibility: hidden; }
+  .more-open .artifact-detail-head .artifact-more-title, .more-open .artifact-detail-head .artifact-more-desc { display: block; flex-basis: calc(100% + 30px); margin: 0 0 0 -30px; padding: 0 4px 6px; }
+  .more-open .artifact-detail-head .artifact-more-title { margin-top: -2px; }
+  .more-open .artifact-detail-actions { display: flex; flex-wrap: wrap; flex-basis: calc(100% + 30px); margin-left: -30px; padding: 2px 4px 6px; }
+  .more-open .artifact-more { color: var(--text); background: rgba(127, 127, 127, .15); }
+  .artifact-detail .artifact-history { height: auto; max-height: 22%; }
   .artifacts-head { padding-left: 38px; }
   .modal { width: 94vw; max-height: 92vh; overflow-y: auto; }
 }

@@ -642,7 +642,8 @@ function lookTool(id: string): Tool {
 
 // The second server that runs artifacts: its own port, so never Codinger's origin.
 const UI_ORIGINS = [`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`]
-const artifactsPort = await startHost(Number(process.env.ARTIFACTS_PORT ?? PORT + 1), () => UI_ORIGINS)
+// The hub's page (web.codinger.app, whichever address this machine reaches it at) frames artifacts too, from artifacts.codinger.app.
+const artifactsPort = await startHost(Number(process.env.ARTIFACTS_PORT ?? PORT + 1), () => [...UI_ORIGINS, 'https://web.codinger.app', remoteStatus().hub])
 const artifactsMsg = (): ServerMsg => ({ type: 'artifacts', artifacts: listArtifacts(), port: artifactsPort, prolifica: prolificaState() })
 watchArtifacts(() => broadcast(artifactsMsg()))
 
@@ -1507,7 +1508,7 @@ initAuth({
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Codinger on http://localhost:${PORT}${DEV ? ' (dev)' : ''}`)
-  startRemote(PORT, (remote) => broadcast({ type: 'remote', remote }))
+  startRemote(PORT, artifactsPort, (remote) => broadcast({ type: 'remote', remote }))
   startUpdates({ root: ROOT, mode: () => settings.autoUpdate ?? 'ask', busy: () => [...sessions.values()].some(busy), restart, onChange: (update) => broadcast({ type: 'update', update }) })
   findDevice((device) => broadcast({ type: 'device', device }))
 })

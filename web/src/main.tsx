@@ -9,7 +9,7 @@ import { Splitter, useWidth } from './components/Splitter.tsx'
 import { AppearanceDialog } from './components/AppearanceDialog.tsx'
 import { ArtifactCheck, ArtifactsView } from './components/Artifacts.tsx'
 import { useFavicon } from './favicon.tsx'
-import { MenuIcon, XIcon } from './components/Icons.tsx'
+import { MenuIcon } from './components/Icons.tsx'
 import { initTooltips } from './tooltip.ts'
 import { initPeek } from './peek.ts'
 import './styles.css'
@@ -109,8 +109,11 @@ function Restart() {
     <div className="signin restart">
       {st.restarting ? <span>Restarting Codinger…</span> : <>
         <span>The Codinger server on {st.web || machineOf(st.selected) ? labelOf(currentMachine()) : 'this machine'} has new code on disk (an update, or a change an agent made). Restart that server to use it.{busy ? ` ${busy} ${busy === 1 ? 'session is' : 'sessions are'} working and will keep working.` : ''}</span>
-        <button className="primary" onClick={() => { state.restarting = true; changed(); void api('/api/restart').catch(() => {}) }}>Restart</button>
-        <button className="icon-btn banner-x" aria-label="Hide" onClick={() => setHidden(key)}><XIcon size={13} /></button>
+        {/* At the right: Later, then Restart, the main one, last. */}
+        <span className="banner-btns">
+          <button onClick={() => setHidden(key)}>Later</button>
+          <button className="primary" onClick={() => { state.restarting = true; changed(); void api('/api/restart').catch(() => {}) }}>Restart</button>
+        </span>
       </>}
     </div>
   )

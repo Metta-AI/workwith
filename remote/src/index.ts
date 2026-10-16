@@ -10,6 +10,8 @@
 //   browser or another machine (with its token) can use it.
 // - Transcripts your machines publish (server/share.ts), kept in R2 and readable by
 //   anyone with the link at /s/<id>.
+// - A machine's artifacts at artifacts.codinger.app/m/<machine>/…, a host of their own,
+//   so their scripts never run as web.codinger.app.
 
 import { DurableObject } from 'cloudflare:workers'
 import { EmailMessage } from 'cloudflare:email'
@@ -27,18 +29,25 @@ type Env = {
 
 const TIMEOUT_MS = 60_000
 const COOKIE = 'codinger_session'
+const ART_COOKIE = 'codinger_artifacts'
+const TICKET_MS = 60_000
 const SESSION_DAYS = 30
 const LOGIN_MS = 15 * 60_000
 const LINK_MS = 10 * 60_000
 
 type Login = { email: string; exp: number; next?: string }
 type Session = { email: string; exp: number }
+// On artifacts.codinger.app: good for as long as the sign-in on web.codinger.app it came from (of: its hash).
+type ArtSession = { of: string }
+type Ticket = { of: string; exp: number }
 type Link = { name: string; poll: string; exp: number; token?: string }
 type Machine = { name: string; created: number; tokenHash: string; label?: string }
 // A published transcript: in R2 at s/<id>/share.json, with the files it shows at s/<id>/f/<name>.
 type ShareRec = { id: string; title: string; machine: string; created: number; updated: number; files: string[] }
 const SHARE_PATH = /^\/_remote\/shares\/([A-Za-z0-9]{16})(?:\/f\/([0-9a-f]{24}\.[a-z0-9]{1,8}))?$/
 const SHARE_FILE = /^[0-9a-f]{24}\.[a-z0-9]{1,8}$/
+// Where a ticket may send the browser on artifacts.codinger.app.
+const ART_PATH = /^\/m\/[a-z0-9-]{1,40}\/[^/\\]/
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -65,6 +74,7 @@ export class Hub extends DurableObject<Env> {
     const url = new URL(req.url)
     const p = url.pathname
     try {
+      if (url.hostname.startsWith('artifacts.')) return await this.artifacts(req, url)
       if (p.startsWith('/m/')) return await this.tunnel(req, url)
       switch (`${req.method} ${p}`) {
         case 'GET /_remote/whoami': {
@@ -85,6 +95,7 @@ export class Hub extends DurableObject<Env> {
           return json(await this.machines())
         }
         case 'GET /_remote/connect': return await this.attach(req)
+        case 'GET /_remote/artifacts': return await this.artTicket(req, url)
       }
       // A machine's display name, or its name: from the web, or from one of your machines.
       const change = /^\/_remote\/machines\/([a-z0-9-]{1,40})\/(label|rename)$/.exec(p)
@@ -156,10 +167,17 @@ export class Hub extends DurableObject<Env> {
   }
 
   private async session(req: Request): Promise<Session | null> {
-    const s = cookie(req, COOKIE)
-    if (!s) return null
-    const v = await this.ctx.storage.get<Session>(`session:${await hash(s)}`)
-    return v && v.exp > Date.now() && this.allowedEmail(v.email) ? v : null
+    return (await this.signedIn(req))?.v ?? null
+  }
+
+  // The sign-in and its cookie. A page on another codinger.app host (an artifact) can set a cookie
+  // of the same name for all of codinger.app; it comes first, so each one is tried.
+  private async signedIn(req: Request): Promise<{ v: Session; s: string } | null> {
+    for (const s of cookies(req, COOKIE)) {
+      const v = await this.ctx.storage.get<Session>(`session:${await hash(s)}`)
+      if (v && v.exp > Date.now() && this.allowedEmail(v.email)) return { v, s }
+    }
+    return null
   }
 
   // A machine, by the token in its Authorization header.
@@ -343,7 +361,8 @@ ${again ? `<p>A machine with this name is connected already. It will be disconne
     return this.request(req, name, path, machine)
   }
 
-  private async request(req: Request, name: string, path: string, machine: WebSocket): Promise<Response> {
+  // art: for the machine's artifacts server, whose redirects come through too.
+  private async request(req: Request, name: string, path: string, machine: WebSocket, art = false): Promise<Response> {
     const id = crypto.randomUUID()
     const headers: Record<string, string> = {}
     for (const h of REQ_HEADERS) { const v = req.headers.get(h); if (v) headers[h] = v }
@@ -351,11 +370,11 @@ ${again ? `<p>A machine with this name is connected already. It will be disconne
     const res = await new Promise<Extract<MachineMsg, { t: 'res' }> | null>((resolve) => {
       const timer = setTimeout(() => { this.pending.delete(id); resolve(null) }, TIMEOUT_MS)
       this.pending.set(id, (m) => { clearTimeout(timer); resolve(m) })
-      send(machine, { t: 'req', id, method: req.method, path, headers, ...(body ? { body } : {}) })
+      send(machine, { t: 'req', id, method: req.method, path, headers, ...(body ? { body } : {}), ...(art ? { art } : {}) })
     })
     if (!res) return json({ error: 'The machine did not answer in time' }, 504)
     const out = new Headers()
-    for (const h of RES_HEADERS) if (res.headers[h]) out.set(h, res.headers[h])
+    for (const h of art ? [...RES_HEADERS, 'location'] : RES_HEADERS) if (res.headers[h]) out.set(h, res.headers[h])
     if (res.more) return new Response(this.stream(id, name, machine), { status: res.status, headers: out })
     return new Response(req.method === 'HEAD' ? null : fromBase64(res.body), { status: res.status, headers: out })
   }
@@ -394,6 +413,65 @@ ${again ? `<p>A machine with this name is connected already. It will be disconne
     if (m.end) this.endStream(m.id)
     else this.idle(m.id, s)
     s.writer.write(fromBase64(m.data)).then(() => m.end ? s.writer.close() : send(machine, { t: 'ack', id: m.id })).catch(() => {})
+  }
+
+  // ---- artifacts.codinger.app/m/<machine>/… -------------------------------------------
+  //
+  // A machine's artifacts server, through its socket. The host has a cookie of its own, as
+  // web.codinger.app's must never reach an artifact. A browser without it goes to
+  // web.codinger.app/_remote/artifacts, which (signed in) sends it back with a ticket for
+  // one. Both cookies are SameSite=Lax, so a frame on another site gets neither.
+
+  private async artifacts(req: Request, url: URL): Promise<Response> {
+    const p = url.pathname
+    if (req.method === 'GET' && p === '/_remote/enter') return await this.artEnter(url)
+    const m = /^\/m\/([a-z0-9-]{1,40})(\/.*)$/.exec(p)
+    if (!m) return new Response('Not found', { status: 404 })
+    if (!await this.artSession(req)) {
+      if (req.method !== 'GET') return json({ error: 'Not signed in' }, 401)
+      return new Response(null, { status: 302, headers: { location: `${url.origin.replace('//artifacts.', '//web.')}/_remote/artifacts?to=${encodeURIComponent(p + url.search)}` } })
+    }
+    // web.codinger.app frames these, so a same-site request is fine here; a write still needs this origin.
+    const o = req.headers.get('origin')
+    if (o ? o !== url.origin : req.method !== 'GET' && req.method !== 'HEAD') return json({ error: 'Not allowed' }, 403)
+    if (req.headers.get('upgrade')) return new Response('No WebSockets here', { status: 400 })
+    const machine = this.socket(m[1])
+    if (!machine) return page('Not connected', `<p><b>${esc(m[1])}</b> is not connected, so its artifacts cannot show.</p>`, 502)
+    return this.request(req, m[1], m[2] + url.search, machine, true)
+  }
+
+  // On web.codinger.app: a ticket for a cookie on artifacts.codinger.app, then back to the artifact.
+  private async artTicket(req: Request, url: URL): Promise<Response> {
+    const to = url.searchParams.get('to') ?? ''
+    if (!url.hostname.startsWith('web.') || !ART_PATH.test(to)) return new Response('Not found', { status: 404 })
+    const s = (await this.signedIn(req))?.s
+    if (!s) return page('Not signed in', '<p>Sign in on <a href="/" target="_top">web.codinger.app</a> to see this artifact.</p>', 401)
+    const t = token()
+    await this.ctx.storage.put(`ticket:${await hash(t)}`, { of: await hash(s), exp: Date.now() + TICKET_MS } satisfies Ticket)
+    return new Response(null, { status: 302, headers: { location: `${url.origin.replace('//web.', '//artifacts.')}/_remote/enter?t=${t}&to=${encodeURIComponent(to)}` } })
+  }
+
+  private async artEnter(url: URL): Promise<Response> {
+    const key = `ticket:${await hash(url.searchParams.get('t') ?? '')}`
+    const ticket = await this.ctx.storage.get<Ticket>(key)
+    await this.ctx.storage.delete(key)
+    const to = url.searchParams.get('to') ?? ''
+    if (!ticket || ticket.exp < Date.now() || !ART_PATH.test(to)) return page('Link expired', '<p>Open the artifact again in Codinger.</p>', 400)
+    const s = token()
+    await this.ctx.storage.put(`art:${await hash(s)}`, { of: ticket.of } satisfies ArtSession)
+    return new Response(null, { status: 302, headers: { location: to, 'set-cookie': `${ART_COOKIE}=${s}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_DAYS * 86_400}` } })
+  }
+
+  private async artSession(req: Request): Promise<Session | null> {
+    for (const s of cookies(req, ART_COOKIE)) {
+      const key = `art:${await hash(s)}`
+      const a = await this.ctx.storage.get<ArtSession>(key)
+      if (!a) continue
+      const v = await this.ctx.storage.get<Session>(`session:${a.of}`)
+      if (v && v.exp > Date.now() && this.allowedEmail(v.email)) return v
+      await this.ctx.storage.delete(key)
+    }
+    return null
   }
 
   private channel(req: Request, name: string, path: string, machine: WebSocket): Response {
@@ -504,13 +582,18 @@ type Stream = { machine: string; writer: WritableStreamDefaultWriter<Uint8Array>
 
 const send = (ws: WebSocket, m: HubMsg) => { try { ws.send(JSON.stringify(m)) } catch { /* gone */ } }
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
-const cookie = (req: Request, name: string) => req.headers.get('cookie')?.split(/;\s*/).find((c) => c.startsWith(`${name}=`))?.slice(name.length + 1)
+const cookies = (req: Request, name: string) => (req.headers.get('cookie') ?? '').split(/;\s*/).filter((c) => c.startsWith(`${name}=`)).map((c) => c.slice(name.length + 1))
+const cookie = (req: Request, name: string) => cookies(req, name)[0]
 const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'content-type': 'application/json' } })
 const token = () => toBase64(crypto.getRandomValues(new Uint8Array(32))).replace(/[+/=]/g, (c) => ({ '+': '-', '/': '_', '=': '' })[c]!)
 async function hash(s: string) { return toBase64(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))) }
 // A request a page on this site made: a browser sends Origin on a WebSocket and on any POST, PUT, PATCH or DELETE.
+// A GET from another codinger.app host (an artifact's <img>, say) has no Origin but carries the
+// sign-in cookie, as the cookie is SameSite=Lax; Sec-Fetch-Site says where it came from.
 function sameOrigin(req: Request, url: URL) {
   const o = req.headers.get('origin')
+  const site = req.headers.get('sec-fetch-site')
+  if (site && site !== 'same-origin' && site !== 'none') return false
   return o ? o === url.origin : req.method === 'GET' || req.method === 'HEAD'
 }
 

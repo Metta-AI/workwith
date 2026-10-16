@@ -185,6 +185,13 @@ Object.defineProperties(state, {
 
 // The machine whose appearance this page wears: its own, or on the web the first one.
 const looksFrom = () => state.web ? machineList()[0]?.name : LOCAL
+// Where the artifacts server is, from this page: on the web, artifacts.codinger.app for the
+// machine they come from (remote/src/index.ts); null on the hub's other address, which has none.
+export function artifactsBase(port: number): string | null {
+  if (!state.web) return `http://127.0.0.1:${port}`
+  const m = looksFrom()
+  return m && location.hostname.startsWith('web.') ? `${location.origin.replace('//web.', '//artifacts.')}/m/${m}` : null
+}
 
 let version = 0
 const listeners = new Set<() => void>()

@@ -243,7 +243,7 @@ async function bridge(): Promise<string> {
 const esc = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
 
 // What the page reports back about itself, for show_artifact (sendBeacon: no CORS needed).
-const reporter = (name: string) => `<script>(()=>{const u='/_report/${name}';const s=(m)=>{try{navigator.sendBeacon(u,JSON.stringify(m))}catch(e){}};s({t:'start'});`
+const reporter = (name: string, base: string) => `<script>(()=>{const u='${base}/_report/${name}';const s=(m)=>{try{navigator.sendBeacon(u,JSON.stringify(m))}catch(e){}};s({t:'start'});`
   + `addEventListener('error',(e)=>{const el=e.target;s(el&&el!==window&&(el.src||el.href)?{t:'error',m:'Failed to load '+(el.src||el.href)}:{t:'error',m:String(e.message||e.error),at:e.filename?e.filename+':'+e.lineno:''})},true);`
   + `addEventListener('unhandledrejection',(e)=>s({t:'error',m:String(e.reason&&e.reason.stack||e.reason)}));`
   + `const ce=console.error;console.error=(...a)=>{s({t:'console',m:a.map(String).join(' ')});ce.apply(console,a)};addEventListener('load',()=>s({t:'load'}))})()</script>`
@@ -256,7 +256,8 @@ function inject(html: string, tags: string): string {
   return tags + html
 }
 
-function page(src: Source, app: string): string {
+// base: the path the pages are under, through web.codinger.app ("/m/<machine>"), else "".
+function page(src: Source, app: string, base: string): string {
   const m = src.manifest()
   const bindings: Record<string, unknown> = {}
   for (const [slot, file] of Object.entries(m.bindings ?? {})) {
@@ -265,11 +266,12 @@ function page(src: Source, app: string): string {
     const declared = m.slots?.[slot]?.kind
     bindings[slot] = { id: local ? file : file.slice(10), path: file, kind: declared && declared !== 'any' ? declared : kind, contentType, hash: local ? src.hash(file) : undefined }
   }
-  // isle.id names the folder the bridge fetches data from: "<name>@<version>" for an old version.
-  const id = src.v == null ? src.name : `${src.name}@${src.v}`
+  // isle.id names the folder the bridge fetches data from (/<id>/data/<slot>): "<name>@<version>"
+  // for an old version, and under base through web.codinger.app.
+  const id = (base ? base.slice(1) + '/' : '') + (src.v == null ? src.name : `${src.name}@${src.v}`)
   const config = { isle: { id, title: m.title ?? src.name, version: src.v ?? 0 }, slots: m.slots ?? {}, bindings, app, origin: '' }
   // Only the page as it is now reports its errors (to show_artifact); an old version is for looking at.
-  return inject(src.read('index.html')?.toString('utf8') ?? '', `${src.v == null ? reporter(src.name) : ''}<script>window.__PROLIFICA__=${esc(config)}</script><script src="/bridge.js"></script>`)
+  return inject(src.read('index.html')?.toString('utf8') ?? '', `${src.v == null ? reporter(src.name, base) : ''}<script>window.__PROLIFICA__=${esc(config)}</script><script src="${base}/bridge.js"></script>`)
 }
 
 export function startHost(port: number, uiOrigins: () => string[]): Promise<number> {
@@ -279,6 +281,9 @@ export function startHost(port: number, uiOrigins: () => string[]): Promise<numb
     // Only this machine's names: a web page can't reach it through a rebound DNS name.
     if (!allowed.has(req.headers.host ?? '')) { res.writeHead(403).end(); return }
     const url = new URL(req.url ?? '/', 'http://x')
+    // Through web.codinger.app (server/remote.ts): the pages are at artifacts.codinger.app/m/<machine>/.
+    const at = String(req.headers['x-codinger-base'] ?? '')
+    const prefix = /^\/m\/[a-z0-9-]{1,40}$/.test(at) ? at : ''
     const base = { 'x-content-type-options': 'nosniff', 'cache-control': 'no-store' }
     const [, first, ...rest] = url.pathname.split('/').map((p) => { try { return decodeURIComponent(p) } catch { return '' } })
     try {
@@ -298,11 +303,11 @@ export function startHost(port: number, uiOrigins: () => string[]): Promise<numb
       const [name, v] = (first ?? '').split('@')
       const src = sourceOf(name, v ? Number(v) : undefined)
       if (!src) { res.writeHead(404, base).end('No such artifact'); return }
-      if (!rest.length) { res.writeHead(301, { location: `/${first}/${url.search}` }).end(); return }
+      if (!rest.length) { res.writeHead(301, { location: `${prefix}/${encodeURIComponent(first)}/${url.search}` }).end(); return }
       if (rest.length === 1 && rest[0] === '') {
         // The pane says which window holds it, so the bridge's messages go there and nowhere else.
         const app = url.searchParams.get('app') ?? ''
-        res.writeHead(200, { ...base, 'content-type': 'text/html; charset=utf-8' }).end(page(src, uiOrigins().includes(app) ? app : uiOrigins()[0]))
+        res.writeHead(200, { ...base, 'content-type': 'text/html; charset=utf-8' }).end(page(src, uiOrigins().includes(app) ? app : uiOrigins()[0], prefix))
         return
       }
       const cors = { 'access-control-allow-origin': '*' }

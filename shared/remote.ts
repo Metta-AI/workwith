@@ -8,7 +8,7 @@
 
 // From the hub to a machine.
 export type HubMsg =
-  | { t: 'req'; id: string; method: string; path: string; headers: Record<string, string>; body?: string } // body: base64
+  | { t: 'req'; id: string; method: string; path: string; headers: Record<string, string>; body?: string; art?: boolean } // body: base64; art: for the artifacts server (artifacts.codinger.app/m/<machine>/…)
   | { t: 'open'; chan: string; path: string; protocols: string[] }
   | { t: 'msg'; chan: string; data: string }
   | { t: 'close'; chan: string }

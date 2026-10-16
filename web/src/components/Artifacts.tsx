@@ -3,12 +3,13 @@
 // all with the sessions that made them, and publishing to Prolifica. Artifacts run from
 // a server on another port, so their scripts never share Codinger's origin.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Artifact, ArtifactTouch, PreviewTarget, Visibility } from '../../../shared/artifacts.ts'
 import type { Block, Event } from '../../../shared/types.ts'
-import { api, changed, revealEvent, state, useStore } from '../store.ts'
+import { api, artifactsBase, changed, revealEvent, state, useStore } from '../store.ts'
 import { timeAgo } from '../util.ts'
-import { ChevronIcon, OpenIcon, XIcon } from './Icons.tsx'
+import { BackIcon, ChevronIcon, MoreIcon, OpenIcon, XIcon } from './Icons.tsx'
+import { Splitter, useWidth } from './Splitter.tsx'
 
 const Svg = ({ size = 14, children }: { size?: number; children: React.ReactNode }) => (
   <svg className="icon" width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>{children}</svg>
@@ -16,16 +17,19 @@ const Svg = ({ size = 14, children }: { size?: number; children: React.ReactNode
 export const ArtifactIcon = ({ size }: { size?: number }) => <Svg size={size}><rect x="2" y="2.5" width="12" height="11" rx="1.5" /><path d="M2 5.5h12M5 11V9M8 11V7.5M11 11V8.5" /></Svg>
 const RefreshIcon = ({ size }: { size?: number }) => <Svg size={size}><path d="M13 8a5 5 0 11-1.5-3.6" /><path d="M13 2.5v3h-3" /></Svg>
 const WideIcon = ({ size }: { size?: number }) => <Svg size={size}><path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5L9 7M2.5 13.5L7 9" /></Svg>
+const HistoryIcon = ({ size }: { size?: number }) => <Svg size={size}><path d="M2.5 8a5.5 5.5 0 101.6-3.9" /><path d="M2.5 2.5V5H5" /><path d="M8 5v3l2 1.5" /></Svg>
 const NarrowIcon = ({ size }: { size?: number }) => <Svg size={size}><path d="M13 6.5H9.5V3M3 9.5h3.5V13M9.5 6.5L14 2M6.5 9.5L2 14" /></Svg>
 
 export const SHOW_ARTIFACT = 'mcp__codinger__show_artifact'
 const SANDBOX = 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-downloads allow-modals'
 
-function srcOf(target: PreviewTarget, a: Artifact | undefined, port: number, at: number): string {
+function srcOf(target: PreviewTarget, a: Artifact | undefined, port: number, at: number): string | null {
   if ('url' in target) return target.url
+  const base = artifactsBase(port)
+  if (!base) return null
   const v = target.v != null && target.v !== a?.latest ? `@${target.v}` : ''
   // The page tells the bridge which window holds it; t: a change to its files (or a show) loads it again.
-  return `http://127.0.0.1:${port}/${encodeURIComponent(target.artifact)}${v}/?app=${encodeURIComponent(location.origin)}&t=${v ? 0 : a?.mtime ?? 0}-${at}`
+  return `${base}/${encodeURIComponent(target.artifact)}${v}/?app=${encodeURIComponent(location.origin)}&t=${v ? 0 : a?.mtime ?? 0}-${at}`
 }
 
 const showIn = (sid: string, target: PreviewTarget) => { state.preview = { ...state.preview, [sid]: { target, at: Date.now() } }; changed() }
@@ -36,7 +40,9 @@ export function ArtifactFrame({ target, at = 0, hidden }: { target: PreviewTarge
   const a = 'artifact' in target ? st.artifacts.find((x) => x.name === target.artifact) : undefined
   if ('artifact' in target && !st.artifactsPort) return null
   if ('artifact' in target && !a) return <div className="artifact-missing muted">There is no artifact “{target.artifact}” now.</div>
-  return <iframe className={hidden ? 'artifact-check' : 'artifact-frame'} aria-label={a?.title ?? 'Preview'} sandbox={SANDBOX} src={srcOf(target, a, st.artifactsPort, at)} aria-hidden={hidden} tabIndex={hidden ? -1 : undefined} />
+  const src = srcOf(target, a, st.artifactsPort, at)
+  if (!src) return hidden ? null : <div className="artifact-missing muted">Artifacts show through web.codinger.app only. Open this page there.</div>
+  return <iframe className={hidden ? 'artifact-check' : 'artifact-frame'} aria-label={a?.title ?? 'Preview'} sandbox={SANDBOX} src={src} aria-hidden={hidden} tabIndex={hidden ? -1 : undefined} />
 }
 
 // When an agent shows an artifact, a hidden copy loads it once, so show_artifact can
@@ -210,6 +216,7 @@ export function ArtifactPane({ sid, width, wide, onWide, onHide }: { sid: string
   const a = target && 'artifact' in target ? st.artifacts.find((x) => x.name === target.artifact) : undefined
   const v = target && 'artifact' in target ? target.v : undefined
   const key = target ? ('url' in target ? target.url : `${target.artifact}@${v ?? ''}`) : ''
+  const tab = target && srcOf(target, a, st.artifactsPort, 0)
   return (
     <aside className={`artifact-pane${wide ? ' wide' : ''}`} style={wide ? undefined : { width }}>
       <div className="artifact-top">
@@ -220,7 +227,7 @@ export function ArtifactPane({ sid, width, wide, onWide, onHide }: { sid: string
         <span className="grow" />
         {/* The title at the left; the view's buttons, then the version and Publish together, at the right. */}
         <button className="icon-btn" data-tip="Load again" onClick={() => setReload(Date.now())}><RefreshIcon size={14} /></button>
-        {target && <a className="icon-btn" data-tip="Open in a new tab" href={srcOf(target, a, st.artifactsPort, 0)} target="_blank" rel="noreferrer"><OpenIcon size={14} /></a>}
+        {tab && <a className="icon-btn" data-tip="Open in a new tab" href={tab} target="_blank" rel="noreferrer"><OpenIcon size={14} /></a>}
         <button className="icon-btn" data-tip={wide ? 'Show the conversation' : 'Use the full width'} onClick={onWide}>{wide ? <NarrowIcon size={14} /> : <WideIcon size={14} />}</button>
         {a && <>
           <span className="artifact-sep" />
@@ -250,18 +257,53 @@ function TouchRow({ a, t, on, onShow }: { a: Artifact; t: ArtifactTouch; on: boo
   )
 }
 
+// The description on one line, with Show more when it does not fit there.
+function Description({ text }: { text: string }) {
+  const ref = useRef<HTMLParagraphElement>(null)
+  const [open, setOpen] = useState(false)
+  const [cut, setCut] = useState(false)
+  useLayoutEffect(() => {
+    const p = ref.current
+    if (!p || open) return
+    const check = () => setCut(p.scrollWidth > p.clientWidth + 1)
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(p)
+    return () => ro.disconnect()
+  }, [text, open])
+  return (
+    <div className={`artifact-desc${open ? ' open' : ''}`}>
+      <p ref={ref} className="muted">{text}</p>
+      {(cut || open) && <button className="link small" onClick={() => setOpen(!open)}>{open ? 'Show less' : 'Show more'}</button>}
+    </div>
+  )
+}
+
 // Every artifact: what it is, which sessions made and changed it, and whether it is published.
 export function ArtifactsView() {
   const st = useStore()
   const [sel, setSel] = useState<string | null>(() => localStorage.getItem('codinger.artifact'))
   const [v, setV] = useState<number | undefined>()
   const a = st.artifacts.find((x) => x.name === sel) ?? st.artifacts[0]
-  const choose = (name: string) => { localStorage.setItem('codinger.artifact', name); setSel(name); setV(undefined) }
+  // On a phone the list and the artifact take turns: a tap shows the artifact, Back the list.
+  // There the version, Publish and the history wait behind a menu button.
+  const [picked, setPicked] = useState(false)
+  const [more, setMore] = useState(false)
+  const choose = (name: string) => { localStorage.setItem('codinger.artifact', name); setSel(name); setV(undefined); setPicked(true); setMore(false) }
+  // As the preview pane has: load again, a new tab, the full width (no list); and the history can hide.
+  const [reload, setReload] = useState(0)
+  const [full, setFull] = useState(false)
+  const [history, setHistory] = useState(() => localStorage.getItem('codinger.artifactHistory') !== 'off')
+  const showHistory = (on: boolean) => { setHistory(on); localStorage.setItem('codinger.artifactHistory', on ? 'on' : 'off') }
+  const tab = a && srcOf({ artifact: a.name, v }, a, st.artifactsPort, 0)
+  // The list's width and the history's height: drag their borders.
+  const [listW, setListW] = useWidth('artifactsList', 300)
+  const [histH, setHistH] = useWidth('artifactsHistory', 180)
   // One line for each version, at the call that left it.
   const touches = a ? [...a.edits].reverse().filter((t, i, all) => t.v == null || all.findIndex((x) => x.v === t.v) === i) : []
   return (
-    <div className="artifacts-view">
-      <div className="artifacts-list">
+    <div className={`artifacts-view${picked ? ' picked' : ''}${full ? ' full' : ''}${history ? '' : ' no-history'}`}>
+      <div className="artifacts-list" style={{ width: listW }}>
         <div className="artifacts-head">
           <h1>Artifacts</h1>
           <button className="icon-btn" data-tip="Back to the session" onClick={() => { state.page = null; changed() }}><XIcon size={14} /></button>
@@ -287,21 +329,32 @@ export function ArtifactsView() {
           )
         })}
       </div>
+      {!full && <Splitter width={listW} setWidth={setListW} min={200} max={640} initial={300} />}
       {a && (
-        <div className="artifact-detail">
+        <div className={`artifact-detail${more ? ' more-open' : ''}`}>
           <div className="artifact-detail-head">
-            <div>
+            <button className="icon-btn artifact-back" aria-label="Back to the list" onClick={() => setPicked(false)}><BackIcon size={16} /></button>
+            <div className="grow">
               <h2>{a.title}</h2>
-              {a.description && <p className="muted">{a.description}</p>}
+              {a.description && <Description key={a.name} text={a.description} />}
             </div>
+            <button className="icon-btn artifact-more" aria-label="Version and publishing" aria-expanded={more} onClick={() => setMore(!more)}><MoreIcon size={18} /></button>
+            <h2 className="artifact-more-title">{a.title}</h2>
+            {a.description && <p className="muted artifact-more-desc">{a.description}</p>}
             <span className="artifact-detail-actions">
+              <button className="icon-btn" data-tip="Load again" onClick={() => setReload(Date.now())}><RefreshIcon size={14} /></button>
+              {tab && <a className="icon-btn" data-tip="Open in a new tab" href={tab} target="_blank" rel="noreferrer"><OpenIcon size={14} /></a>}
+              <button className="icon-btn artifact-desk" data-tip={full ? 'Show the list' : 'Use the full width'} onClick={() => setFull(!full)}>{full ? <NarrowIcon size={14} /> : <WideIcon size={14} />}</button>
+              <button className={`icon-btn artifact-desk${history ? ' on' : ''}`} data-tip={history ? 'Hide the history' : 'Show the history'} onClick={() => showHistory(!history)}><HistoryIcon size={14} /></button>
+              <span className="artifact-sep" />
               <VersionPicker a={a} v={v} onPick={setV} />
               <PublishControl key={a.name} a={a} v={v} />
             </span>
           </div>
           {v != null && <VersionBar a={a} v={v} onLatest={() => setV(undefined)} />}
-          <ArtifactFrame key={`${a.name}@${v ?? ''}`} target={{ artifact: a.name, v }} />
-          <div className="artifact-history">
+          <ArtifactFrame key={`${a.name}@${v ?? ''}`} target={{ artifact: a.name, v }} at={reload} />
+          <Splitter width={histH} setWidth={setHistH} min={60} max={700} initial={180} vertical reverse />
+          <div className="artifact-history" style={{ '--hist-h': `${histH}px` } as React.CSSProperties}>
             <h3>History</h3>
             {!touches.length && <div className="muted small">No session has written it since Codinger began to record.</div>}
             <ul>{touches.map((t) => <TouchRow key={`${t.sid}:${t.seq}:${t.tool ?? ''}`} a={a} t={t} on={t.v != null && t.v === (v ?? a.latest)} onShow={() => setV(t.v === a.latest ? undefined : t.v)} />)}</ul>
