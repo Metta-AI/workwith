@@ -13,6 +13,7 @@ import { cacheOf, minutes, spendOf, useNow, usd } from '../cache.ts'
 import { CostBanner } from './CostPanel.tsx'
 import type { Page } from './SettingsDialog.tsx'
 import { shortPath } from './DirPicker.tsx'
+import { NEEDS_YOU } from '../favicon.tsx'
 
 // Sessions that need you come first, then the ones at work, then the finished ones.
 // A session nested under another lifts it to its own tier.
@@ -29,6 +30,11 @@ function tiers(list: SessionMeta[], same = (a: SessionMeta, b: SessionMeta) => a
     }
   }
   return (s: SessionMeta) => t.get(s.id)!
+}
+// On a shut machine or group: how many sessions in it wait on you, as the tab's icon counts them.
+function NeedBadge({ list }: { list: SessionMeta[] }) {
+  const n = list.filter((s) => s.kind === 'worker' && !s.archived && NEEDS_YOU.includes(s.status)).length
+  return n > 0 ? <span className="need-badge">{Math.min(n, 99)}</span> : null
 }
 
 // For the lead's overview: sessions grouped by directory; sessions spawned for another one nest under it.
@@ -208,6 +214,7 @@ export function Sidebar({ width }: { width: number }) {
                   <ChevronIcon size={11} className="machine-chevron" />
                   <DeviceIcon m={m} />
                   <span className="machine-name">{labelOf(m.name)}</span>
+                  {shut && !st.showArchived && <NeedBadge list={st.machines[m.name]?.sessions ?? []} />}
                   {!m.connected && <span className="conn off" />}
                   <button className="link" title={`New session on ${m.name}`} onClick={(e) => { e.stopPropagation(); setNewIn({ cwd: '', machine: m.name }) }}>+</button>
                 </div>
@@ -370,6 +377,7 @@ function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: s
           {naming === g.id
             ? <GroupName name={g.name} onDone={(name) => rename(g, name)} />
             : <span className="group-name" onDoubleClick={g.id ? (e) => { e.stopPropagation(); naming = g.id; changed() } : undefined}>{g.name}</span>}
+          {shut && <NeedBadge list={list} />}
           <button className="link" title={`New session in ${g.id ? g.name : 'no group'}`} onClick={(e) => { e.stopPropagation(); onNew(folder, g.id) }}>+</button>
         </div>
         {kids(null).map((x) => branch(x, 0))}

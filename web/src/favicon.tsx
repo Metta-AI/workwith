@@ -12,7 +12,7 @@ import { accentBody } from './appearance.ts'
 import { fatigue } from './util.ts'
 
 // Only what an agent asks of you: a finished turn does not need you.
-const NEEDS_YOU = ['permission', 'asking']
+export const NEEDS_YOU = ['permission', 'asking']
 
 function icon(props: React.ComponentProps<typeof Mascot>, count: number, up: boolean): string {
   let svg = renderToStaticMarkup(<Mascot {...props} size={32} />)
