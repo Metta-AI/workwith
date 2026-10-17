@@ -270,13 +270,15 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .panel-done.st-dismissed .panel-done-label, .panel-done.st-skipped .panel-done-label { color: var(--muted); }
 .panel-done-reply { color: var(--muted); font-size: calc(12px * var(--fs, 1)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-head { display: flex; align-items: center; gap: 14px; padding: 12px 20px; border-bottom: 1px solid var(--line); }
-.head-main { flex: 1; min-width: 0; }
+.head-main { flex: 1; min-width: min(16em, 45%); }
 .head-main h1 { font-size: calc(17px * var(--fs, 1)); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: text; }
 .title-edit { font-size: calc(16px * var(--fs, 1)); font-weight: 600; width: 100%; }
 .head-sub { display: flex; gap: 10px; align-items: center; font-size: calc(12px * var(--fs, 1)); min-width: 0; }
 .head-sub .mono { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; min-width: 0; }
-.head-sub > :not(.mono) { flex: none; }
-.head-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.head-sub > .status-pill, .head-sub > .head-model { flex: none; }
+/* In a narrow head the items after the status shrink with an ellipsis instead of going under the gauges. */
+.head-sub > :not(.mono):not(.status-pill):not(.head-model) { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.head-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 0; }
 .head-actions { display: flex; gap: 6px; align-items: center; }
 .head-actions select, .head-actions button { font-size: calc(12.5px * var(--fs, 1)); padding: 3px 8px; height: 28px; }
 .head-actions .icon-tall { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 34px; padding: 0 9px; }
@@ -296,6 +298,7 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .status-pill.st-error { background: rgba(229, 83, 75, .2); }
 
 .gauge { display: flex; align-items: center; gap: 6px; font-size: calc(11.5px * var(--fs, 1)); color: var(--muted); }
+.gauge-label { white-space: nowrap; }
 .gauge-bar { width: 110px; height: 6px; background: rgba(127, 127, 127, .18); border-radius: 3px; overflow: hidden; }
 .gauge-bar > div { height: 100%; border-radius: 3px; transition: width .4s; }
 
@@ -864,7 +867,7 @@ label > input[type="checkbox"] { flex: none; margin: 0; }
 body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 
 /* ---- prompt cache ---- */
-.head-gauges { display: flex; align-items: center; gap: 10px; }
+.head-gauges { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px 10px; }
 .cache-pill { font-size: calc(11.5px * var(--fs, 1)); padding: 1px 8px; border-radius: 9px; white-space: nowrap; cursor: pointer; border: 1px solid var(--line); color: var(--muted); background: none; font-family: inherit; }
 .cache-pill.warm { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
 .cache-pill.soon { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
@@ -1161,6 +1164,25 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
   .app.side-open .sidebar { transform: none; visibility: visible; transition: transform .2s ease-out; }
   .side-hide { display: inline-flex; padding: 6px; }
   /* Over the page here (the sidebar is hidden), so clear of the message field. */
+/* A narrow head (on a phone, or under 680px: SessionHeader adds .narrow) is one line: title, status,
+   panels. The chevron (.head-more) shows the gauges and the mode below. */
+.session-head.narrow { flex-wrap: wrap; align-items: flex-start; gap: 6px; padding: 8px 12px; }
+.session-head.narrow .mascot { width: 30px; height: 33px; }
+.narrow .head-main { min-width: 0; }
+.narrow .head-main h1 { font-size: calc(15.5px * var(--fs, 1)); }
+.narrow .head-sub { flex-wrap: wrap; row-gap: 2px; }
+/* Shut, the line under the title keeps the status and the folder; the folder shrinks to fit. */
+.session-head.narrow:not(.head-open) .head-sub { flex-wrap: nowrap; }
+.session-head.narrow:not(.head-open) .head-sub > :not(.status-pill):not(.path) { display: none; }
+/* The buttons stay on the first line; the gauges and the mode open on lines below. */
+.narrow .head-side, .narrow .head-actions { display: contents; }
+/* They start at the title, not under the mascot (30px wide, then the 6px gap). */
+.narrow .head-gauges { order: 3; flex-basis: calc(100% - 36px); margin-left: 36px; justify-content: flex-start; gap: 6px; }
+.session-head.narrow.head-open .head-mode { display: flex; order: 4; flex-basis: calc(100% - 36px); margin-left: 36px; gap: 6px; }
+.session-head.narrow:not(.head-open) .head-gauges, .session-head.narrow:not(.head-open) .head-mode { display: none; }
+.narrow .head-actions .head-more { display: inline-flex; }
+.narrow .head-more .icon { transform: rotate(90deg); transition: transform .15s; }
+.session-head.narrow.head-open .head-more .icon { transform: rotate(-90deg); }
   .toasts { bottom: calc(90px + env(safe-area-inset-bottom)); }
   /* Its middle (24px down) lines up with the middle of the critter beside the title, or of a banner's first line. */
   .side-show { display: inline-flex; position: fixed; top: calc(7px + env(safe-area-inset-top)); left: calc(6px + env(safe-area-inset-left)); z-index: 6; padding: 8px; color: var(--text); }
@@ -1178,23 +1200,7 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
   /* Banners and the head leave room for the button that shows the sidebar. */
   .signin { padding-left: 48px; }
   .signin ~ .session .session-head, .signin ~ .artifacts-view .artifacts-head { padding-left: 12px; }
-  /* The head is one line: title, status, panels. The chevron (.head-more) shows the gauges and the mode below. */
-  .session-head { flex-wrap: wrap; align-items: flex-start; gap: 6px; padding: 8px 10px 8px 48px; }
-  .session-head .mascot { width: 30px; height: 33px; }
-  .head-main h1 { font-size: calc(15.5px * var(--fs, 1)); }
-  .head-sub { flex-wrap: wrap; row-gap: 2px; }
-  /* Shut, the line under the title keeps the status and the folder; the folder shrinks to fit. */
-  .session-head:not(.head-open) .head-sub { flex-wrap: nowrap; }
-  .session-head:not(.head-open) .head-sub > :not(.status-pill):not(.path) { display: none; }
-  /* The buttons stay on the first line; the gauges and the mode open on lines below. */
-  .head-side, .head-actions { display: contents; }
-  /* They start at the title, not under the mascot (30px wide, then the 6px gap). */
-  .head-gauges { order: 3; flex-basis: calc(100% - 36px); margin-left: 36px; flex-wrap: wrap; gap: 6px; }
-  .session-head.head-open .head-mode { display: flex; order: 4; flex-basis: calc(100% - 36px); margin-left: 36px; gap: 6px; }
-  .session-head:not(.head-open) .head-gauges, .session-head:not(.head-open) .head-mode { display: none; }
-  .head-actions .head-more { display: inline-flex; }
-  .head-more .icon { transform: rotate(90deg); transition: transform .15s; }
-  .session-head.head-open .head-more .icon { transform: rotate(-90deg); }
+  .session-head.narrow { padding-left: 48px; }
   .transcript-inner, .transcript-inner.gutter { padding: 14px 12px 30px 40px; }
   .rail-row { right: calc(100% + 2px); }
   .composer { padding: 8px 10px calc(10px + env(safe-area-inset-bottom)); }

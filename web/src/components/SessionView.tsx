@@ -98,13 +98,25 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
   // An alias or the default shows what it ran last time until Claude Code reports.
   const model = m.model?.includes('-') ? m.model : m.expectedModel ?? m.model
   const parent = useStore().sessions.find((x) => x.id === m.parentId)
-  // On a phone the head is one line; this button shows the gauges and the mode (styles.css).
+  // In a narrow head the head is one line; this button shows the gauges and the mode (styles.css).
   const [more, setMore] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [menu, setMenu] = useState<Menu>(null)
   const ap = m.autopilot
+  // Under 680px (and always on a phone) the head takes the phone's one-line layout.
+  const head = useRef<HTMLElement>(null)
+  const [narrow, setNarrow] = useState(false)
+  useEffect(() => {
+    const el = head.current, phone = matchMedia('(max-width: 720px)')
+    if (!el) return
+    const check = () => setNarrow(phone.matches || el.clientWidth < 680)
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    phone.addEventListener('change', check)
+    return () => { ro.disconnect(); phone.removeEventListener('change', check) }
+  }, [])
   return (
-    <header className={`session-head${more ? ' head-open' : ''}`}>
+    <header ref={head} className={`session-head${narrow ? ' narrow' : ''}${more ? ' head-open' : ''}`}>
       <Mascot status={m.status} look={m.look} fatigue={fatigue(m.context.used, m.context.window)} size={44} title={STATUS_LABEL[m.status]} child={!!m.parentId} />
       <div className="head-main">
         {editing
@@ -117,7 +129,7 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
         <div className="head-sub">
           <span className={`status-pill st-${m.status}`}>{m.compacting ? 'compacting' : STATUS_LABEL[m.status]}</span>
           <span className="muted mono path" title={m.cwd}>{'\u200E' + shortPath(m.cwd) + '\u200E'}</span>
-          {model && <span className="muted" title={m.model?.includes('-') ? undefined : 'Model used for this choice last time'}>{model}</span>}
+          {model && <span className="muted head-model" title={m.model?.includes('-') ? undefined : 'Model used for this choice last time'}>{model}</span>}
           <IdChip m={m} />
           {parent && <button className="link head-parent" title="Show the session that started this one" onClick={() => select(parent.id)}>from {parent.title}</button>}
           {/* Its transcript is public: say so, one click from its link. */}
