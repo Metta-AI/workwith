@@ -78,16 +78,31 @@ export function Transcript({ sid }: { sid: string }) {
   const scroller = useRef<HTMLDivElement>(null)
   const inner = useRef<HTMLDivElement>(null)
   const column = useRef<HTMLDivElement>(null)
+  const over = useRef<HTMLDivElement>(null)
+  // The scroll position that shows the end of the messages at the bottom, above the empty space after them.
+  const end = (el: HTMLElement) => el.scrollHeight - (over.current?.offsetHeight ?? 0) - el.clientHeight
   // A published transcript starts at the top, for a reader; a session follows its end.
   const stick = useRef(!state.share)
   const [gutter, setGutter] = useState(!state.share)
 
-  // Follow new output while you're at the bottom; stay put if you scrolled up.
-  useLayoutEffect(() => {
+  // Follow new output while you're at the end of the messages; stay put if you scrolled away,
+  // up or into the empty space after them, and while you write a comment.
+  // Only a scroll by hand decides it: the page's own scrolls and a change of height are not you.
+  const hand = useRef(0)
+  const byHand = () => { hand.current = performance.now() }
+  const follow = () => {
     const el = scroller.current
-    if (el && stick.current) el.scrollTop = el.scrollHeight
-  }, [events?.length, streaming, sid])
+    if (el && stick.current && !document.activeElement?.closest('.note-card, [data-hold-keyboard]')) el.scrollTop = end(el)
+  }
+  useLayoutEffect(follow, [events?.length, streaming, sid])
   useEffect(() => { stick.current = !state.share }, [sid])
+  // Messages that get shorter or longer later (a fold, an image) do not move the end out of view.
+  useEffect(() => {
+    if (!inner.current) return
+    const ro = new ResizeObserver(follow)
+    ro.observe(inner.current)
+    return () => ro.disconnect()
+  }, [sid, !!events])
 
   // The composer lines up with the text column, which moves over for the margin.
   useEffect(() => { scroller.current?.closest('.session-main')?.classList.toggle('gutter', gutter) }, [gutter, !!events])
@@ -259,10 +274,18 @@ export function Transcript({ sid }: { sid: string }) {
     <div className="transcript-wrap">
     <div
       className="transcript" ref={scroller}
-      // New output is followed only while you are at the very bottom; any move up lets go at once.
-      onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 4 }}
-      onWheel={(e) => { if (e.deltaY < 0) stick.current = false }}
-      onKeyDown={(e) => { if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) stick.current = false }}
+      // New output is followed only while you are at the end; any move up lets go at once.
+      // A scroll within half a second of a scroll by hand is by hand too (a flick goes on by itself).
+      onScroll={(e) => {
+        if (performance.now() - hand.current > 500) return
+        byHand()
+        const el = e.currentTarget
+        stick.current = Math.abs(el.scrollTop - end(el)) < 4
+      }}
+      onWheel={(e) => { byHand(); if (e.deltaY < 0) stick.current = false }}
+      onTouchMove={byHand}
+      onPointerDown={(e) => { if (e.target === e.currentTarget) byHand() }}
+      onKeyDown={(e) => { byHand(); if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) stick.current = false }}
     >
       <div className={`transcript-inner${gutter ? ' gutter' : ''}`} ref={inner}>
         <div className="column" ref={column}>
@@ -274,6 +297,7 @@ export function Transcript({ sid }: { sid: string }) {
         </div>
         {!st.share && <Margin sid={sid} inner={inner} column={column} gutter={gutter} events={events} />}
       </div>
+      {!st.share && <div className="transcript-over" ref={over} aria-hidden="true" />}
     </div>
     {!st.share && <OpenToast scroller={scroller} keys={[...folded.items.values()].filter((t) => t.status === 'open').map((t) => t.key)} />}
     </div>

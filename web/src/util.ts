@@ -176,3 +176,19 @@ export function visibleBox() {
   const top = p.top + (vv?.offsetTop ?? 0), left = p.left + (vv?.offsetLeft ?? 0)
   return { top, left, bottom: top + (vv?.height ?? innerHeight), right: left + (vv?.width ?? innerWidth), fixed: { top: p.top, left: p.left } }
 }
+
+// While you write a comment on a phone, the empty space after the messages (.transcript-over) is
+// at least the keyboard's height (--kb), so a card on the last lines can come up above the
+// keyboard, also when the keyboard takes more than half the screen. Set before the cards' own
+// resize handler (Margin.tsx) scrolls a card into view.
+if (typeof visualViewport !== 'undefined' && visualViewport && matchMedia('(pointer: coarse)').matches) {
+  const vv = visualViewport
+  const room = () => {
+    const kb = document.activeElement?.closest('.note-card, [data-hold-keyboard]') && vv.scale < 1.05 ? Math.max(0, Math.round(innerHeight - vv.height)) : 0
+    const v = kb > 80 ? `${kb}px` : ''
+    if (document.documentElement.style.getPropertyValue('--kb') !== v) document.documentElement.style.setProperty('--kb', v)
+  }
+  vv.addEventListener('resize', room)
+  addEventListener('focusin', room)
+  addEventListener('focusout', () => setTimeout(room))
+}

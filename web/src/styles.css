@@ -309,6 +309,8 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 @keyframes toast-nudge { 0%, 70%, 100% { transform: translateX(-50%); } 80% { transform: translate(-50%, 3px); } 90% { transform: translate(-50%, -1px); } }
 /* 72px on the left holds reactions; the text column itself is 752px at most. */
 .transcript-inner { position: relative; max-width: 848px; margin: 0 auto; padding: 20px 24px 96px 72px; }
+/* Empty space after the messages: you can scroll the last lines up by a quarter of the screen, or above a phone's keyboard (--kb, util.ts). */
+.transcript-over { height: max(25dvh, var(--kb, 0px)); }
 .transcript-inner.gutter { max-width: calc(848px + 292px); padding-right: calc(24px + 292px); }
 .margin { position: absolute; inset: 0; pointer-events: none; }
 
@@ -663,8 +665,10 @@ button.primary.send.critical { background: var(--bad); border-color: var(--bad);
 .ri-caret[hidden] { display: none; }
 @keyframes ri-blink { 50% { opacity: 0; } }
 .user-part .md img { height: 24px; max-width: 96px; object-fit: cover; vertical-align: middle; position: relative; top: -1px; margin: -5px 2px; border-radius: 4px; border: 1px solid var(--line); cursor: zoom-in; }
-.lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .75); display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
-.lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 6px; box-shadow: 0 8px 40px rgba(0, 0, 0, .5); }
+.lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .75); display: flex; align-items: center; justify-content: center; cursor: zoom-out; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+.lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 6px; box-shadow: 0 8px 40px rgba(0, 0, 0, .5); transform-origin: 0 0; -webkit-touch-callout: none; }
+.lightbox-x { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 10px; padding: 8px; color: #fff; background: rgba(0, 0, 0, .45); border-radius: 50%; cursor: pointer; }
+.lightbox-x:hover:not(:disabled) { color: #fff; background: rgba(0, 0, 0, .7); }
 .signin { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 20px; background: rgba(212, 167, 44, .16); border-bottom: 1px solid var(--warn); font-size: calc(13px * var(--fs, 1)); }
 .title-before { font-size: calc(12px * var(--fs, 1)); } .title-before .link { padding: 0 2px; text-decoration: underline; }
 h1.rename { cursor: text; border-radius: 5px; } h1.rename:hover { background: rgba(127, 127, 127, .12); }
