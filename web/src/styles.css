@@ -1164,13 +1164,6 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .side-show, .side-hide, .head-actions .head-more { display: none; }
 .head-mode { display: contents; }
-@media (max-width: 720px) {
-  /* The sidebar covers the whole page; picking a session hides it (store.ts select). */
-  .app > .splitter { display: none; }
-  .sidebar { position: fixed; inset: 0; z-index: 25; width: auto !important; border-right: none; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); transform: translateX(-100%); visibility: hidden; transition: transform .2s ease-out, visibility 0s .2s; }
-  .app.side-open .sidebar { transform: none; visibility: visible; transition: transform .2s ease-out; }
-  .side-hide { display: inline-flex; padding: 6px; }
-  /* Over the page here (the sidebar is hidden), so clear of the message field. */
 /* A narrow head (on a phone, or under 680px: SessionHeader adds .narrow) is one line: title, status,
    panels. The chevron (.head-more) shows the gauges and the mode below. */
 .session-head.narrow { flex-wrap: wrap; align-items: flex-start; gap: 6px; padding: 8px 12px; }
@@ -1190,6 +1183,13 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
 .narrow .head-actions .head-more { display: inline-flex; }
 .narrow .head-more .icon { transform: rotate(90deg); transition: transform .15s; }
 .session-head.narrow.head-open .head-more .icon { transform: rotate(-90deg); }
+@media (max-width: 720px) {
+  /* The sidebar covers the whole page; picking a session hides it (store.ts select). */
+  .app > .splitter { display: none; }
+  .sidebar { position: fixed; inset: 0; z-index: 25; width: auto !important; border-right: none; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); transform: translateX(-100%); visibility: hidden; transition: transform .2s ease-out, visibility 0s .2s; }
+  .app.side-open .sidebar { transform: none; visibility: visible; transition: transform .2s ease-out; }
+  .side-hide { display: inline-flex; padding: 6px; }
+  /* Over the page here (the sidebar is hidden), so clear of the message field. */
   .toasts { bottom: calc(90px + env(safe-area-inset-bottom)); }
   /* Its middle (24px down) lines up with the middle of the critter beside the title, or of a banner's first line. */
   .side-show { display: inline-flex; position: fixed; top: calc(7px + env(safe-area-inset-top)); left: calc(6px + env(safe-area-inset-left)); z-index: 6; padding: 8px; color: var(--text); }
