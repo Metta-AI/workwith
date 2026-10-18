@@ -49,7 +49,8 @@ const dirOf = (name: string) => path.join(ARTIFACTS, name)
 
 type Manifest = {
   title?: string; description?: string; short_title?: string; view_name?: string
-  /** the Prolifica isle this page came from */
+  /** the Prolifica isle this page came from (not that isle's own parent there). When the page is
+   *  that isle pulled down to change it, the same id as isle: publish leaves it out then. */
   parent?: string
   /** the isle this page is, pulled down to change it: its first publish from here is that isle's
    *  next version (when it is yours), not a new page */
@@ -172,7 +173,7 @@ export const artifactsPrompt = () => `
 When the user wants to see something (a chart, a table to explore, a dashboard, a report over data, a small tool), and whenever you analyse data, make an artifact: a page that Codinger shows in a pane next to this session. Each artifact is a folder in \`${ARTIFACTS}/<name>/\`, with a short lowercase name with hyphens:
 - \`index.html\`: one self-contained page. Use \`<script type="module">\` (top-level await works) and libraries from a CDN (https://esm.sh/..., https://cdn.jsdelivr.net/npm/...). There is no build step.
 - \`data/\`: the data, as files (csv, json, md, txt, images). Do not put data in the page. Subfolders are fine (\`data/media/a.jpg\`).
-- \`artifact.json\`: \`{"title": "...", "description": "Two to four short sentences on what it shows.", "slots": {"rows": {"kind": "csv", "description": "One row per ...: the columns the page uses"}}, "bindings": {"rows": "data/rows.csv"}}\`. When the page came from an isle on Prolifica, add \`"parent": "<isle id>"\`. When you pulled an isle down to change it (its page, data and instructions), add \`"isle": "<isle id>"\` too: the first Publish from Codinger then makes that isle's next version, not a new page. Do not publish it yourself; the user publishes when ready.
+- \`artifact.json\`: \`{"title": "...", "description": "Two to four short sentences on what it shows.", "slots": {"rows": {"kind": "csv", "description": "One row per ...: the columns the page uses"}}, "bindings": {"rows": "data/rows.csv"}}\`. When the page came from an isle on Prolifica, add \`"parent": "<isle id>"\`: the isle you started from, also when you change that isle itself, and not the parent that isle shows on Prolifica (Codinger does not send a parent equal to the isle it updates). When you pulled an isle down to change it (its page, data and instructions), add \`"isle": "<isle id>"\` too: the first Publish from Codinger then makes that isle's next version, not a new page. Do not publish it yourself; the user publishes when ready.
 - Source data: copy the data you started from (a scraper's export, a download, a file the user gave you) into \`data/\` as it is, even when no slot uses it, and list it in artifact.json: \`"sources": {"data/source.json": {"url": "...", "method": "...", "collected_at": "...", "notes": "..."}}\` (where it came from; each field optional). It is published with the page, and the bound data says it was made from it, so it goes public when the page does. When a source made only some of the slots' data, add \`"slots": ["..."]\` to it.
 - \`instructions.md\`: instructions for agents about this page, so the next agent does not have to learn it from the HTML. Write them for each artifact. Say which data fields drive the wording, what text is fixed in the page, the limits, and what breaks. Write about the page, not about this data. Update them when you learn something about the page. They are published with the page.
 
