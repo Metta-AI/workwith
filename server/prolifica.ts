@@ -88,8 +88,9 @@ function failed(p: string, init: RequestInit, e: any): Error {
 }
 
 // A request to Prolifica's API as the connected person. JSON comes back parsed.
-export async function call(p: string, init: RequestInit = {}): Promise<any> {
-  const text = await (await request(p, init)).text()
+// onSent: called as the body goes out, with the bytes sent so far (a body of bytes only).
+export async function call(p: string, init: RequestInit = {}, onSent?: (sent: number) => void): Promise<any> {
+  const text = await (await request(p, init, onSent)).text()
   try { return JSON.parse(text) } catch { return text }
 }
 
@@ -105,14 +106,35 @@ export async function bytes(p: string): Promise<Buffer> {
 const CLOSED = new Set(['UND_ERR_SOCKET', 'EPIPE', 'ECONNRESET'])
 const twiceSafe = (p: string, init: RequestInit) => (init.method ?? 'GET').toUpperCase() !== 'POST' || p.startsWith('/api/data?')
 
-async function request(p: string, init: RequestInit = {}): Promise<Response> {
+// A body of bytes as a stream, in parts of 64 KB, that says how much of it went out. A stream
+// is read once: each try makes a new one.
+function counted(b: Uint8Array, onSent: (sent: number) => void): ReadableStream<Uint8Array> {
+  let at = 0
+  onSent(0)
+  return new ReadableStream({
+    pull(c) {
+      if (at >= b.length) return c.close()
+      const end = Math.min(at + 65536, b.length)
+      c.enqueue(b.subarray(at, end))
+      onSent(at = end)
+    },
+  })
+}
+
+async function request(p: string, init: RequestInit = {}, onSent?: (sent: number) => void): Promise<Response> {
   if (!conn?.access) throw new Error('Codinger is not connected to Prolifica.')
+  const b = onSent && init.body instanceof Uint8Array ? init.body : null
   const go = async () => {
     for (let tries = 1; ; tries++) {
       try {
-        return await fetch(`${ORIGIN}${p}`, { ...init, headers: { ...init.headers as Record<string, string>, authorization: `Bearer ${conn!.access}` } })
+        const headers: Record<string, string> = { ...init.headers as Record<string, string>, authorization: `Bearer ${conn!.access}` }
+        // With a length, Node sends the stream as one body, not in chunks.
+        if (b) headers['content-length'] = String(b.length)
+        return await fetch(`${ORIGIN}${p}`, { ...init, headers, ...(b && { body: counted(b, onSent!), duplex: 'half' }) } as RequestInit)
       } catch (e: any) {
         if (tries === 3 || !CLOSED.has(e?.cause?.code) || !twiceSafe(p, init)) throw failed(p, init, e)
+        // How often Prolifica's connection closes, and for which requests: in ~/.codinger/server.log.
+        console.log(`[prolifica] try ${tries} failed, sending again: ${failed(p, init, e).message}`)
         await new Promise((r) => setTimeout(r, 250))
       }
     }

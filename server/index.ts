@@ -47,7 +47,7 @@ import {
 } from './store.ts'
 import { embedOf, mediaKind, mediaType } from '../shared/media.ts'
 import { MEDIA_MAX, MEDIA_PART, keepMedia, mediaFile } from './media.ts'
-import { ARTIFACTS, artifactsChanged, artifactsPrompt, checkArtifact, listArtifacts, noteTool, publish, reportOf, setVisibility, showArtifact, startHost, typeOf, watchArtifacts } from './artifacts.ts'
+import { ARTIFACTS, artifactsChanged, artifactsPrompt, checkArtifact, forgetPublish, listArtifacts, noteTool, reportOf, setVisibility, showArtifact, startPublish, startHost, typeOf, watchArtifacts } from './artifacts.ts'
 import { connectCallback, connectUrl, disconnect as prolificaDisconnect, prolificaState } from './prolifica.ts'
 import { buildShare, publishShare, unpublishShare } from './share.ts'
 import type { ShareOpts } from '../shared/share.ts'
@@ -988,10 +988,13 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     if (id && b === 'publish' && method === 'POST') {
       const body = await json(req)
       const vis = ['public', 'unlisted', 'private'].includes(body.visibility) ? body.visibility : undefined
-      try { return send(res, 200, await publish(id, { visibility: vis, note: typeof body.note === 'string' ? body.note : undefined, v: Number(body.v) || undefined, replace: body.replace === true })) }
+      // It runs on; the page follows it in the artifact's publishing.
+      try { startPublish(id, { visibility: vis, note: typeof body.note === 'string' ? body.note : undefined, v: Number(body.v) || undefined, replace: body.replace === true }) }
       catch (e) { throw new HttpError(400, (e as Error).message) }
-      finally { artifactsChanged() }
+      return send(res, 200, { ok: true })
     }
+    // The user closed the notice of a publish that ended.
+    if (id && b === 'publishing' && method === 'DELETE') { forgetPublish(id); return send(res, 200, { ok: true }) }
     if (id && b === 'visibility' && method === 'POST') {
       const vis = (await json(req)).visibility
       if (!['public', 'unlisted', 'private'].includes(vis)) throw new HttpError(400, 'visibility: public, unlisted or private')

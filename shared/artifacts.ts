@@ -17,17 +17,24 @@ export type Artifact = {
   versions?: { n: number; at: number }[]   // every version kept, oldest first
   error?: string          // its artifact.json could not be read
   isle?: string           // the isle it is ("isle" in artifact.json), while it is not published from here yet
+  publishing?: ArtifactPublishing
+}
+
+// A publish to Prolifica that runs, or ended and was not closed yet: the step it does now,
+// as n of the steps it has. done: what it made; error: why it stopped.
+export type ArtifactPublishing = {
+  at: number; step: string; n: number; of: number
+  done?: { version: number; url: string; madePublic: string[] }
+  error?: string
 }
 
 // data: what each data file was when it went up (sha256), its dataset id and path there.
 // local: the artifact's own version that went up; history: every publish, oldest first
 // (version: the page's version on Prolifica; local: the artifact's version it was; data: the dataset ids it shows).
-// there: what changed on Prolifica since the last publish, as last looked (at); none when nothing did.
 export type ArtifactPublished = {
   id: string; url: string; version: number; at: number; mtime: number
   visibility: Visibility; data: Record<string, { sha: string; id: string; path?: string; source?: true; said?: string; from?: string[] }>
   local?: number; history?: { version: number; local: number; at: number; data?: string[] }[]
-  there?: { at: number; changed: string[] }
 }
 export type Visibility = 'public' | 'unlisted' | 'private'
 

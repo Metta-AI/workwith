@@ -7,7 +7,7 @@ import { Sidebar } from './components/Sidebar.tsx'
 import { SessionView } from './components/SessionView.tsx'
 import { Splitter, useWidth } from './components/Splitter.tsx'
 import { AppearanceDialog } from './components/AppearanceDialog.tsx'
-import { ArtifactCheck, ArtifactsView } from './components/Artifacts.tsx'
+import { ArtifactCheck, ArtifactsView, PublishToasts } from './components/Artifacts.tsx'
 import { useFavicon } from './favicon.tsx'
 import { ChevronIcon, MenuIcon } from './components/Icons.tsx'
 import { initTooltips } from './tooltip.ts'
@@ -56,6 +56,7 @@ function App() {
       {/* Notices stack in the bottom left corner. */}
       <div className="toasts">
         <Offline />
+        <PublishToasts />
         {st.error && <div className="toast" onClick={() => { state.error = null; changed() }}>{st.error}</div>}
       </div>
     </div>

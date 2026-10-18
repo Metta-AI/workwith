@@ -837,6 +837,13 @@ label > input[type="checkbox"] { flex: none; margin: 0; }
 .offline-toast { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; background: var(--card); border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(0, 0, 0, .18); font-size: calc(12.5px * var(--fs, 1)); }
 .offline-toast .conn { flex: none; }
 .toast { box-shadow: 0 6px 20px rgba(0, 0, 0, .18); background: var(--bad); color: #fff; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: calc(12.5px * var(--fs, 1)); overflow-wrap: anywhere; }
+.publish-toast { width: 300px; max-width: 100%; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; background: var(--card); border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(0, 0, 0, .18); font-size: calc(12.5px * var(--fs, 1)); overflow-wrap: anywhere; }
+.publish-toast.err { border-color: var(--bad); }
+.publish-toast-head { display: flex; align-items: flex-start; gap: 8px; }
+.publish-toast-head b { flex: 1; font-weight: 600; }
+.publish-toast-head .icon-btn { margin: -3px -4px 0 0; }
+.publish-bar { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.publish-bar span { display: block; height: 100%; background: var(--blue); border-radius: 2px; transition: width .3s ease-out; }
 
 /* ---- appearance ---- */
 .modal.appearance-modal { width: min(640px, 94vw); gap: 14px; }

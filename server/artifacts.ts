@@ -21,7 +21,7 @@ import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { DATA } from './store.ts'
 import { ORIGIN, bytes as bytesThere, call, prolificaState } from './prolifica.ts'
-import type { Artifact, ArtifactPublished, ArtifactTouch, Visibility } from '../shared/artifacts.ts'
+import type { Artifact, ArtifactPublished, ArtifactPublishing, ArtifactTouch, Visibility } from '../shared/artifacts.ts'
 
 export const ARTIFACTS = path.join(DATA, 'artifacts')
 const RECORD = path.join(DATA, 'artifacts.json')
@@ -125,13 +125,13 @@ function mtimeOf(dir: string): number {
 }
 
 export function listArtifacts(): Artifact[] {
-  lookThere()
   const out: Artifact[] = []
   for (const e of fs.readdirSync(ARTIFACTS, { withFileTypes: true })) {
     if (!e.isDirectory() || !NAME_RE.test(e.name) || !fs.existsSync(path.join(dirOf(e.name), 'index.html'))) continue
     const r = record[e.name] ?? { edits: [] }
     const a: Artifact = { name: e.name, title: e.name, mtime: mtimeOf(dirOf(e.name)), created: r.created, edits: r.edits, published: r.published, latest: r.versions?.at(-1)?.n, versions: r.versions?.map(({ n, at }) => ({ n, at })) }
     try { const m = manifest(e.name); a.title = m.title || e.name; a.description = m.description; if (!r.published && m.isle) a.isle = m.isle } catch (err) { a.error = `artifact.json: ${(err as Error).message}` }
+    if (publishing[e.name]) a.publishing = publishing[e.name]
     out.push(a)
   }
   return out.sort((a, b) => b.mtime - a.mtime)
@@ -383,52 +383,6 @@ function renumber(p: ArtifactPublished, v: number) {
   p.version = v
 }
 
-// Looked at when the artifacts are listed (the page loads, or the list changes), at most every
-// few minutes, in the background. A squash there renumbers the versions, which the record takes
-// at once. A version made there, a slot there that shows other data, or bound data edited there
-// after the last publish shows as changed on Prolifica, until the next publish.
-const LOOK_EVERY = 5 * 60_000
-let looked = 0, looking = false
-function lookThere() {
-  if (looking || Date.now() - looked < LOOK_EVERY || !prolificaState()) return
-  looking = true
-  void (async () => {
-    let any = false
-    for (const [name, r] of Object.entries(record)) {
-      const p = r.published
-      if (!p) continue
-      const was = JSON.stringify([p.version, p.there?.changed ?? []])
-      try { await look(name, p) } catch { continue }   // not reachable now: next time
-      any ||= JSON.stringify([p.version, p.there?.changed ?? []]) !== was
-    }
-    looked = Date.now(); looking = false
-    if (any) { saveRecord(); artifactsChanged() }
-  })()
-}
-
-async function look(name: string, p: ArtifactPublished) {
-  const there = await call(`/api/isles/${encodeURIComponent(p.id)}`).then((j) => j?.isle ?? j)
-    .catch((e) => { if (e.status === 404) return null; throw e })
-  const changed: string[] = []
-  if (!there) changed.push('the page was deleted there')
-  else {
-    if (typeof there.version === 'number' && there.version < p.version) renumber(p, there.version)
-    if (typeof there.version === 'number' && there.version > p.version) changed.push(`v${there.version} was made there`)
-    let m: Manifest | null = null
-    try { m = manifest(name) } catch { /* unreadable here now: compare with what went up only */ }
-    const mine = new Set([...Object.values(p.data).map((d) => d.id), ...Object.values(m?.bindings ?? {}).filter((f) => f.startsWith('prolifica:')).map((f) => f.slice(10))])
-    const bound = Object.values(there.bindings ?? {}).map((b: any) => b?.id).filter((id): id is string => typeof id === 'string')
-    if (bound.some((id) => !mine.has(id))) changed.push('a slot shows other data there')
-    else {
-      // A minute of slack: the clocks here and there need not agree.
-      const metas = await Promise.all(bound.map((id) => call(`/api/data/${encodeURIComponent(id)}`).then((j) => j?.data ?? j).catch(() => null)))
-      if (metas.some((d) => d?.updatedAt > p.at + 60_000)) changed.push('its data was edited there')
-    }
-  }
-  if (changed.length) p.there = { at: Date.now(), changed }
-  else delete p.there
-}
-
 // JSON that says the same, whatever its spacing or the order of its keys: Prolifica writes JSON
 // again in its own way when it is edited there.
 const canon = (b: Buffer) => JSON.stringify(JSON.parse(b.toString('utf8')), (_, x) =>
@@ -450,13 +404,37 @@ async function holding(cands: Where[string], b: Buffer, hash: string, json: bool
   return null
 }
 
+// The publishes that run, and those that ended until the user closes their notice (forget).
+const publishing: Record<string, ArtifactPublishing> = {}
+
+// Start a publish and return at once: the page follows it in the artifact's publishing.
+export function startPublish(name: string, opts: Parameters<typeof publish>[1]) {
+  if (publishing[name] && !publishing[name].done && !publishing[name].error) throw new Error(`${name} is publishing already.`)
+  const p: ArtifactPublishing = publishing[name] = { at: Date.now(), step: 'Starting', n: 0, of: 1 }
+  const step = (text: string, n = p.n, of = p.of) => { Object.assign(p, { step: text, n, of }); artifactsChanged() }
+  publish(name, opts, step)
+    .then(({ published, madePublic }) => {
+      p.done = { version: published.version, url: published.url, madePublic }
+      step(`Published as v${published.version}`, p.of)
+      // A success hides by itself; an error stays until the user closes it.
+      setTimeout(() => { if (publishing[name] === p) forgetPublish(name) }, 15_000)
+    })
+    .catch((e) => { p.error = (e as Error).message; artifactsChanged() })
+}
+
+export function forgetPublish(name: string) {
+  if (publishing[name]?.done || publishing[name]?.error) { delete publishing[name]; artifactsChanged() }
+}
+
 // Send an artifact to Prolifica, as it is now or one of its versions (v): each data file
 // that changed since the last time, then the page. The first publish makes a new page
 // there; each later one a new version of it. A data file that changed goes up under a
 // new name, so the page's earlier versions there keep showing the data they had.
 // replace: the new version takes the place of the last one there (a squash of the two).
-export async function publish(name: string, opts: { visibility?: Visibility; note?: string; v?: number; replace?: boolean }): Promise<{ published: ArtifactPublished; madePublic: string[] }> {
+// step: what it does now, as n of the steps it has.
+export async function publish(name: string, opts: { visibility?: Visibility; note?: string; v?: number; replace?: boolean }, step: (text: string, n?: number, of?: number) => void = () => {}): Promise<{ published: ArtifactPublished; madePublic: string[] }> {
   if (checkArtifact(name)) throw new Error(checkArtifact(name)!)
+  step('Saving a version here')
   const local = opts.v ?? snapshot(name)
   saveRecord()
   const src = sourceOf(name, local)
@@ -464,6 +442,17 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
   const m = src.manifest()
   const r = recOf(name)
   // Pulled down from an isle and not published from here yet: carry on from the isle as it is there.
+  // The bar moves by bytes sent: each data file by its size, the page by its HTML and
+  // instructions. A call that sends little counts as TRIP bytes, so its wait shows too.
+  const TRIP = 20_000
+  const files = [...new Set([...Object.keys(m.sources ?? {}), ...Object.values(m.bindings ?? {}).filter((f) => !f.startsWith('prolifica:'))])]
+  const bytesOf = new Map(files.map((f) => [f, src.read(f)]))
+  const pageBytes = (src.read('index.html')?.length ?? 0) + (src.read('instructions.md')?.length ?? 0)
+  const looks = !!(r.published || m.isle)
+  const of = (looks ? TRIP : 0) + files.reduce((t, f) => t + TRIP + (bytesOf.get(f)?.length ?? 0), 0) + TRIP + pageBytes + (opts.replace && looks ? TRIP : 0)
+  let n = 0
+  const mb = (b: number) => b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`
+  if (looks) { step('Looking at the page on Prolifica', 0, of); n += TRIP }
   const adopted = !r.published && m.isle ? await adopt(m.isle) : null
   const before = r.published ?? adopted ?? undefined
   const where = before ? await sync(before, m) : {}
@@ -473,7 +462,11 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
   // data/ there, in a folder named after the artifact: data/media/a.jpg is <name>/media/a.jpg.
   const send = async (file: string, description?: string) => {
     if (data[file]) return { id: data[file].id, sent: false }   // bound twice, or a source that is bound too
-    const bytes = src.read(file)
+    const bytes = bytesOf.get(file) ?? src.read(file)
+    const label = `Data ${Object.keys(data).length + 1} of ${files.length}: ${file.replace(/^data\//, '')}`
+    const at = n
+    step(`${label}${bytes ? `, ${mb(bytes.length)}` : ''}`, at, of)
+    n += TRIP + (bytes?.length ?? 0)
     if (!bytes) throw new Error(`Version ${local} has no ${file}.`)
     if (bytes.length > 20 * 1024 * 1024) throw new Error(`${file} is ${(bytes.length / 1048576).toFixed(1)} MB; Prolifica takes files of up to 20 MB.`)
     const hash = sha(bytes)
@@ -489,7 +482,9 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
     const dpath = `${name}/${prev ? `${sub.slice(0, sub.length - ext.length)}.v${next}${ext}` : sub}`
     const q = new URLSearchParams({ path: dpath })
     if (description) q.set('description', description)
-    const ds = await call(`/api/data?${q}`, { method: 'POST', headers: { 'content-type': typeOf(file) }, body: new Uint8Array(bytes) })
+    // The bar moves as the file goes out; the step says how much of it went.
+    const sent = (k: number) => step(k < bytes.length ? `${label}, ${mb(k)} of ${mb(bytes.length)}` : `${label}: sent, Prolifica saves it`, at + TRIP / 2 + k, of)
+    const ds = await call(`/api/data?${q}`, { method: 'POST', headers: { 'content-type': typeOf(file) }, body: new Uint8Array(bytes) }, sent)
     data[file] = { sha: hash, id: ds.id, path: dpath }
     return { id: ds.id as string, sent: true }
   }
@@ -530,6 +525,7 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
     // an isle is never its own parent: when this updates the isle it came from, there is none to send
     parent: [m.parent, m.isle].find((x) => x && x !== id), instructions: src.read('instructions.md')?.toString('utf8'),
   })
+  step('Sending the page', n, of); n += TRIP + pageBytes
   const post = (id?: string) => call('/api/isles', { method: 'POST', headers: { 'content-type': 'application/json' }, body: body(id) })
   // Deleted on Prolifica since: publish it as a new page.
   const out = await post(before?.id).catch((e) => { if (before?.id && e.status === 404) return post(); throw e })
@@ -537,6 +533,7 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
   const earlier = out.isle.id === before?.id ? before?.history ?? (before ? [{ version: before.version, local: before.local ?? 0, at: before.at }] : []) : []
   let history = [...earlier.map((h) => ({ ...h, data: h.data ?? (h.version === before?.version ? Object.values(before.data).map((d) => d.id) : undefined) })), { version: out.isle.version, local, at: Date.now(), data: ids }]
   if (opts.replace && before && out.isle.id === before.id) {
+    step(`Replacing v${before.version}`, n, of); n += TRIP
     const sq = await call(`/api/isles/${encodeURIComponent(before.id)}/squash`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from: before.version, to: out.isle.version, note: opts.note || null }) })
     out.isle = sq.isle
     history = [...history.slice(0, -2), { version: sq.isle.version, local, at: Date.now(), data: ids }]

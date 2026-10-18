@@ -112,19 +112,20 @@ export function PublishControl({ a, v }: { a: Artifact; v?: number }) {
     setWaiting(true)
     window.open(url, '_blank')
   }
+  // A publish runs on the server: the dialog closes, and PublishToasts follows it.
   const go = async () => {
     setBusy(true)
     try {
-      const r = onlyVis
-        ? await api<{ madePublic: string[] }>(`/api/artifacts/${encodeURIComponent(a.name)}/visibility`, 'POST', { visibility: vis })
-        : await api<{ madePublic: string[] }>(`/api/artifacts/${encodeURIComponent(a.name)}/publish`, 'POST', { visibility: vis, note, v, replace: replace && (!!p || !!a.isle) })
-      setMade(r.madePublic); setNote(''); setOpen(false)
+      if (onlyVis) setMade((await api<{ madePublic: string[] }>(`/api/artifacts/${encodeURIComponent(a.name)}/visibility`, 'POST', { visibility: vis })).madePublic)
+      else { setMade(null); await api(`/api/artifacts/${encodeURIComponent(a.name)}/publish`, 'POST', { visibility: vis, note, v, replace: replace && (!!p || !!a.isle) }) }
+      setNote(''); setOpen(false)
     } finally { setBusy(false) }
   }
+  const running = !!a.publishing && !a.publishing.done && !a.publishing.error
   return (
     <span className="publish">
       {p && <a href={p.url} target="_blank" rel="noreferrer" className="publish-link" data-tip={`Version ${p.version} on Prolifica, published ${timeAgo(p.at)} (${p.visibility})`}>Prolifica v{p.version} <OpenIcon size={11} /></a>}
-      <button className="publish-btn" onClick={() => void press()} data-tip={st.prolifica ? 'Publish to Prolifica' : 'Publish to Prolifica (connects Codinger to it first)'}>{waiting ? 'Approve in the browser…' : 'Publish'}</button>
+      <button className="publish-btn" disabled={running} onClick={() => void press()} data-tip={st.prolifica ? 'Publish to Prolifica' : 'Publish to Prolifica (connects Codinger to it first)'}>{waiting ? 'Approve in the browser…' : running ? 'Publishing…' : 'Publish'}</button>
       {open && (
         <div className="publish-pop">
           <div className="small">{upAs != null
@@ -134,7 +135,6 @@ export function PublishControl({ a, v }: { a: Artifact; v?: number }) {
             : a.isle && replace ? `This replaces the latest version of the isle ${a.isle} on Prolifica with v${local} here. Earlier versions there stay as they are.`
             : a.isle ? `This makes the next version of the isle ${a.isle} on Prolifica, from v${local} here. If that isle is not yours, it makes a new page with the isle as its parent.`
             : `This makes a new page on Prolifica, from v${local} here.`}</div>
-          {p?.there && <div className="small">Changed on Prolifica since the last publish: {p.there.changed.join('; ')}. Data that is there already as it is here is not sent again.</div>}
           <label>Who can see it
             <select value={vis} onChange={(e) => setVis(e.target.value as Visibility)}>
               <option value="public">Public: listed, anyone can remix</option>
@@ -155,6 +155,31 @@ export function PublishControl({ a, v }: { a: Artifact; v?: number }) {
       {made && made.length > 0 && <span className="muted small" title={made.join('\n')}>{made.length} data {made.length === 1 ? 'file is' : 'files are'} public now</span>}
     </span>
   )
+}
+
+// A notice for each publish that runs, or ended and was not closed: the step it does now and a
+// bar. It stays until the user closes it, so the result is not missed.
+export function PublishToasts() {
+  const st = useStore()
+  return <>{st.artifacts.filter((a) => a.publishing).map((a) => {
+    const p = a.publishing!
+    const ended = !!(p.done || p.error)
+    return (
+      <div key={`${a.name}:${p.at}`} className={`publish-toast${p.error ? ' err' : ''}`} role="status">
+        <div className="publish-toast-head">
+          <b>{p.error ? `Could not publish ${a.title}` : p.done ? `Published ${a.title}` : `Publishing ${a.title}`}</b>
+          {ended && <button className="icon-btn" aria-label="Close" onClick={() => void api(`/api/artifacts/${encodeURIComponent(a.name)}/publishing`, 'DELETE')}><XIcon size={12} /></button>}
+        </div>
+        {p.error ? <div className="small">{p.error}</div>
+          : p.done ? <div className="small">It is v{p.done.version} on Prolifica. <a href={p.done.url} target="_blank" rel="noreferrer">Open it <OpenIcon size={10} /></a>
+              {p.done.madePublic.length > 0 && <div className="muted">{p.done.madePublic.length} data {p.done.madePublic.length === 1 ? 'file is' : 'files are'} public now.</div>}</div>
+          : <>
+              <div className="small muted">{p.step}…</div>
+              <div className="publish-bar"><span style={{ width: `${Math.max(4, (p.n / p.of) * 100)}%` }} /></div>
+            </>}
+      </div>
+    )
+  })}</>
 }
 
 // A small menu in place of a native select: the current choice on a button, the choices below it.
@@ -330,7 +355,7 @@ export function ArtifactsView() {
               <span className="artifact-title">{x.title}</span>
               <span className="muted small">
                 {timeAgo(x.mtime)}{sids.size > 0 && ` · ${sids.size} ${sids.size === 1 ? 'session' : 'sessions'}`}
-                {x.published ? ` · published v${x.published.version}${x.published.mtime < x.mtime ? ', changed since' : ''}${x.published.there ? ', changed on Prolifica' : ''}` : ' · not published'}
+                {x.published ? ` · published v${x.published.version}${x.published.mtime < x.mtime ? ', changed since' : ''}` : ' · not published'}
               </span>
               {x.error && <span className="small err">{x.error}</span>}
             </button>
