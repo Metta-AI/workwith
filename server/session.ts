@@ -11,6 +11,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import { formatAnswer, formatNote } from '../shared/asks.ts'
 import { formatDismissed, formatDone, itemsOf } from '../shared/blocks.ts'
+import { formatReview } from '../shared/review.ts'
 import { formatMail } from '../shared/mail.ts'
 import { flagArgs } from '../shared/flags.ts'
 import { mediaTypeOf, splitImages, withoutImages } from '../shared/images.ts'
@@ -675,6 +676,7 @@ function partText(p: Part): string {
     : p.kind === 'answer' ? formatAnswer(p.askKey.split(':').pop()!, p.question, p.choices, p.text, p.draft)
     : p.kind === 'dismiss' ? formatDismissed(p.items)
     : p.kind === 'done' ? formatDone(p.items)
+    : p.kind === 'review' ? formatReview(p.files, p.comments)
     : p.kind === 'mail' ? formatMail(p)
     : p.text
 }

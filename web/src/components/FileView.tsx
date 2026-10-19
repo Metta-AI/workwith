@@ -3,11 +3,15 @@
 // shows what changed: git's diff against the last commit, or, where git has none, the edits the
 // agent made in this session. Wrap (kept for every file) wraps long lines of code and changes.
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { mediaKind } from '../../../shared/media.ts'
+import type { Verdict } from '../../../shared/review.ts'
 import { highlight, langOfPath } from '../highlight.ts'
 import { renderMd } from '../util.ts'
 import { BackIcon, FolderIcon, OpenIcon } from './Icons.tsx'
+import { state, type LineDraft } from '../store.ts'
+import { addLine, linesOf } from '../review.ts'
+import { LineCard, VerdictButtons } from './Review.tsx'
 
 const TEXT_MAX = 512 * 1024       // the first part of a long text file
 const TEXT_MORE = 4 * 1024 * 1024 // and the most that "Show more" loads (through web.codinger.app an answer is one message)
@@ -24,13 +28,16 @@ const kb = (n: number) => n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(
 export type Edit = { old?: string; new: string }
 type Diff = { status: 'changed' | 'new' | 'same' | 'none'; diff: string }
 
+// The file's group for review (Review.tsx): its verdict, and the next file that has none.
+export type ReviewOf = { group: string; verdict?: Verdict; sent: boolean; onVerdict(v: Verdict | null): void; next?: { label: string; go(): void } }
+
 type Props = {
-  path: string; size: number; line?: number; at: number; stamp: number; rel: string; changes: boolean; edits: Edit[]
-  url(p: string, run?: boolean): string; tabUrl: string; diffUrl: string
+  sid: string; path: string; size: number; line?: number; at: number; stamp: number; rel: string; changes: boolean; edits: Edit[]
+  url(p: string, run?: boolean): string; tabUrl: string; diffUrl: string; review?: ReviewOf
   canBack: boolean; onBack(): void; reveal?(): void; onLink(href: string): void
 }
 
-export function FileView({ path, size, line, at, stamp, rel, changes, edits, url, tabUrl, diffUrl, canBack, onBack, reveal, onLink }: Props) {
+export function FileView({ sid, path, size, line, at, stamp, rel, changes, edits, url, tabUrl, diffUrl, review, canBack, onBack, reveal, onLink }: Props) {
   const kind = mediaKind(path)
   const ext = langOfPath(path)?.toLowerCase() ?? ''
   const isMd = ext === 'md' || ext === 'markdown'
@@ -76,6 +83,14 @@ export function FileView({ path, size, line, at, stamp, rel, changes, edits, url
 
   const can = kind === 'page' || isMd || isCsv || ext === 'svg'
   const codeLike = diffOn || (asText && !(isMd && !source) && !(isCsv && !source))
+  // Comments on lines: a click or a drag on the line numbers starts one.
+  const lines = linesOf(sid, path)
+  const focus = state.focus
+  const notes: Notes = {
+    list: lines,
+    card: (d) => <LineCard key={d.id} sid={sid} d={d} focus={focus === d.id} />,
+    pick: (s) => addLine(sid, { ...s, group: review?.group, path, rel, verdict: 'unsure', text: '' }),
+  }
   return (
     <div className="fb-view">
       <div className="fb-bar">
@@ -88,8 +103,17 @@ export function FileView({ path, size, line, at, stamp, rel, changes, edits, url
         {reveal && <button className="icon-btn" data-tip="Show in Finder" onClick={reveal}><FolderIcon size={13} /></button>}
         <a className="icon-btn" href={tabUrl} target="_blank" rel="noreferrer" data-tip="Open in a new tab"><OpenIcon size={13} /></a>
       </div>
+      {review && (
+        <div className="fb-bar rv-bar" data-pid="file-review">
+          <VerdictButtons value={review.verdict} sent={review.sent} onSet={review.onVerdict} label />
+          {review.sent && <span className="muted rv-sent">sent</span>}
+          <span className="grow" />
+          {review.next && <button className="link rv-next" data-pid="review-next" onClick={review.next.go}>Next: {review.next.label} →</button>}
+        </div>
+      )}
       <div className="fb-content">
-        {diffOn ? (gitChanged ? <DiffLines diff={diff!.diff} lang={ext} wrap={wrap} /> : <EditLines edits={edits} lang={ext} wrap={wrap} />)
+        {codeLike && review && !lines.length && <div className="fb-note muted rv-hint">To comment on lines, click or drag their numbers.</div>}
+        {diffOn ? (gitChanged ? <DiffLines diff={diff!.diff} lang={ext} wrap={wrap} notes={notes} /> : <EditLines edits={edits} lang={ext} wrap={wrap} />)
           : err ? <div className="fb-note error-text">{err}</div>
           : binary ? <div className="fb-note muted">This file is not text. Use the button at the top right to open it in a new tab.</div>
           : kind === 'image' && !source ? <div className="fb-media"><img src={`${url(path)}&t=${stamp}`} alt={rel} /></div>
@@ -102,7 +126,7 @@ export function FileView({ path, size, line, at, stamp, rel, changes, edits, url
             {size > limit && <div className="fb-note muted">The file is {kb(size)}. This shows the first {kb(limit)}.{!more && <> <button className="link" onClick={() => setMore(true)}>{size > TEXT_MORE ? `Show the first ${kb(TEXT_MORE)}` : 'Show all'}</button></>}</div>}
             {isMd && !source ? <Markdown text={text} url={url} dir={dirName(path)} onLink={onLink} />
               : isCsv && !source ? <Table text={text} tab={ext === 'tsv'} />
-              : <Code text={text} lang={ext} line={line} at={at} wrap={wrap} />}
+              : <Code text={text} lang={ext} line={line} at={at} wrap={wrap} notes={notes} />}
           </>}
       </div>
     </div>
@@ -127,24 +151,89 @@ function htmlLines(html: string): string[] {
 const escapeHtml = (s: string) => s.replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`)
 const lang = (text: string, l: string) => text.length > HIGHLIGHT_MAX ? undefined : l
 
-// Rows of code, each with its numbers; one HTML string, so a long file is quick to show.
-type Row = { cls?: string; nums: (number | string)[]; html: string }
-function Rows({ rows, wrap, mark, at }: { rows: Row[]; wrap: boolean; mark?: number; at?: number }) {
+// Rows of code, each with its numbers; HTML strings, so a long file is quick to show. ln: the line
+// a comment names (old: a line the change removed, by its number before); text: its code.
+type Row = { cls?: string; nums: (number | string)[]; html: string; ln?: number; old?: boolean; text?: string }
+// Comments on lines: each shows below the last of its lines; pick: you chose lines for a new one.
+type Pick = { line: number; end: number; old?: boolean; code: string }
+type Notes = { list: LineDraft[]; card(d: LineDraft): React.ReactNode; pick(s: Pick): void }
+
+function Rows({ rows, wrap, mark, at, notes }: { rows: Row[]; wrap: boolean; mark?: number; at?: number; notes?: Notes }) {
   const el = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => { el.current?.querySelector('.fb-ln.mark')?.scrollIntoView({ block: 'center' }) }, [mark, at])
   const cols = rows[0]?.nums.length ?? 1
   const width = Math.max(2, ...rows.map((r) => Math.max(...r.nums.map((n) => String(n).length))))
-  const html = rows.map((r, i) => `<div class="fb-ln${r.cls ? ` ${r.cls}` : ''}${mark === i + 1 ? ' mark' : ''}">${r.nums.map((n) => `<span class="fb-n">${n}</span>`).join('')}<span class="fb-c">${r.html || ' '}</span></div>`).join('')
-  return <div ref={el} className={`fb-code hljs${wrap ? ' wrap' : ''}`} style={{ '--fb-nw': `${width + 1}ch`, '--fb-cols': cols } as React.CSSProperties} dangerouslySetInnerHTML={{ __html: html }} />
+  // The rows of each comment, and the row it shows after (-1: its lines are not on view, so at the top).
+  const sel = new Set<number>()
+  const after = new Map<number, LineDraft[]>()
+  for (const d of notes?.list ?? []) {
+    let last = -1
+    rows.forEach((r, i) => { if (r.ln != null && !!r.old === !!d.old && r.ln >= d.line && r.ln <= d.end) { sel.add(i); last = i } })
+    after.set(last, [...after.get(last) ?? [], d])
+  }
+  const html = rows.map((r, i) => `<div class="fb-ln${r.cls ? ` ${r.cls}` : ''}${mark === i + 1 ? ' mark' : ''}${sel.has(i) ? ' sel' : ''}${notes && r.ln != null ? ' pickable' : ''}" data-i="${i}">${r.nums.map((n) => `<span class="fb-n">${n}</span>`).join('')}<span class="fb-c">${r.html || ' '}</span></div>`)
+  const cuts = [...after.keys()].filter((i) => i >= 0).sort((a, b) => a - b)
+  const segs: [number, number][] = []
+  let from = 0
+  for (const c of cuts) { segs.push([from, c + 1]); from = c + 1 }
+  segs.push([from, rows.length])
+
+  // A press on a line number chooses that line; a drag, the lines between; Shift, from the last one chosen.
+  const anchor = useRef<number | null>(null)
+  const down = (e: React.PointerEvent) => {
+    if (!notes || e.button !== 0) return
+    const n = (e.target as HTMLElement).closest('.fb-n')
+    const i = Number(n?.parentElement?.dataset.i)
+    if (!n || !rows[i] || rows[i].ln == null) return
+    e.preventDefault()
+    const start = e.shiftKey && anchor.current != null ? anchor.current : i
+    anchor.current = start
+    let end = i
+    const live = (a: number, b: number) => {
+      for (const x of el.current?.querySelectorAll('.fb-ln.live') ?? []) x.classList.remove('live')
+      for (let j = Math.min(a, b); j <= Math.max(a, b); j++) el.current?.querySelector(`.fb-ln[data-i="${j}"]`)?.classList.add('live')
+    }
+    live(start, end)
+    const move = (ev: PointerEvent) => {
+      const row = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>('.fb-ln[data-i]')
+      if (row && el.current?.contains(row)) { end = Number(row.dataset.i); live(start, end) }
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      for (const x of el.current?.querySelectorAll('.fb-ln.live') ?? []) x.classList.remove('live')
+      const picked = rows.slice(Math.min(start, end), Math.max(start, end) + 1).filter((r) => r.ln != null)
+      // Lines on both sides of a change are named by their numbers after it.
+      const side = picked.some((r) => !r.old) ? picked.filter((r) => !r.old) : picked
+      if (!side.length) return
+      const nums = side.map((r) => r.ln!)
+      notes.pick({ line: Math.min(...nums), end: Math.max(...nums), ...(side[0].old ? { old: true } : {}), code: side.find((r) => r.text?.trim())?.text ?? '' })
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+  return (
+    <div ref={el} className={`fb-code hljs${wrap ? ' wrap' : ''}${notes ? ' notes' : ''}`} style={{ '--fb-nw': `${width + 1}ch`, '--fb-cols': cols } as React.CSSProperties} onPointerDown={down}>
+      {after.get(-1)?.map((d) => notes!.card(d))}
+      {segs.map(([a, b]) => (
+        <Fragment key={a}>
+          <div dangerouslySetInnerHTML={{ __html: html.slice(a, b).join('') }} />
+          {after.get(b - 1)?.map((d) => notes!.card(d))}
+        </Fragment>
+      ))}
+    </div>
+  )
 }
 
-function Code({ text, lang: l, line, at, wrap }: { text: string; lang: string; line?: number; at: number; wrap: boolean }) {
-  const lines = htmlLines(highlight(text.endsWith('\n') ? text.slice(0, -1) : text, lang(text, l)))
-  return <Rows rows={lines.map((html, i) => ({ nums: [i + 1], html }))} wrap={wrap} mark={line} at={at} />
+function Code({ text, lang: l, line, at, wrap, notes }: { text: string; lang: string; line?: number; at: number; wrap: boolean; notes?: Notes }) {
+  const body = text.endsWith('\n') ? text.slice(0, -1) : text
+  const raw = body.split('\n')
+  const lines = htmlLines(highlight(body, lang(text, l)))
+  return <Rows rows={lines.map((html, i) => ({ nums: [i + 1], html, ln: i + 1, text: raw[i] }))} wrap={wrap} mark={line} at={at} notes={notes} />
 }
 
 // A unified diff: each line with its number before and after, a removed line red, an added one green.
-function DiffLines({ diff, lang: l, wrap }: { diff: string; lang: string; wrap: boolean }) {
+function DiffLines({ diff, lang: l, wrap, notes }: { diff: string; lang: string; wrap: boolean; notes?: Notes }) {
   const rows: Row[] = []
   let o = 0, n = 0
   const hl = (s: string) => htmlLines(highlight(s, lang(diff, l)))[0] ?? ''
@@ -152,11 +241,12 @@ function DiffLines({ diff, lang: l, wrap }: { diff: string; lang: string; wrap: 
     const h = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/.exec(line)
     if (h) { o = Number(h[1]); n = Number(h[2]); rows.push({ cls: 'hunk', nums: ['', ''], html: escapeHtml(line) }); continue }
     if (!o && !n) continue   // the header: diff --git, index, ---, +++
-    if (line.startsWith('+')) rows.push({ cls: 'add', nums: ['', n++], html: hl(line.slice(1)) })
-    else if (line.startsWith('-')) rows.push({ cls: 'del', nums: [o++, ''], html: hl(line.slice(1)) })
-    else if (line.startsWith(' ')) rows.push({ nums: [o++, n++], html: hl(line.slice(1)) })
+    const text = line.slice(1)
+    if (line.startsWith('+')) rows.push({ cls: 'add', nums: ['', n], html: hl(text), ln: n++, text })
+    else if (line.startsWith('-')) rows.push({ cls: 'del', nums: [o, ''], html: hl(text), ln: o++, old: true, text })
+    else if (line.startsWith(' ')) rows.push({ nums: [o++, n], html: hl(text), ln: n++, text })
   }
-  return <Rows rows={rows} wrap={wrap} />
+  return <Rows rows={rows} wrap={wrap} notes={notes} />
 }
 
 // The agent's edits, where git has no changes to show (no repository, or they are committed).

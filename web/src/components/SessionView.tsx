@@ -395,7 +395,8 @@ export function Composer({ m, attachRef }: { m: SessionMeta; attachRef?: React.R
   const c = composerOf(m.id)
   const drafts = draftsOf(m.id).filter(hasContent)
   const reactions = drafts.filter((d) => d.kind === 'note' && isReaction(d.text) && !d.images.length).length
-  const notes = drafts.filter((d) => d.kind === 'note').length - reactions
+  const notes = drafts.filter((d) => d.kind === 'note' || d.kind === 'line').length - reactions
+  const verdicts = drafts.filter((d) => d.kind === 'verdict').length
   const answers = drafts.filter((d) => d.kind === 'answer').length
   const dismissed = drafts.filter((d) => d.kind === 'dismiss').length
   const done = drafts.filter((d) => d.kind === 'done').length
@@ -435,8 +436,9 @@ export function Composer({ m, attachRef }: { m: SessionMeta; attachRef?: React.R
       <RunningTasks sid={m.id} />
       <Inbox m={m} />
       <Mailbox m={m} />
-      {(notes > 0 || reactions > 0 || answers > 0 || dismissed > 0 || done > 0 || open.length > 0) && (
+      {(notes > 0 || verdicts > 0 || reactions > 0 || answers > 0 || dismissed > 0 || done > 0 || open.length > 0) && (
         <div className="queue">
+          {verdicts > 0 && <span className="chip static">{verdicts} {verdicts === 1 ? 'verdict' : 'verdicts'}</span>}
           {notes > 0 && <span className="chip static">{notes} {notes === 1 ? 'comment' : 'comments'}</span>}
           {reactions > 0 && <span className="chip static">{reactions} {reactions === 1 ? 'reaction' : 'reactions'}</span>}
           {answers > 0 && <span className="chip static">{answers} {answers === 1 ? 'answer' : 'answers'}</span>}

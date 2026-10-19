@@ -6,6 +6,7 @@ import type { Appearance } from './appearance.ts'
 import type { Artifact, PreviewTarget, ProlificaState } from './artifacts.ts'
 import type { UpdateMode, UpdateStatus } from './update.ts'
 import type { Published } from './share.ts'
+import type { FileVerdict, LineComment } from './review.ts'
 
 export type Status =
   | 'new'        // never sent anything
@@ -145,6 +146,8 @@ export type Part =
   // Items the user marked done; `text` on one is a problem they hit doing it.
   // result: how a command the item asked for went.
   | { kind: 'done'; text: string; items: { key: string; label: string; text?: string; result?: string }[]; images?: ImageRef[] }
+  // Verdicts on the agent's changes and comments on their lines (shared/review.ts).
+  | { kind: 'review'; text: string; files: FileVerdict[]; comments: LineComment[]; images?: ImageRef[] }
   // A message from another session (see Mail); relation: what the sender is to this session.
   | { kind: 'mail'; text: string; id: string; from: string; title: string; relation?: 'parent' | 'child'; replyTo?: { id: string; text: string }; idle?: boolean; endTurn?: boolean; images?: ImageRef[] }
 

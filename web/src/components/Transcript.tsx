@@ -20,6 +20,8 @@ import { shortPath } from './DirPicker.tsx'
 import { ArtifactLine, SHOW_ARTIFACT } from './Artifacts.tsx'
 import { MediaLine, SHOW_FILE } from './MediaLine.tsx'
 import { WithPastes } from './Paste.tsx'
+import { openFile } from './FileBrowser.tsx'
+import { baseName } from './FileView.tsx'
 
 type PermEvent = Extract<Event, { t: 'permission' }>
 type Folded = {
@@ -670,7 +672,7 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
             },
           } : {})}
         >
-          <PartHead p={p} />
+          <PartHead p={p} sid={sid} />
           {p.text.trim() && (e.from === 'codinger' ? <CodingerText text={p.text} /> : <WithPastes text={p.text} render={renderText} />)}
           <Thumbs images={p.images} />
         </div>
@@ -694,9 +696,11 @@ function repliesSummary(parts: Part[]): string {
   const comments = n('note') - reactions.length
   const done = parts.reduce((s, p) => s + (p.kind === 'done' ? p.items.length : 0), 0)
   const dismissed = parts.reduce((s, p) => s + (p.kind === 'dismiss' ? p.items.length : 0), 0)
+  const verdicts = parts.reduce((s, p) => s + (p.kind === 'review' ? p.files.length : 0), 0)
+  const lines = parts.reduce((s, p) => s + (p.kind === 'review' ? p.comments.length : 0), 0)
   const out: string[] = []
   const add = (k: number, one: string, many: string) => { if (k) out.push(`${k} ${k === 1 ? one : many}`) }
-  add(comments, 'comment', 'comments'); add(reactions.length, 'reaction', 'reactions'); add(n('answer'), 'answer', 'answers'); add(done, 'done', 'done'); add(dismissed, 'dismissed', 'dismissed')
+  add(verdicts, 'verdict', 'verdicts'); add(comments + lines, 'comment', 'comments'); add(reactions.length, 'reaction', 'reactions'); add(n('answer'), 'answer', 'answers'); add(done, 'done', 'done'); add(dismissed, 'dismissed', 'dismissed')
   return out.join(', ')
 }
 
@@ -739,14 +743,32 @@ function MailHead({ p }: { p: Extract<Part, { kind: 'mail' }> }) {
   )
 }
 
-function PartHead({ p }: { p: Part }) {
+function PartHead({ p, sid }: { p: Part; sid?: string }) {
   return <>
     {p.kind === 'mail' && <MailHead p={p} />}
     {p.kind === 'note' && p.quote.trim() && <SentQuote quote={p.quote} />}
     {p.kind === 'dismiss' && <div className="sent-dismiss"><XIcon size={11} /> {p.items.map((i) => i.label).join(' · ')}</div>}
+    {p.kind === 'review' && <SentReview p={p} sid={sid} />}
     {p.kind === 'done' && <div className="sent-dismiss sent-done"><CheckIcon size={11} /> {p.items.map((i) => i.text ? `${i.label} (${i.text})` : i.label).join(' · ')}</div>}
     {p.kind === 'answer' && <div className="answer-q" dangerouslySetInnerHTML={{ __html: renderInline(p.question.split('\n')[0]) }} />}
     {p.kind === 'answer' && p.choices?.length ? <div className="answer-choices">{p.choices.join('; ')}</div> : null}
+  </>
+}
+
+// Verdicts on the agent's changes and comments on lines (Review.tsx); a click opens the file.
+function SentReview({ p, sid }: { p: Extract<Part, { kind: 'review' }>; sid?: string }) {
+  const open = (path: string, line?: number) => sid && openFile(sid, line ? `${path}:${line}` : path, true)
+  const files = (v: 'approve' | 'reject') => p.files.filter((f) => f.verdict === v)
+  return <>
+    {(['approve', 'reject'] as const).map((v) => files(v).length > 0 && (
+      <div key={v} className={`sent-dismiss sent-verdict ${v}`}>{v === 'approve' ? <CheckIcon size={11} /> : <XIcon size={11} />} {files(v).map((f) => baseName(f.rel)).join(' · ')}</div>
+    ))}
+    {p.comments.map((c, i) => (
+      <div key={i} className={`sent-line ${c.verdict}`}>
+        <button className="link mono" onClick={() => open(c.path, c.old ? undefined : c.line)}>{baseName(c.rel)}:{c.line}{c.end > c.line ? `–${c.end}` : ''}</button>
+        <span className={`rv-word ${c.verdict}`}>{c.verdict}</span> {c.text}
+      </div>
+    ))}
   </>
 }
 
@@ -757,7 +779,7 @@ function UserEdit({ sid, e, onDone }: { sid: string; e: Extract<Event, { t: 'use
   const [parts, setParts] = useState<Part[]>(() => e.parts.some((p) => p.kind === 'text') ? e.parts : [...e.parts, { kind: 'text', text: '' }])
   const [busy, setBusy] = useState(false)
   const set = (i: number, patch: { text?: string; images?: ImageRef[] }) => setParts((ps) => ps.map((p, j) => j === i ? { ...p, ...patch } as Part : p))
-  const kept = parts.filter((p) => p.kind === 'dismiss' || p.kind === 'done' || p.text.trim() || p.images?.length || (p.kind === 'answer' && p.choices?.length))
+  const kept = parts.filter((p) => p.kind === 'dismiss' || p.kind === 'done' || p.kind === 'review' || p.text.trim() || p.images?.length || (p.kind === 'answer' && p.choices?.length))
   const submit = async () => {
     if (!kept.length || busy) return
     setBusy(true)
@@ -767,8 +789,8 @@ function UserEdit({ sid, e, onDone }: { sid: string; e: Extract<Event, { t: 'use
     <div className="user-turn editing">
       {parts.map((p, i) => (
         <div key={i} className={`user-part ${p.kind}`}>
-          <PartHead p={p} />
-          {p.kind !== 'dismiss' && p.kind !== 'done' && (
+          <PartHead p={p} sid={sid} />
+          {p.kind !== 'dismiss' && p.kind !== 'done' && p.kind !== 'review' && (
             <RichInput value={p.text} onChange={(text) => set(i, { text })} images={p.images ?? []} onImages={(images) => set(i, { images })}
               placeholder={p.kind === 'note' ? 'Comment' : p.kind === 'answer' ? 'Answer' : 'Message Claude'}
               autoFocus={i === parts.length - 1} minRows={1} onSubmit={submit} onEscape={onDone} />

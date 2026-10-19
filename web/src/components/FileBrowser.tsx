@@ -10,7 +10,9 @@ import { filesIn } from '../../../shared/files.ts'
 import { api, changed, LOCAL, localId, machineOf, media, state, useStore } from '../store.ts'
 import { ChevronIcon, FolderIcon } from './Icons.tsx'
 import { Splitter, useWidth } from './Splitter.tsx'
-import { baseName, dirName, FileView, ltr, sepOf, type Edit } from './FileView.tsx'
+import { baseName, dirName, FileView, ltr, sepOf, type Edit, type ReviewOf } from './FileView.tsx'
+import { groupOfFile, ReviewSection, useReview } from './Review.tsx'
+import { setVerdict } from '../review.ts'
 
 type Entry = { name: string; kind: 'dir' | 'file'; size: number; mtime: number; dim?: boolean; secret?: boolean }
 type Node = { path: string; kind: 'dir'; entries: Entry[] } | { path: string; kind: 'file'; size: number; mtime: number }
@@ -43,11 +45,11 @@ function editsOf(sid: string): Map<string, Edit[]> {
 }
 
 // Opens the Files tab on a path (absolute, ~/, or under the session's directory), maybe with :line.
-// changes: show what changed in it.
-export function openFile(sid: string, p: string, changes = false) {
+// changes: show what changed in it; group: the group for review it was opened from (Review.tsx).
+export function openFile(sid: string, p: string, changes = false, group?: string) {
   const m = /^(.*?)(?::(\d+))?(?::\d+)?$/.exec(p.trim())!
   state.panelTab = 'files'
-  state.fileOpen = { ...state.fileOpen, [sid]: { path: m[1], line: m[2] ? Number(m[2]) : undefined, changes, at: Date.now() } }
+  state.fileOpen = { ...state.fileOpen, [sid]: { path: m[1], line: m[2] ? Number(m[2]) : undefined, changes, group, at: Date.now() } }
   changed()
 }
 
@@ -69,7 +71,7 @@ export function FileBrowser({ m }: { m: SessionMeta }) {
   const [roots, setRoots] = useState<string[]>([])     // folders outside the session's folder that a link opened
   const [dirs, setDirs] = useState<Record<string, Entry[] | string>>({})
   const [open, setOpen] = useState<Set<string>>(new Set())
-  const [file, setFile] = useState<{ path: string; size: number; line?: number; changes: boolean; at: number } | null>(null)
+  const [file, setFile] = useState<{ path: string; size: number; line?: number; changes: boolean; group?: string; at: number } | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [stamp, setStamp] = useState(0)                // a change makes the open file load again
   const [search, setSearch] = useState('')
@@ -112,7 +114,7 @@ export function FileBrowser({ m }: { m: SessionMeta }) {
       if (n.kind === 'dir') { chain.push(n.path); setDirs((d) => ({ ...d, [n.path]: n.entries })) }
       setOpen((o) => new Set([...o, ...chain]))
       for (const d of chain) if (!dirs[d]) void load(d)
-      setFile(n.kind === 'file' ? { path: n.path, size: n.size, line: want.line, changes: !!want.changes, at: want.at } : null)
+      setFile(n.kind === 'file' ? { path: n.path, size: n.size, line: want.line, changes: !!want.changes, group: want.group, at: want.at } : null)
     }).catch((e: Error) => { setFile(null); setErr(`${want.path}: ${e.message}`) })
   }, [want?.at, root])
 
@@ -136,8 +138,10 @@ export function FileBrowser({ m }: { m: SessionMeta }) {
     return () => { gone = true; clearTimeout(t) }
   }, [search])
 
+  // The tree's root is the folder's real path; the agent can name it by another (a link such as /tmp).
   const rel = (p: string) => {
     if (root && p.startsWith(root + sepOf(p))) return p.slice(root.length + 1)
+    if (p.startsWith(m.cwd + sepOf(p))) return p.slice(m.cwd.length + 1)
     return st.home && p.startsWith(st.home) ? '~' + p.slice(st.home.length) : p
   }
   const pick = (p: string, changes = false) => openFile(m.id, p, changes)
@@ -174,6 +178,7 @@ export function FileBrowser({ m }: { m: SessionMeta }) {
   }
 
   const edits = editsOf(m.id)
+  const rv = useReview(m)
   const flat = (title: string | null, paths: string[], changes = false) => paths.length > 0 && (
     <div className="fb-group">
       {title && <div className="attention-head">{title}</div>}
@@ -203,6 +208,7 @@ export function FileBrowser({ m }: { m: SessionMeta }) {
       <div className="fb-list">
         {found ? (found.length ? flat(null, found) : <div className="fb-note muted">No file has that in its name.</div>)
           : <>
+            <ReviewSection m={m} rel={rel} isOn={isOn} onOpen={(p, g) => openFile(m.id, p, true, g)} />
             {flat('Changed in this session', [...edits.keys()].slice(0, 30), true)}
             {flat('Attached', filesOf(m.id))}
             {root && <div className="fb-group">
@@ -215,13 +221,28 @@ export function FileBrowser({ m }: { m: SessionMeta }) {
     </div>
   )
   const fileEdits = file ? [...edits].find(([p]) => p === file.path || rel(p) === rel(file.path))?.[1] ?? [] : []
+  // The open file's group for review, its verdict, and the next file of the groups that has none.
+  let review: ReviewOf | undefined
+  const g = file && groupOfFile(rv.shown, file.path, file.group, rel)
+  const path = g && g.files.find((f) => rel(f) === rel(file!.path))   // as the agent named it
+  if (g && path) {
+    const v = rv.of(g.key, path)
+    const order = rv.shown.flatMap((x) => x.files.map((f) => ({ g: x.key, f })))
+    const here = order.findIndex((x) => x.g === g.key && x.f === path)
+    const next = [...order.slice(here + 1), ...order.slice(0, here)].find((x) => !rv.of(x.g, x.f).verdict)
+    review = {
+      group: g.key, verdict: v.verdict, sent: v.sent,
+      onVerdict: (x) => setVerdict(m.id, g.key, path, rel(path), x),
+      next: next && { label: baseName(next.f), go: () => openFile(m.id, next.f, true, next.g) },
+    }
+  }
   return (
     <div ref={el} className={`file-browser${split ? ' split' : ''}`}>
       {err && !file && <div className="fb-note error-text">{err}</div>}
       <div className="fb-body">
         {(split || !file) && list}
         {split && file && <Splitter width={treeW} setWidth={setTreeW} min={160} max={Math.max(200, w - 280)} initial={240} />}
-        {file && <FileView key={file.path} path={file.path} size={file.size} line={file.line} at={file.at} stamp={stamp} rel={rel(file.path)}
+        {file && <FileView key={file.path} sid={m.id} review={review} path={file.path} size={file.size} line={file.line} at={file.at} stamp={stamp} rel={rel(file.path)}
           changes={file.changes} edits={fileEdits} url={fileUrl}
           tabUrl={media(`${base}/file/${encodeURIComponent(baseName(file.path))}?${q(file.path)}&run=1`, machine)}
           diffUrl={media(`${base}/diff?${q(file.path)}`, machine)}

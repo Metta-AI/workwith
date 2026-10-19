@@ -337,6 +337,61 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .fb-table table { border-collapse: collapse; font-size: calc(12px * var(--fs, 1)); }
 .fb-table th, .fb-table td { border: 1px solid var(--line); padding: 2px 6px; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 .fb-table th { position: sticky; top: 0; background: var(--card); }
+/* For review (Review.tsx): groups of the agent's changes with a verdict on each file, the counts of what
+   is left, and comments on lines of a file below those lines in its view (FileView.tsx). */
+.rv .grow, .rv-bar .grow, .rv-card .grow { flex: 1; }
+.rv-head { margin-top: 2px; }
+.rv-counts { display: inline-flex; gap: 8px; align-items: center; text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.rv-counts > span { display: inline-flex; gap: 2px; align-items: center; }
+.rv-ok { color: var(--ok); }
+.rv-bad { color: var(--bad); }
+.rv-left { color: var(--text); font-weight: 600; }
+.rv-group + .rv-group { margin-top: 2px; }
+.rv-ghead { display: flex; align-items: center; gap: 5px; padding: 3px 4px; border-radius: 5px; cursor: pointer; font-size: calc(12.5px * var(--fs, 1)); }
+.rv-ghead:hover { background: var(--card); }
+.rv-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.rv-meta { flex: none; font-size: calc(11.5px * var(--fs, 1)); }
+.rv-file { padding-left: 19px; }
+.rv-file .fb-dir { flex: 1; }
+.rv-btns { flex: none; display: inline-flex; gap: 2px; }
+.rv-btn { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); background: none; color: var(--muted); border-radius: 5px; padding: 1px 5px; cursor: pointer; font: inherit; font-size: calc(11.5px * var(--fs, 1)); line-height: 1.4; }
+.rv-btn:hover { color: var(--text); background: var(--card); }
+.rv-btn.approve.on { color: #fff; background: var(--ok); border-color: var(--ok); }
+.rv-btn.reject.on { color: #fff; background: var(--bad); border-color: var(--bad); }
+/* A verdict you sent shows in its colour without the fill: a new one replaces it. */
+.rv-btn.approve.on.sent { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.rv-btn.reject.on.sent { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.rv-older { display: block; margin: 4px 0 0 19px; font-size: calc(12px * var(--fs, 1)); }
+.rv-bar { padding: 0 0 6px; gap: 6px; }
+.rv-sent { font-size: calc(11.5px * var(--fs, 1)); }
+.rv-next { font-size: calc(12px * var(--fs, 1)); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-hint { padding: 0 0 4px; font-size: calc(11.5px * var(--fs, 1)); }
+.fb-content { container-type: inline-size; }
+.fb-code.notes .fb-ln.pickable .fb-n { cursor: pointer; }
+.fb-code.notes .fb-ln.pickable .fb-n:hover { color: var(--text); background: color-mix(in srgb, var(--accent) 22%, var(--panel)); }
+.fb-ln.sel .fb-n, .fb-ln.live .fb-n { color: var(--text); background: color-mix(in srgb, var(--accent) 28%, var(--panel)); }
+.fb-ln.sel .fb-c, .fb-ln.live .fb-c { box-shadow: inset 2px 0 var(--accent); }
+.rv-card { position: sticky; left: 0; box-sizing: border-box; width: min(560px, calc(100cqw - 8px)); margin: 4px 0 6px 4px; padding: 6px 8px; border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: 6px; background: var(--card); font-family: var(--font); font-size: calc(12.5px * var(--fs, 1)); line-height: 1.45; white-space: normal; }
+.rv-card.approve { border-left-color: var(--ok); }
+.rv-card.reject { border-left-color: var(--bad); }
+.rv-card.unsure { border-left-color: var(--warn); }
+.rv-card-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.rv-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.rv-chip { border: 0; background: none; color: var(--muted); font: inherit; font-size: calc(11.5px * var(--fs, 1)); padding: 1px 7px; cursor: pointer; }
+.rv-chip + .rv-chip { border-left: 1px solid var(--line); }
+.rv-chip:hover { color: var(--text); }
+.rv-chip.on.approve { color: #fff; background: var(--ok); }
+.rv-chip.on.reject { color: #fff; background: var(--bad); }
+.rv-chip.on.unsure { color: #000; background: var(--warn); }
+.rv-text { display: block; width: 100%; box-sizing: border-box; resize: vertical; min-height: 40px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--text); font: inherit; padding: 4px 6px; }
+.sent-verdict.approve { color: var(--ok); }
+.sent-verdict.reject { color: var(--bad); }
+.sent-line { font-size: calc(12.5px * var(--fs, 1)); }
+.sent-line .link { font-size: calc(11.5px * var(--fs, 1)); margin-right: 5px; }
+.rv-word { font-size: calc(10.5px * var(--fs, 1)); text-transform: uppercase; letter-spacing: .04em; margin-right: 3px; }
+.rv-word.approve { color: var(--ok); }
+.rv-word.reject { color: var(--bad); }
+.rv-word.unsure { color: var(--warn); }
 /* Open items are cards; completed ones are a quiet, folded list below a rule. */
 .attention-done-head { width: 100%; border: none; border-top: 1px solid var(--line); border-radius: 0; background: none; padding: 12px 2px 4px; margin-top: 10px; }
 .attention-done-head:hover { color: var(--text); }

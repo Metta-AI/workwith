@@ -9,6 +9,7 @@ import { inboxParts } from '../../shared/inbox.ts'
 import { itemsOf } from '../../shared/blocks.ts'
 import { applyAppearance, holdingAppearance } from './appearance.ts'
 import type { Artifact, PreviewTarget, ProlificaState } from '../../shared/artifacts.ts'
+import type { LineComment, Verdict } from '../../shared/review.ts'
 
 // reaction: an emoji alone, shown at the left of its passage, not as a card;
 // whole: on a whole paragraph or list item (the reaction button), so not highlighted.
@@ -21,7 +22,10 @@ export type DismissDraft = { id: string; kind: 'dismiss'; key: string; label: st
 export type DoneDraft = { id: string; kind: 'done'; key: string; label: string; text: string; result?: string; createdAt: number }
 // A command opened in Terminal from a <run> block (by token), and how it ended.
 export type Run = { sid: string; card: string; command: string; item?: { key: string; label: string }; code?: number; tail?: string }
-export type Draft = NoteDraft | AnswerDraft | DismissDraft | DoneDraft
+// Your verdict on a file the agent changed in one turn (group), and a comment on lines of a file (shared/review.ts).
+export type VerdictDraft = { id: string; kind: 'verdict'; group: string; path: string; rel: string; verdict: Verdict; createdAt: number }
+export type LineDraft = { id: string; kind: 'line'; createdAt: number } & LineComment
+export type Draft = NoteDraft | AnswerDraft | DismissDraft | DoneDraft | VerdictDraft | LineDraft
 export type Composer = { text: string; images: ImageRef[] }
 
 // One Codinger server: this page's own (LOCAL), or another machine through
@@ -84,7 +88,7 @@ type State = {
   settingsPage: string | null        // Settings is open, on this page
   panelTab: PanelTab | null          // the tab of the panel beside a session (SidePanel.tsx); null: closed
   panelWide: boolean                 // and it takes the conversation's place too
-  fileOpen: Record<string, { path: string; line?: number; changes?: boolean; at: number }>   // by session: the file or folder its Files tab shows
+  fileOpen: Record<string, { path: string; line?: number; changes?: boolean; group?: string; at: number }>   // by session: the file or folder its Files tab shows, and the group for review it was opened from
   artifacts: Artifact[]
   artifactsPort: number              // where the server that runs artifacts listens
   prolifica: ProlificaState
@@ -448,7 +452,7 @@ function onServer(m: ServerMsg, machine: string) {
       state.streaming[sid] = ''
       // Comments and answers on messages that are gone go with them.
       const gone = (msg: string) => Number(msg.split(/[.:]/)[0]) >= m.seq
-      state.drafts[sid] = draftsOf(sid).filter((d) => !gone(d.kind === 'note' ? d.anchor.msg : d.kind === 'answer' ? d.askKey : d.key))
+      state.drafts[sid] = draftsOf(sid).filter((d) => !gone(d.kind === 'note' ? d.anchor.msg : d.kind === 'answer' ? d.askKey : d.kind === 'verdict' || d.kind === 'line' ? d.group ?? '' : d.key))
       break
     }
   }
@@ -558,7 +562,8 @@ const order = (msg: string) => msg.split(/[.:]/).map(Number)
 const cmp = (a: number[], b: number[]) => { for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) - (b[i] ?? 0); return 0 }
 
 export function hasContent(d: Draft): boolean {
-  if (d.kind === 'dismiss' || d.kind === 'done') return true
+  if (d.kind === 'dismiss' || d.kind === 'done' || d.kind === 'verdict') return true
+  if (d.kind === 'line') return !!d.text.trim()
   // A draft goes back when edited, or approved as it is.
   if (d.kind === 'answer' && d.original != null) return !!d.text.trim() && (d.text.trim() !== d.original.trim() || !!d.approved)
   return !!(d.text.trim() || d.images.length || (d.kind === 'answer' && d.choices.length))
@@ -644,6 +649,13 @@ export function queuedParts(sid: string, alsoDismiss: { key: string; label: stri
   for (const i of lead) if ((i.kind === 'answer' || i.kind === 'reply') && i.key) keyed.push({ p: inboxParts([i])[0], k: [...order(i.key.split(':')[0]), 9999], t: i.ts })
   keyed.sort((a, b) => cmp(a.k, b.k) || a.t - b.t)
   const parts: Part[] = keyed.map((x) => x.p)
+  const files = mine.flatMap((d) => d.kind === 'verdict' ? [{ group: d.group, path: d.path, rel: d.rel, verdict: d.verdict }] : [])
+  const comments = mine.flatMap((d): LineComment[] => {
+    if (d.kind !== 'line' || !d.text.trim()) return []
+    const { id: _, kind: __, createdAt: ___, ...c } = d
+    return [c]
+  })
+  if (files.length || comments.length) parts.push({ kind: 'review', text: '', files, comments })
   if (done.length) parts.push({ kind: 'done', text: '', items: done })
   if (dismissed.length) parts.push({ kind: 'dismiss', text: '', items: dismissed })
   const c = composerOf(sid)
