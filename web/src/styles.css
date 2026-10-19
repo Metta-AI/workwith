@@ -160,8 +160,26 @@ body.resizing-v .splitter-v::after { background: var(--accent); }
 .side-foot button.link .icon { width: 16px; height: 16px; }
 /* The archived view: a strip across the top of the list, and the toggle shows it is on. */
 .archive-toggle.on { color: var(--text); }
-.archive-banner { display: flex; align-items: center; gap: 6px; padding: 6px 12px; margin-bottom: 4px; background: color-mix(in srgb, var(--text) 6%, transparent); border-bottom: 1px solid var(--line); color: var(--muted); font-size: calc(12px * var(--fs, 1)); }
+.archive-banner { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: color-mix(in srgb, var(--text) 6%, transparent); border-bottom: 1px solid var(--line); color: var(--muted); font-size: calc(12px * var(--fs, 1)); }
 .archive-banner .icon-btn { margin-left: auto; }
+.tree.archived { padding-top: 4px; }
+.archive-filter { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: calc(12px * var(--fs, 1)); }
+.archive-search { position: relative; flex: 1; min-width: 0; }
+.archive-search input[type=search] { width: 100%; box-sizing: border-box; padding: 4px 8px; font-size: inherit; }
+/* The folders the box suggests: a list under it, over the sessions. */
+.archive-options { position: absolute; top: calc(100% + 3px); left: 0; right: 0; z-index: 20; background: var(--card); border: 1px solid var(--line); border-radius: 7px; box-shadow: 0 6px 18px rgba(0, 0, 0, .18); padding: 3px; max-height: calc(5 * (8px + 1.5em) + 6px); overflow-y: auto; }
+/* Five rows show; the list scrolls to the others. */
+.archive-option { display: flex; align-items: baseline; gap: 6px; padding: 4px 7px; line-height: 1.5; border-radius: 5px; cursor: pointer; }
+.archive-option.on { background: color-mix(in srgb, var(--text) 9%, transparent); }
+.archive-option.picked .archive-option-name { font-weight: 600; }
+.archive-option-name { flex: none; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.archive-option-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: calc(11px * var(--fs, 1)); }
+.archive-option-n { flex: none; color: var(--muted); font-size: calc(10.5px * var(--fs, 1)); }
+.archive-filter label { flex: none; display: inline-flex; align-items: center; gap: 4px; color: var(--muted); cursor: pointer; user-select: none; }
+.archive-filter label input { margin: 0; }
+/* A folder's head in the archived view: its path as it is, not in capitals, and how many sessions it has. */
+.group-head.dir { text-transform: none; letter-spacing: 0; }
+.group-head > .group-count { flex: none; color: var(--muted); font-size: calc(10.5px * var(--fs, 1)); }
 /* The sidebar's tabs on a machine's own page: Local and Remote. */
 .side-tabs { display: flex; border-top: 1px solid var(--line); }
 .side-tabs button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: none; border-radius: 0; background: none; padding: 7px 0; color: var(--muted); font-size: calc(12.5px * var(--fs, 1)); }

@@ -95,6 +95,8 @@ type State = {
   sideHidden: boolean                // on a wide screen you hid the sidebar (a click on its splitter, main.tsx)
   collapsed: string[]                // machines whose sessions you hid in the sidebar, and groups (group:<machine>:<id>)
   sideAll: boolean                   // the sidebar shows every session as a row, not only those that need you
+  archiveQuery: string               // the archived view shows only the sessions whose folder has this text
+  archiveByFolder: boolean           // the archived view puts sessions under their folders, not under your groups
   machineOrder: string[]             // other machines, in the order you dragged them to
   // A published transcript, shown read-only (web/src/share.tsx): where its files come from, and
   // whether its tool calls have their input and output or one line each. Null in Codinger itself.
@@ -140,6 +142,8 @@ export const state = {
   sideTab: saved('codinger.sideTab', 'local'),
   collapsed: saved('codinger.collapsed', []),
   sideAll: saved('codinger.sideAll', false),
+  archiveQuery: '',
+  archiveByFolder: saved('codinger.archiveByFolder', false),
   sideHidden: saved('codinger.sideHidden', false),
   machineOrder: saved('codinger.machineOrder', []),
   share: null,
@@ -233,6 +237,7 @@ export function changed() {
     localStorage.setItem('codinger.sideTab', JSON.stringify(state.sideTab))
     localStorage.setItem('codinger.collapsed', JSON.stringify(state.collapsed))
     localStorage.setItem('codinger.sideAll', JSON.stringify(state.sideAll))
+    localStorage.setItem('codinger.archiveByFolder', JSON.stringify(state.archiveByFolder))
     localStorage.setItem('codinger.sideHidden', JSON.stringify(state.sideHidden))
     localStorage.setItem('codinger.machineOrder', JSON.stringify(state.machineOrder))
     if (state.artifact) localStorage.setItem('codinger.artifact', state.artifact)
@@ -510,6 +515,7 @@ export function deselect() {
 // that list no longer shows: the blank view instead.
 export function showArchive(on: boolean) {
   state.showArchived = on
+  state.archiveQuery = ''
   const s = state.sessions.find((x) => x.id === state.selected)
   if (s && !!s.archived !== on) state.selected = ''
   changed()

@@ -203,8 +203,12 @@ export function Sidebar({ width }: { width: number }) {
           {([false, true] as const).map((v) => <button key={String(v)} className={st.sideAll === v ? 'on' : ''} onClick={() => { state.sideAll = v; changed() }}>{v ? 'All sessions' : 'Needs me'}</button>)}
         </div>
       )}
+      {/* The archived view: its banner, and a filter by folder that stays above the list. */}
+      {st.showArchived && <>
+        <div className="archive-banner"><ArchiveIcon size={13} /> Archived sessions<button className="icon-btn" title="Back to active sessions" onClick={() => showArchive(false)}><XIcon size={12} /></button></div>
+        <ArchiveFilter machines={tab === 'local' ? [LOCAL] : others.map((m) => m.name)} />
+      </>}
       <nav className={`tree${st.showArchived ? ' archived' : ''}`}>
-        {st.showArchived && <div className="archive-banner"><ArchiveIcon size={13} /> Archived sessions<button className="icon-btn" title="Back to active sessions" onClick={() => showArchive(false)}><XIcon size={12} /></button></div>}
         {tab === 'local' ? local && tree(LOCAL) : <>
           {others.map((m) => {
             const d = drag.sortable('machines', m.name)
@@ -269,6 +273,85 @@ export function Sidebar({ width }: { width: number }) {
   )
 }
 
+// Does a session's folder match the text of the archived view's filter? The full path of a
+// folder that one of the sessions has matches only that folder, not the folders under it;
+// other text matches each folder that has it.
+function folderMatch(q: string, sessions: { cwd: string; machine: string }[]) {
+  const paths = (s: { cwd: string; machine: string }) => [s.cwd.toLowerCase(), shortPath(s.cwd, s.machine).toLowerCase()]
+  if (!q) return () => true
+  const exact = sessions.some((s) => paths(s).includes(q))
+  return (s: { cwd: string; machine: string }) => exact ? paths(s).includes(q) : paths(s).some((p) => p.includes(q))
+}
+
+// The filter of the archived view: a box that suggests the folders of the archived sessions
+// as you type, and a checkbox that puts the sessions under their folders. The list shows 5
+// folders and scrolls to the others: with the box empty or with a folder's full path in it,
+// all of them, newest first; with other text, those that have it, names that start with it first.
+// A pick puts the folder's path in the box.
+function ArchiveFilter({ machines }: { machines: string[] }) {
+  const st = useStore()
+  const [open, setOpen] = useState(false)
+  const [at, setAt] = useState(-1)
+  const list = useRef<HTMLDivElement>(null)
+  const q = st.archiveQuery.trim().toLowerCase()
+  const folders = new Map<string, { path: string; n: number; newest: number }>()
+  for (const machine of machines) for (const s of st.machines[machine]?.sessions ?? []) {
+    if (s.kind !== 'worker' || !s.archived) continue
+    const path = shortPath(s.cwd, machine)
+    const f = folders.get(path) ?? { path, n: 0, newest: 0 }
+    folders.set(path, { path, n: f.n + 1, newest: Math.max(f.newest, s.createdAt) })
+  }
+  const nameOf = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path
+  const picked = [...folders.keys()].find((p) => p.toLowerCase() === q)
+  const typed = q && !picked ? q : ''
+  const starts = (path: string) => nameOf(path).toLowerCase().startsWith(typed) ? 0 : 1
+  const options = [...folders.values()]
+    .filter((f) => !typed || f.path.toLowerCase().includes(typed))
+    .sort((a, b) => (typed ? starts(a.path) - starts(b.path) : 0) || b.newest - a.newest)
+    .slice(0, 100)
+  // The list opens on the folder in the box, or on the one the arrow keys reach.
+  const shown = open && options.length > 0
+  useEffect(() => {
+    if (!shown) return
+    const el = list.current?.querySelector(at >= 0 ? '.archive-option.on' : '.archive-option.picked')
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [shown, at, picked])
+  const set = (v: string) => { state.archiveQuery = v; changed(); setAt(-1) }
+  const pick = (path: string) => { set(path); setOpen(false) }
+  return (
+    <div className="archive-filter">
+      <div className="archive-search">
+        <input type="search" placeholder="Filter by folder" value={st.archiveQuery} data-pid="archive-filter"
+          onFocus={() => setOpen(true)} onClick={() => setOpen(true)} onBlur={() => { setOpen(false); setAt(-1) }}
+          onChange={(e) => { set(e.target.value); setOpen(true) }}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+              e.preventDefault()
+              setOpen(true)
+              // From the folder you reached, or else from the one in the box.
+              const n = options.length, from = at >= 0 ? at : options.findIndex((f) => f.path === picked)
+              if (n) setAt(e.key === 'ArrowDown' ? (from + 1) % n : from < 0 ? n - 1 : (from - 1 + n) % n)
+            } else if (e.key === 'Enter' && open && options[at]) pick(options[at].path)
+            else if (e.key === 'Escape' && open) { e.preventDefault(); setOpen(false) }
+          }} />
+        {shown && (
+          <div ref={list} className="archive-options" role="listbox">
+            {options.map((f, i) => (
+              <div key={f.path} role="option" aria-selected={i === at} className={`archive-option${i === at ? ' on' : ''}${f.path === picked ? ' picked' : ''}`}
+                onMouseDown={(e) => { e.preventDefault(); pick(f.path) }} onMouseEnter={() => setAt(i)}>
+                <span className="archive-option-name">{nameOf(f.path)}</span>
+                <span className="archive-option-path">{f.path}</span>
+                <span className="archive-option-n">{f.n}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <label><input type="checkbox" checked={st.archiveByFolder} data-pid="archive-by-folder" onChange={(e) => { state.archiveByFolder = e.target.checked; changed() }} /> By folder</label>
+    </div>
+  )
+}
+
 // A machine's icon: laptop or desktop, and what it runs.
 const OS: Record<string, string> = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }
 function DeviceIcon({ m, tip = true }: { m: Machine; tip?: boolean }) {
@@ -315,15 +398,25 @@ function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: s
   const groups = m?.settings.groups ?? []
   const known = new Set(groups.map((g) => g.id))
   const gid = (s: SessionMeta) => s.group && known.has(s.group) ? s.group : NONE
-  const workers = (m?.sessions ?? []).filter((s) => s.kind === 'worker' && s.archived === st.showArchived)
-  const tier = tiers(workers, (a, b) => gid(a) === gid(b))
+  // Archived: only the sessions whose folder has the text you typed, and by folder if you ask.
+  const q = st.showArchived ? st.archiveQuery.trim().toLowerCase() : ''
+  const byDir = st.showArchived && st.archiveByFolder
+  const shown = (m?.sessions ?? []).filter((s) => s.kind === 'worker' && s.archived === st.showArchived)
+  const match = folderMatch(q, shown.map((s) => ({ cwd: s.cwd, machine })))
+  const workers = shown.filter((s) => match({ cwd: s.cwd, machine }))
+  const tier = tiers(workers, (a, b) => byDir ? a.cwd === b.cwd : gid(a) === gid(b))
   const place = (s: SessionMeta) => s.order ?? -1
   workers.sort((a, b) => tier(a) - tier(b) || place(a) - place(b) || b.createdAt - a.createdAt)
   const loose = workers.filter((s) => gid(s) === NONE)
-  // Archived: only the groups with something in them.
-  const sections = [...groups, ...(loose.length ? [{ id: NONE, name: 'No group' }] : [])]
-    .map((g) => ({ g, list: workers.filter((s) => gid(s) === g.id) }))
-    .filter(({ list }) => list.length || !st.showArchived)
+  // Archived: only the groups with something in them. By folder: one section for each folder,
+  // the folder with the newest session first. You cannot drag these or rename them.
+  const sections = byDir
+    ? [...new Set(workers.map((s) => s.cwd))]
+      .map((cwd) => ({ g: { id: `dir:${cwd}`, name: shortPath(cwd, machine) }, list: workers.filter((s) => s.cwd === cwd) }))
+      .sort((a, b) => Math.max(...b.list.map((s) => s.createdAt)) - Math.max(...a.list.map((s) => s.createdAt)))
+    : [...groups, ...(loose.length ? [{ id: NONE, name: 'No group' }] : [])]
+      .map((g) => ({ g, list: workers.filter((s) => gid(s) === g.id) }))
+      .filter(({ list }) => list.length || !st.showArchived)
   const all = st.sideAll || st.showArchived
   const { start, sortable, over } = useDragSort((key, ids) => {
     if (!m) return
@@ -347,11 +440,13 @@ function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: s
     { label: 'Rename', run: () => { naming = g.id; changed() } },
     { label: 'Delete group', run: () => saveGroups(machine, groups.filter((x) => x.id !== g.id)) },
   ])
-  if (!sections.length) return null
+  if (!sections.length) return q && (m?.sessions ?? []).some((s) => s.kind === 'worker' && s.archived) ? <div className="muted pad">No folder matches “{st.archiveQuery.trim()}”.</div> : null
   return <div className="groups">{sections.map(({ g, list }) => {
     const shutKey = `group:${machine}:${g.id}`
     const shut = st.collapsed.includes(shutKey)
-    const sg = g.id ? sortable(`${machine}|groups`, g.id) : null
+    // A group you made: you can drag it, rename it, and drag sessions into it.
+    const mine = !byDir && !!g.id
+    const sg = mine ? sortable(`${machine}|groups`, g.id) : null
     const needs = list.filter((s) => own(s) <= 0)
     const rows = shut ? [] : all ? list : needs
     // The rest in the order they came, so that a critter keeps its place in the line.
@@ -365,7 +460,7 @@ function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: s
       const b = sortable(key, x.id)
       return (
         <div key={x.id} {...b} className={`branch${b.className}`}>
-          <Row s={x} depth={depth} active={st.selected === x.id} onPointerDown={(e) => start(e, key, x.id, g.id)} onMenu={onMenu} />
+          <Row s={x} depth={depth} active={st.selected === x.id} onPointerDown={(e) => start(e, key, x.id, byDir ? undefined : g.id)} onMenu={onMenu} />
           {kids(x.id).map((k) => branch(k, depth + 1))}
         </div>
       )
@@ -374,14 +469,15 @@ function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: s
     // A new session in a group starts in the folder of its latest one.
     const folder = [...list].sort((a, b) => b.createdAt - a.createdAt)[0]?.cwd ?? ''
     return (
-      <div key={g.id || '-'} {...sg} data-group={g.id} className={`group${shut ? ' shut' : ''}${over === g.id ? ' drop' : ''}${sg?.className ?? ''}`}>
-        <div className={`group-head${g.id ? '' : ' fixed'}`} onPointerDown={g.id ? (e) => start(e, `${machine}|groups`, g.id) : undefined} onClick={toggle} onContextMenu={g.id ? groupMenu(g) : undefined}>
+      <div key={g.id || '-'} {...sg} data-group={byDir ? undefined : g.id} className={`group${shut ? ' shut' : ''}${over === g.id ? ' drop' : ''}${sg?.className ?? ''}`}>
+        <div className={`group-head${mine ? '' : ' fixed'}${byDir ? ' dir' : ''}`} onPointerDown={mine ? (e) => start(e, `${machine}|groups`, g.id) : undefined} onClick={toggle} onContextMenu={mine ? groupMenu(g) : undefined}>
           <ChevronIcon size={11} className="group-chevron" />
           {naming === g.id
             ? <GroupName name={g.name} onDone={(name) => rename(g, name)} />
-            : <span className="group-name" onDoubleClick={g.id ? (e) => { e.stopPropagation(); naming = g.id; changed() } : undefined}>{g.name}</span>}
+            : <span className="group-name" onDoubleClick={mine ? (e) => { e.stopPropagation(); naming = g.id; changed() } : undefined}>{g.name}</span>}
+          {byDir && <span className="group-count">{list.length}</span>}
           {shut && <NeedBadge list={list} />}
-          <button className="link" title={`New session in ${g.id ? g.name : 'no group'}`} onClick={(e) => { e.stopPropagation(); onNew(folder, g.id) }}>+</button>
+          <button className="link" title={`New session in ${byDir ? g.name : g.id ? g.name : 'no group'}`} onClick={(e) => { e.stopPropagation(); onNew(folder, byDir ? '' : g.id) }}>+</button>
         </div>
         {kids(null).map((x) => branch(x, 0))}
         {!shut && rest.length > 0 && (
