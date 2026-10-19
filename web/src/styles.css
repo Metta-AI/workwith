@@ -279,15 +279,17 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .session-body.panel-wide > .session-main { display: none; }
 
 /* The Files tab (FileBrowser.tsx): the list, and the file on view beside it (or in its place when narrow). */
-.file-browser { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 8px 10px 0; font-size: calc(13px * var(--fs, 1)); }
+/* The padding is inside each part that scrolls, so its scroll bar is at the edge of the panel. */
+.file-browser { flex: 1; min-height: 0; display: flex; flex-direction: column; padding-top: 8px; font-size: calc(13px * var(--fs, 1)); }
+.file-browser > .fb-note { margin: 0 10px; }
 .fb-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .file-browser.split .fb-body { flex-direction: row; }
 .fb-side { flex: 1; min-height: 0; display: flex; flex-direction: column; min-width: 0; }
 .file-browser.split .fb-side { flex: none; width: 240px; }
 .file-browser.split .fb-side:only-child { flex: 1; width: auto !important; }
 .file-browser.split > .fb-body > .splitter { margin: 0 4px; }
-.fb-search { flex: none; width: 100%; box-sizing: border-box; margin: 0 0 6px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; font-size: calc(12.5px * var(--fs, 1)); }
-.fb-list { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 16px; }
+.fb-search { flex: none; width: calc(100% - 20px); box-sizing: border-box; margin: 0 10px 6px; padding: 4px 8px; border: none; border-radius: 6px; background: var(--card); color: var(--text); font: inherit; font-size: calc(12.5px * var(--fs, 1)); }
+.fb-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 10px 16px; }
 .fb-group + .fb-group { margin-top: 6px; }
 .fb-row { display: flex; align-items: center; gap: 5px; width: 100%; border: 0; background: none; color: var(--text); text-align: left; padding: 2px 4px; border-radius: 5px; cursor: pointer; font-size: calc(12.5px * var(--fs, 1)); min-width: 0; }
 .fb-row:hover { background: var(--card); }
@@ -303,19 +305,24 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .fb-note { font-size: calc(12.5px * var(--fs, 1)); padding: 3px 4px; }
 .fb-note.error-text { color: var(--bad); }
 .fb-view { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
-.fb-bar { display: flex; align-items: center; gap: 4px; padding: 0 0 6px; flex: none; }
+.fb-bar { display: flex; align-items: center; gap: 4px; padding: 0 10px 6px; flex: none; }
 .fb-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; font-size: calc(12px * var(--fs, 1)); }
 .fb-size { font-size: calc(11.5px * var(--fs, 1)); flex: none; }
-.fb-toggle { flex: none; border: 1px solid var(--line); background: none; color: var(--muted); border-radius: 5px; padding: 1px 7px; font-size: calc(11.5px * var(--fs, 1)); cursor: pointer; }
-.fb-toggle.on { color: var(--text); background: var(--card); }
+.fb-toggle { flex: none; border: none; background: color-mix(in srgb, var(--text) 6%, var(--panel)); color: var(--muted); border-radius: 5px; padding: 1px 7px; font-size: calc(11.5px * var(--fs, 1)); cursor: pointer; }
+.fb-toggle:hover { color: var(--text); }
+.fb-toggle.on { color: var(--text); background: color-mix(in srgb, var(--text) 14%, var(--panel)); }
 .fb-bar a.icon-btn { display: inline-flex; color: inherit; }
-.fb-content { flex: 1; min-height: 0; overflow: auto; padding-bottom: 16px; }
+.fb-content { flex: 1; min-height: 0; overflow: auto; padding: 0 10px 16px; }
+/* Code starts at the left edge: its line numbers stay there when it scrolls across. */
+.fb-content:has(.fb-code) { padding-left: 0; }
+.fb-content:has(.fb-code) > .fb-note { padding-left: 14px; }
+.fb-ln > .fb-n:first-child { padding-left: 10px; width: calc(var(--fb-nw) + 10px); }
 .fb-code { font-family: var(--mono); font-size: calc(12px * var(--fs, 1)); line-height: 1.5; background: none; padding: 0; width: max-content; min-width: 100%; }
 .fb-code.wrap { width: auto; }
 .fb-ln { display: flex; }
 /* The numbers stay at the left on a solid ground when the code scrolls across. */
 .fb-n { flex: none; width: var(--fb-nw); padding-right: 8px; text-align: right; color: color-mix(in srgb, var(--muted) 75%, var(--panel)); user-select: none; position: sticky; left: 0; z-index: 1; background: var(--panel); }
-.fb-n + .fb-n { left: var(--fb-nw); }
+.fb-n + .fb-n { left: calc(var(--fb-nw) + 10px); }
 .fb-c { flex: 1; white-space: pre; padding-left: 6px; }
 .fb-code.wrap .fb-c { white-space: pre-wrap; overflow-wrap: anywhere; }
 .fb-ln.mark .fb-c, .fb-ln.mark .fb-n { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
@@ -332,7 +339,7 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .fb-media img, .fb-media video { max-width: 100%; height: auto; border-radius: 4px; }
 .fb-media img { background: repeating-conic-gradient(var(--line) 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
 .fb-media audio { width: 100%; }
-.fb-frame { width: 100%; height: 100%; min-height: 360px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+.fb-frame { width: 100%; height: 100%; min-height: 360px; border: 1px solid var(--line); background: #fff; }
 .fb-table { overflow: auto; }
 .fb-table table { border-collapse: collapse; font-size: calc(12px * var(--fs, 1)); }
 .fb-table th, .fb-table td { border: 1px solid var(--line); padding: 2px 6px; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; text-align: left; }
@@ -354,7 +361,7 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .rv-file { padding-left: 19px; }
 .rv-file .fb-dir { flex: 1; }
 .rv-btns { flex: none; display: inline-flex; gap: 2px; }
-.rv-btn { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); background: none; color: var(--muted); border-radius: 5px; padding: 1px 5px; cursor: pointer; font: inherit; font-size: calc(11.5px * var(--fs, 1)); line-height: 1.4; }
+.rv-btn { display: inline-flex; align-items: center; gap: 4px; border: none; background: color-mix(in srgb, var(--text) 6%, var(--panel)); color: var(--muted); border-radius: 5px; padding: 1px 5px; cursor: pointer; font: inherit; font-size: calc(11.5px * var(--fs, 1)); line-height: 1.4; }
 .rv-btn:hover { color: var(--text); background: var(--card); }
 .rv-btn.approve.on { color: #fff; background: var(--ok); border-color: var(--ok); }
 .rv-btn.reject.on { color: #fff; background: var(--bad); border-color: var(--bad); }
@@ -371,19 +378,20 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .fb-code.notes .fb-ln.pickable .fb-n:hover { color: var(--text); background: color-mix(in srgb, var(--accent) 22%, var(--panel)); }
 .fb-ln.sel .fb-n, .fb-ln.live .fb-n { color: var(--text); background: color-mix(in srgb, var(--accent) 28%, var(--panel)); }
 .fb-ln.sel .fb-c, .fb-ln.live .fb-c { box-shadow: inset 2px 0 var(--accent); }
-.rv-card { position: sticky; left: 0; box-sizing: border-box; width: min(560px, calc(100cqw - 8px)); margin: 4px 0 6px 4px; padding: 6px 8px; border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: 6px; background: var(--card); font-family: var(--font); font-size: calc(12.5px * var(--fs, 1)); line-height: 1.45; white-space: normal; }
-.rv-card.approve { border-left-color: var(--ok); }
-.rv-card.reject { border-left-color: var(--bad); }
-.rv-card.unsure { border-left-color: var(--warn); }
+.rv-card { position: sticky; left: 0; box-sizing: border-box; width: min(560px, calc(100cqw - 8px)); margin: 4px 0 6px 4px; padding: 6px 8px; border: none; border-radius: 6px; background: var(--card); font-family: var(--font); font-size: calc(12.5px * var(--fs, 1)); line-height: 1.45; white-space: normal; }
+/* The verdict tints the card's fill. */
+.rv-card.approve { background: color-mix(in srgb, var(--ok) 10%, var(--card)); }
+.rv-card.reject { background: color-mix(in srgb, var(--bad) 10%, var(--card)); }
+.rv-card.unsure { background: color-mix(in srgb, var(--warn) 12%, var(--card)); }
 .rv-card-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-.rv-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.rv-seg { display: inline-flex; border-radius: 5px; overflow: hidden; background: color-mix(in srgb, var(--text) 7%, var(--card)); }
 .rv-chip { border: 0; background: none; color: var(--muted); font: inherit; font-size: calc(11.5px * var(--fs, 1)); padding: 1px 7px; cursor: pointer; }
 .rv-chip + .rv-chip { border-left: 1px solid var(--line); }
 .rv-chip:hover { color: var(--text); }
 .rv-chip.on.approve { color: #fff; background: var(--ok); }
 .rv-chip.on.reject { color: #fff; background: var(--bad); }
 .rv-chip.on.unsure { color: #000; background: var(--warn); }
-.rv-text { display: block; width: 100%; box-sizing: border-box; resize: vertical; min-height: 40px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--text); font: inherit; padding: 4px 6px; }
+.rv-text { display: block; width: 100%; box-sizing: border-box; resize: vertical; min-height: 40px; border: none; border-radius: 5px; background: var(--panel); color: var(--text); font: inherit; padding: 4px 6px; }
 .sent-verdict.approve { color: var(--ok); }
 .sent-verdict.reject { color: var(--bad); }
 .sent-line { font-size: calc(12.5px * var(--fs, 1)); }
