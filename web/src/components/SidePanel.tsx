@@ -1,5 +1,5 @@
-// The panel beside a session, one tab at a time: what its agent showed (Preview, Artifacts.tsx),
-// its files (Files, FileBrowser.tsx), and its questions and items (Items, AttentionPanel.tsx).
+// The panel beside a session, one tab at a time: its questions and items (Issues, AttentionPanel.tsx),
+// what its agent showed (Artifacts, Artifacts.tsx), and its files (Files, FileBrowser.tsx).
 // wide: it takes the conversation's place too, because you asked or because the two do not fit
 // side by side (auto). A tab you opened stays mounted, so it keeps its place when you come back.
 
@@ -12,7 +12,7 @@ import { FileBrowser } from './FileBrowser.tsx'
 import { FolderIcon, PanelIcon, XIcon } from './Icons.tsx'
 import type { SessionMeta } from '../../../shared/types.ts'
 
-const LABEL: Record<PanelTab, string> = { preview: 'Preview', files: 'Files', items: 'Items' }
+const LABEL: Record<PanelTab, string> = { preview: 'Artifacts', files: 'Files', items: 'Issues' }
 const ICON: Record<PanelTab, React.ReactNode> = { preview: <ArtifactIcon size={13} />, files: <FolderIcon size={13} />, items: <PanelIcon size={13} /> }
 
 type Props = { m: SessionMeta; tab: PanelTab; tabs: PanelTab[]; width: number; wide: boolean; auto: boolean; onTab(t: PanelTab): void; onWide(): void; onHide(): void }
