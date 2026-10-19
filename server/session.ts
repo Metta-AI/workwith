@@ -14,6 +14,7 @@ import { formatDismissed, formatDone, itemsOf } from '../shared/blocks.ts'
 import { formatMail } from '../shared/mail.ts'
 import { flagArgs } from '../shared/flags.ts'
 import { mediaTypeOf, splitImages, withoutImages } from '../shared/images.ts'
+import { splitPastes } from '../shared/pastes.ts'
 import type { Block, Event, Part, PermissionMode, SessionMeta, Status, Usage } from '../shared/types.ts'
 import { AUTH_ERROR, CLAUDE, childEnv } from './auth.ts'
 import { entryBefore } from './history.ts'
@@ -323,10 +324,13 @@ export class Session {
       content.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: fs.readFileSync(file).toString('base64') } })
     }
     for (const p of parts) {
-      // Images pasted into the text go to Claude where they sit in it.
-      for (const r of splitImages(partText(p))) {
-        if ('url' in r) addImage(r.url, mediaTypeOf(r.url))
-        else if (r.text.trim()) addText(r.text.trim())
+      // A long paste goes to Claude as the text it was; images pasted into the text go where they sit in it.
+      for (const c of splitPastes(partText(p))) {
+        if ('paste' in c) { if (c.paste.trim()) addText(c.paste); continue }
+        for (const r of splitImages(c.text)) {
+          if ('url' in r) addImage(r.url, mediaTypeOf(r.url))
+          else if (r.text.trim()) addText(r.text.trim())
+        }
       }
       for (const img of p.images ?? []) addImage(img.url, img.mediaType)
     }

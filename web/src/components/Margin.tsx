@@ -15,6 +15,7 @@ import { holdKeyboard, renderMd, visibleBox } from '../util.ts'
 import { EmojiPicker } from './EmojiPicker.tsx'
 import { focusField, RichInput, Thumbs } from './Inputs.tsx'
 import { XIcon } from './Icons.tsx'
+import { TextDialog, WithPastes } from './Paste.tsx'
 
 export const CARD_W = 272
 export const GUTTER_GAP = 20
@@ -260,11 +261,38 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
           onClick={() => { if (n.draft) { focusPassage(sid, null); removeDraft(sid, n.id) } }}
         >{n.text.trim()}</button>
       ) : (
-        <div key={n.id} data-id={n.id} className="note-card sent" onMouseEnter={() => focusPassage(sid, n)} onMouseLeave={() => focusPassage(sid, null)}>
-          <div className="md" dangerouslySetInnerHTML={{ __html: renderMd(n.text) }} />
-          <Thumbs images={n.images} />
-        </div>
+        <SentCard key={n.id} sid={sid} n={n} />
       ))}
+    </div>
+  )
+}
+
+// A long comment folds to its first lines. "Show more" opens it in place or, when it is
+// very long, in a dialog: in place it would push the cards under it far down.
+function SentCard({ sid, n }: { sid: string; n: Entry }) {
+  const body = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState<'short' | 'long' | 'huge'>('short')
+  const [open, setOpen] = useState(false)
+  const [dialog, setDialog] = useState(false)
+  useLayoutEffect(() => {
+    const box = body.current, inner = box?.firstElementChild
+    if (!box || !inner || open) return
+    // A comment folds only when the fold hides a fair part of it, not a line or two.
+    const ro = new ResizeObserver(() => {
+      const h = inner.scrollHeight / parseFloat(getComputedStyle(box).fontSize)
+      setSize(h > 40 ? 'huge' : h > 14 ? 'long' : 'short')
+    })
+    ro.observe(inner)
+    return () => ro.disconnect()
+  }, [open])
+  const text = <><WithPastes text={n.text} render={renderMd} /><Thumbs images={n.images} /></>
+  return (
+    <div data-id={n.id} className="note-card sent" onMouseEnter={() => focusPassage(sid, n)} onMouseLeave={() => focusPassage(sid, null)}>
+      <div ref={body} className={`note-fold${size !== 'short' ? ' long' : ''}${open ? ' open' : ''}`}><div>{text}</div></div>
+      {size !== 'short' && (
+        <button className="link note-more" onClick={() => size === 'huge' ? setDialog(true) : setOpen(!open)}>{open ? 'Show less' : size === 'huge' ? 'Show all' : 'Show more'}</button>
+      )}
+      {dialog && <TextDialog title="Comment" onClose={() => setDialog(false)}><div className="comment-full">{text}</div></TextDialog>}
     </div>
   )
 }

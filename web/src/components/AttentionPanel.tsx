@@ -8,11 +8,12 @@ import { useState } from 'react'
 import { CheckIcon, ChevronIcon, CommentIcon, DashIcon, UndoIcon, XIcon } from './Icons.tsx'
 import { renderInline } from '../util.ts'
 import { withoutImages } from '../../../shared/images.ts'
+import { withoutPastes } from '../../../shared/pastes.ts'
 import type { Item } from '../../../shared/blocks.ts'
 
 const OPEN = new Set(['open', 'drafted', 'dismissing', 'completing'])
 
-export function AttentionPanel({ sid, width, onHide }: { sid: string; width: number; onHide(): void }) {
+export function AttentionPanel({ sid }: { sid: string }) {
   const [showDone, setShowDone] = useState(() => localStorage.getItem('codinger.panel.done') === '1')
   const toggleDone = () => { localStorage.setItem('codinger.panel.done', showDone ? '0' : '1'); setShowDone(!showDone) }
   const items = useItems(sid)
@@ -105,7 +106,7 @@ function PanelConsider({ sid, item }: { sid: string; item: TrackedItem }) {
 
 function Done({ item }: { item: TrackedItem }) {
   const r = item.reply
-  const reply = withoutImages(r?.kind === 'answer' ? [r.choices?.join('; '), r.text].filter(Boolean).join(' · ') : r?.kind === 'note' ? r.text : '')
+  const reply = withoutPastes(withoutImages(r?.kind === 'answer' ? [r.choices?.join('; '), r.text].filter(Boolean).join(' · ') : r?.kind === 'note' ? r.text : ''))
   const Icon = item.status === 'answered' || item.status === 'completed' ? CheckIcon : item.status === 'dismissed' ? XIcon : DashIcon
   return (
     <button className={`panel-done st-${item.status}`} onClick={() => revealItem(item.key)}>

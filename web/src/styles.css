@@ -540,6 +540,8 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .note-card.sent.hover, .note-card.sent:hover { color: var(--text); box-shadow: 0 2px 8px rgba(0, 0, 0, .08); }
 .note-card.sent .md img, .note-card .ri-img { height: 24px; max-width: 96px; object-fit: cover; vertical-align: middle; margin: -6px 0 -4px; border-radius: 4px; border: 1px solid var(--line); cursor: zoom-in; }
 .note-card.sent .md > :first-child { margin-top: 0; } .note-card.sent .md > :last-child { margin-bottom: 0; }
+.note-fold.long:not(.open) { max-height: 10em; overflow: hidden; mask-image: linear-gradient(to bottom, #000 calc(100% - 2.5em), transparent); }
+.note-more { display: block; margin: 2px 0 -2px; font-size: calc(12px * var(--fs, 1)); }
 .user-wrap { margin: 18px 0 0 auto; max-width: 88%; display: flex; flex-direction: column; align-items: flex-end; }
 .user-wrap > .user-turn { margin: 0; max-width: 100%; }
 .user-actions { display: flex; gap: 2px; align-items: center; height: 22px; margin-top: 2px; opacity: 0; transition: opacity .1s; }
@@ -710,6 +712,14 @@ button.primary.send.critical { background: var(--bad); border-color: var(--bad);
 .ri-file-name { overflow: hidden; text-overflow: ellipsis; }
 .ri-file-x { flex: none; width: 16px; text-align: center; border-radius: 4px; color: var(--muted); cursor: pointer; }
 .ri-file-x:hover { background: color-mix(in srgb, var(--text) 12%, transparent); color: var(--text); }
+.ri-paste { cursor: pointer; }
+.ri-paste:hover { border-color: var(--muted); }
+.paste-chip { margin: 0; color: var(--text); font: inherit; font-size: .9em; padding: 2px 8px 2px 6px; }
+.paste-line { margin: 4px 0; }
+.modal.text-modal { max-height: 85vh; }
+.text-modal-body { overflow: auto; min-height: 0; flex: 1; border-top: 1px solid var(--line); padding-top: 8px; }
+.paste-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: calc(12.5px * var(--fs, 1)); }
+.comment-full .md > :first-child { margin-top: 0; }
 /* No position or transform on .ri-img: either one paints the image over the caret. The margins lift it 1px. */
 .ri-edit.ri-hide-caret { caret-color: transparent; }
 .ri-caret { position: absolute; width: 1px; background: var(--text); pointer-events: none; animation: ri-blink 1s step-end infinite; }

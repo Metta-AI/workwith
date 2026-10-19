@@ -5,9 +5,11 @@
 // change and puts the caret back at the same character, so positions here are
 // offsets into the text, where an image counts as its whole image link. A file
 // (shared/files.ts) is one pill the same way: it cannot be edited, only removed or moved.
+// So is a long paste (shared/pastes.ts); a click on it shows its text.
 
 import { imageToken, splitImages } from '../../shared/images.ts'
 import { fileToken, splitFiles } from '../../shared/files.ts'
+import { pasteLabel, pasteToken, splitPastes } from '../../shared/pastes.ts'
 import { media } from './store.ts'
 
 // ---- text ↔ DOM ---------------------------------------------------------------
@@ -42,14 +44,33 @@ export function fileNode(name: string): HTMLElement {
   return s
 }
 
-// An image or a file pill: one unit of the text.
-const isAtom = (n: Node): n is HTMLElement => n instanceof HTMLImageElement || (n instanceof HTMLElement && n.dataset.file != null)
+const PASTE = '<svg class="icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h5l3 3v9H4z" /><path d="M9 2v3h3M6 8.5h4M6 11h4" /></svg>'
+
+// The text of each paste pill.
+export const pasteText = new WeakMap<HTMLElement, string>()
+
+export function pasteNode(text: string): HTMLElement {
+  const s = fileNode(pasteLabel(text))
+  delete s.dataset.file
+  s.classList.add('ri-paste')
+  s.dataset.paste = ''
+  s.firstElementChild!.outerHTML = PASTE
+  s.querySelector('.ri-file-x')!.setAttribute('aria-label', 'Remove the pasted text')
+  pasteText.set(s, text)
+  return s
+}
+
+// An image, a file pill or a paste pill: one unit of the text.
+const isAtom = (n: Node): n is HTMLElement => n instanceof HTMLImageElement || (n instanceof HTMLElement && (n.dataset.file != null || n.dataset.paste != null))
+
+// The text a pill stands for.
+export const pillText = (n: HTMLElement) => n.dataset.paste != null ? pasteToken(pasteText.get(n) ?? '') : fileToken(n.dataset.file!)
 
 // The text a node stands for.
 function textOf(n: Node, last: boolean): string {
   if (n.nodeType === Node.TEXT_NODE) return n.textContent ?? ''
   if (n instanceof HTMLImageElement) return n.dataset.url ? imageToken(n.dataset.url) : ''
-  if (n instanceof HTMLElement && n.dataset.file != null) return fileToken(n.dataset.file)
+  if (n instanceof HTMLElement && (n.dataset.file != null || n.dataset.paste != null)) return pillText(n)
   // The browser keeps a <br> at the very end so a final newline shows; it is not text.
   if (n.nodeName === 'BR') return last ? '' : '\n'
   let out = ''
@@ -141,17 +162,20 @@ function line(text: string, list: boolean): { nodes: Node[]; list: boolean } {
 
 export function render(el: HTMLElement, value: string) {
   const nodes: Node[] = []
-  for (const r of splitImages(value)) {
-    if ('url' in r) { nodes.push(imgNode(media(r.url), r.url)); continue }
-    for (const f of splitFiles(r.text)) {
-      if ('file' in f) { nodes.push(fileNode(f.file)); continue }
-      let list = false
-      f.text.split('\n').forEach((l, i) => {
-        if (i) nodes.push(document.createTextNode('\n'))
-        const out = line(l, list)
-        nodes.push(...out.nodes)
-        list = out.list
-      })
+  for (const c of splitPastes(value)) {
+    if ('paste' in c) { nodes.push(pasteNode(c.paste)); continue }
+    for (const r of splitImages(c.text)) {
+      if ('url' in r) { nodes.push(imgNode(media(r.url), r.url)); continue }
+      for (const f of splitFiles(r.text)) {
+        if ('file' in f) { nodes.push(fileNode(f.file)); continue }
+        let list = false
+        f.text.split('\n').forEach((l, i) => {
+          if (i) nodes.push(document.createTextNode('\n'))
+          const out = line(l, list)
+          nodes.push(...out.nodes)
+          list = out.list
+        })
+      }
     }
   }
   // A final newline needs something after it to show as a line.

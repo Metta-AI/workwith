@@ -19,6 +19,7 @@ import { AgentsIcon, MailIcon, BlockIcon, CheckIcon, ChevronIcon, DashIcon, XIco
 import { shortPath } from './DirPicker.tsx'
 import { ArtifactLine, SHOW_ARTIFACT } from './Artifacts.tsx'
 import { MediaLine, SHOW_FILE } from './MediaLine.tsx'
+import { WithPastes } from './Paste.tsx'
 
 type PermEvent = Extract<Event, { t: 'permission' }>
 type Folded = {
@@ -670,7 +671,7 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
           } : {})}
         >
           <PartHead p={p} />
-          {p.text.trim() && (e.from === 'codinger' ? <CodingerText text={p.text} /> : <div className="md" dangerouslySetInnerHTML={{ __html: renderText(p.text) }} />)}
+          {p.text.trim() && (e.from === 'codinger' ? <CodingerText text={p.text} /> : <WithPastes text={p.text} render={renderText} />)}
           <Thumbs images={p.images} />
         </div>
       ))}

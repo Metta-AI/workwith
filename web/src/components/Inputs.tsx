@@ -1,17 +1,20 @@
 // A text field that grows with its text and takes pasted or dropped images,
 // which sit in the text where they were put (as image links, shared/images.ts).
 // Other files go into the session's directory, and the text names them (shared/files.ts).
+// A long paste goes in as one pill (shared/pastes.ts).
 // The text is markdown, drawn live (mdlive.ts): the field rebuilds itself from
 // the text after each change, so it keeps its own undo history.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ImageRef } from '../../../shared/types.ts'
 import { htmlToMarkdown } from '../htmlmd.ts'
-import { activate, enterKey, fromDom, imageCaret, imgNode, nodeOffset, rangeAt, rangeOffset, render, select, selectionOffsets, snapCaret, wrapKey } from '../mdlive.ts'
+import { activate, enterKey, fromDom, imageCaret, imgNode, nodeOffset, pasteText, pillText, rangeAt, rangeOffset, render, select, selectionOffsets, snapCaret, wrapKey } from '../mdlive.ts'
 import { imagesFrom, uploadImage } from '../util.ts'
 import { media, uploadFile } from '../store.ts'
 import { fileToken } from '../../../shared/files.ts'
+import { isLongPaste, pasteToken } from '../../../shared/pastes.ts'
 import { ClipIcon, ImageIcon, XIcon } from './Icons.tsx'
+import { PasteDialog } from './Paste.tsx'
 
 type Props = {
   machine?: string   // the machine its images go to; the current one by default
@@ -88,6 +91,7 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
   change.current = onChange
   const [uploading, setUploading] = useState<string[]>([])  // names of files on their way
   const [noDir, setNoDir] = useState(false)
+  const [shown, setShown] = useState<HTMLElement | null>(null)  // the paste pill whose text shows
 
   const emit = (v: string) => {
     const el = ed.current!
@@ -227,7 +231,7 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
     const el = ed.current!, pill = dragged.current, at = caretAt(e.clientX, e.clientY)
     dragged.current = null
     if (!pill || !el.contains(pill) || !at || !el.contains(at.startContainer)) return
-    const v = fromDom(el), from = nodeOffset(el, pill), len = fileToken(pill.dataset.file!).length
+    const v = fromDom(el), from = nodeOffset(el, pill), len = pillText(pill).length
     let to = rangeOffset(el, at)
     if (to >= from && to <= from + len) return
     if (to > from) to -= len
@@ -236,7 +240,14 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
   }
   const removePill = (pill: HTMLElement) => {
     const el = ed.current!, v = fromDom(el), from = nodeOffset(el, pill)
-    edit(v.slice(0, from) + v.slice(from + fileToken(pill.dataset.file!).length), from)
+    edit(v.slice(0, from) + v.slice(from + pillText(pill).length), from)
+  }
+  // "Put it in the text": the pill becomes the text it stands for.
+  const unfold = (pill: HTMLElement) => {
+    const el = ed.current!
+    if (!el.contains(pill)) return
+    const v = fromDom(el), from = nodeOffset(el, pill), t = pasteText.get(pill) ?? ''
+    edit(v.slice(0, from) + t + v.slice(from + pillText(pill).length), from + t.length)
   }
 
   // Markdown keys and Enter change the text here, not in the DOM.
@@ -267,17 +278,22 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
     e.clipboardData.setData('text/plain', v.slice(sel[0], sel[1]))
     if (cut) edit(v.slice(0, sel[0]) + v.slice(sel[1]), sel[0])
   }
-  // Paste keeps the formatting of rich text, as markdown.
+  // Paste keeps the formatting of rich text, as markdown. A long text goes in as one pill.
   const paste = (e: React.ClipboardEvent) => {
     const f = uploadDir == null ? imagesFrom(e.clipboardData) : [...e.clipboardData.files]
     if (f.length) { e.preventDefault(); attach(f, null); return }
     const el = ed.current!
     const sel = selectionOffsets(el)
     const html = e.clipboardData.getData('text/html')
-    const t = ((html && htmlToMarkdown(html)) || e.clipboardData.getData('text/plain')).replace(/\r\n?/g, '\n')
+    let t = ((html && htmlToMarkdown(html)) || e.clipboardData.getData('text/plain')).replace(/\r\n?/g, '\n')
     if (!sel || !t || composing.current) return
     e.preventDefault()
     const v = fromDom(el)
+    if (isLongPaste(t)) {
+      // The pill stands on its own lines.
+      const before = sel[0] && !v.slice(0, sel[0]).endsWith('\n') ? '\n' : '', after = v.slice(sel[1]).startsWith('\n') ? '' : '\n'
+      t = before + pasteToken(t) + after
+    }
     edit(v.slice(0, sel[0]) + t + v.slice(sel[1]), sel[0] + t.length)
   }
 
@@ -324,11 +340,15 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
             const x = (e.target as Element).closest('.ri-file-x')
             if (x) { e.preventDefault(); removePill(x.closest<HTMLElement>('.ri-file')!) }
           }}
+          onClick={(e) => {
+            const p = (e.target as Element).closest<HTMLElement>('.ri-paste')
+            if (p && !(e.target as Element).closest('.ri-file-x')) setShown(p)
+          }}
           onDragStart={(e) => {
             const pill = (e.target as Element).closest?.<HTMLElement>('.ri-file')
             if (!pill) return
             dragged.current = pill
-            e.dataTransfer.setData(PILL, pill.dataset.file!)
+            e.dataTransfer.setData(PILL, pill.dataset.file ?? '')
             e.dataTransfer.effectAllowed = 'move'
           }}
           onDragEnd={() => { dragged.current = null }}
@@ -351,6 +371,7 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
           {uploadDir == null ? <ImageIcon /> : <ClipIcon />}
         </label>
       </div>
+      {shown && <PasteDialog text={pasteText.get(shown) ?? ''} onClose={() => setShown(null)} onUnfold={() => { unfold(shown); setShown(null) }} />}
       {(uploading.length > 0 || noDir) && (
         <div className="ri-uploads muted">{noDir ? 'Choose a directory first: attached files go there.' : `Uploading ${uploading.join(', ')}…`}</div>
       )}
