@@ -80,6 +80,8 @@ type State = {
   settingsPage: string | null        // Settings is open, on this page
   previewPane: boolean               // a session's preview pane is open (Artifacts.tsx)
   previewWide: boolean               // and it takes the conversation's place too
+  filesPane: boolean                 // a session's Files pane is open (FileBrowser.tsx)
+  fileOpen: Record<string, { path: string; line?: number; at: number }>   // by session: the file or folder it shows
   artifacts: Artifact[]
   artifactsPort: number              // where the server that runs artifacts listens
   prolifica: ProlificaState
@@ -125,6 +127,8 @@ export const state = {
   // On a phone the panes cover the session (styles.css), so the preview starts closed there.
   previewPane: !matchMedia('(max-width: 720px)').matches && localStorage.getItem('codinger.previewPane') !== '0',
   previewWide: localStorage.getItem('codinger.previewWide') === '1',
+  filesPane: !matchMedia('(max-width: 720px)').matches && localStorage.getItem('codinger.filesPane') === '1',
+  fileOpen: {},
   artifacts: [],
   artifactsPort: 0,
   prolifica: null,
@@ -234,6 +238,7 @@ export function changed() {
     if (state.artifact) localStorage.setItem('codinger.artifact', state.artifact)
     localStorage.setItem('codinger.previewPane', state.previewPane ? '1' : '0')
     localStorage.setItem('codinger.previewWide', state.previewWide ? '1' : '0')
+    localStorage.setItem('codinger.filesPane', state.filesPane ? '1' : '0')
   }, 300)
 }
 // Tell the server which sessions you are writing a reply in, so the lead's

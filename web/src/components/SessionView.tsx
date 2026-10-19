@@ -8,9 +8,9 @@ import { RichInput } from './Inputs.tsx'
 import { Transcript } from './Transcript.tsx'
 import { AttentionPanel, ItemCount } from './AttentionPanel.tsx'
 import { ArtifactIcon, ArtifactPane, hasPreview } from './Artifacts.tsx'
-import { FilesPanel, filesOf } from './FilesPanel.tsx'
+import { FileBrowser } from './FileBrowser.tsx'
 import { revealItem, useItems } from '../items.ts'
-import { CheckIcon, ChevronIcon, ChildrenIcon, ClipIcon, MailIcon, MoreIcon, PanelIcon, UndoIcon, XIcon } from './Icons.tsx'
+import { CheckIcon, ChevronIcon, ChildrenIcon, ClipIcon, FolderIcon, MailIcon, MoreIcon, PanelIcon, UndoIcon, XIcon } from './Icons.tsx'
 import { inboxLabel } from '../../../shared/inbox.ts'
 import { renderInline } from '../util.ts'
 import { isReaction } from '../emoji.ts'
@@ -535,22 +535,21 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
   // wide: the pane takes the conversation's place too (the conversation stays mounted, hidden).
   const wide = st.previewWide
   const toggleWide = () => { state.previewWide = !wide; changed() }
-  // The files attached to its messages (FilesPanel.tsx).
-  const [filesOn, setFilesOn] = useState(() => !phone && localStorage.getItem('codinger.filesPane') === '1')
-  const toggleFiles = () => { localStorage.setItem('codinger.filesPane', filesOn ? '0' : '1'); setFilesOn(!filesOn) }
-  const [filesW, setFilesW] = useWidth('files', 260)
+  // The Files pane (FileBrowser.tsx): open while you leave it open, and whenever you click a path in a reply.
+  const filesOn = st.filesPane
+  const toggleFiles = () => { state.filesPane = !filesOn; changed() }
+  const [filesW, setFilesW] = useWidth('filebrowser', 420)
   const shownAt = st.preview[id]?.at
   useEffect(() => { if (shownAt && Date.now() - shownAt < 5000 && !state.previewPane) quietly(() => { state.previewPane = true; changed() }) }, [shownAt])
   if (!m) return <div className="empty">No such session.</div>
   const open = items.filter((i) => i.status === 'open').length
   const canPreview = hasPreview(id)
-  const files = filesOf(id).length
   return (
     <div className="session">
       <SessionHeader m={m} extra={<>
         {extra}
         {canPreview && <button className={`panel-toggle icon-tall${preview ? ' on' : ''}`} title="Preview" onClick={togglePreview}><ArtifactIcon size={15} /></button>}
-        {files > 0 && <button className={`panel-toggle icon-tall${filesOn ? ' on' : ''}`} title="Attached files" onClick={toggleFiles}><ClipIcon size={15} /></button>}
+        <button className={`panel-toggle icon-tall${filesOn ? ' on' : ''}`} data-tip="Files" onClick={toggleFiles}><FolderIcon size={15} /></button>
         {items.length > 0 && <button className={`panel-toggle icon-tall${panel ? ' on' : ''}`} title="Questions and items" onClick={togglePanel}><PanelIcon size={15} />{open > 0 && <ItemCount items={items.filter((i) => i.status === 'open')} />}</button>}
       </>} />
       <div className={`session-body${preview && canPreview && wide ? ' preview-wide' : ''}`}>
@@ -564,9 +563,9 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
           {!wide && <Splitter width={previewW} setWidth={setPreviewW} min={280} max={1400} initial={480} reverse />}
           <ArtifactPane sid={id} width={previewW} wide={wide} onWide={toggleWide} onHide={togglePreview} />
         </>}
-        {filesOn && files > 0 && <>
-          <Splitter width={filesW} setWidth={setFilesW} min={200} max={560} initial={260} reverse />
-          <FilesPanel m={m} width={filesW} onHide={toggleFiles} />
+        {filesOn && <>
+          <Splitter width={filesW} setWidth={setFilesW} min={220} max={1400} initial={420} reverse />
+          <FileBrowser m={m} width={filesW} onHide={toggleFiles} />
         </>}
         {panel && items.length > 0 && <>
           <Splitter width={panelW} setWidth={setPanelW} min={220} max={640} initial={300} reverse />

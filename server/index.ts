@@ -47,6 +47,7 @@ import {
 } from './store.ts'
 import { embedOf, mediaKind, mediaType } from '../shared/media.ts'
 import { MEDIA_MAX, MEDIA_PART, keepMedia, mediaFile } from './media.ts'
+import { allowed, isSecret, listDir } from './files.ts'
 import { ARTIFACTS, artifactsChanged, artifactsPrompt, checkArtifact, forgetPublish, listArtifacts, noteTool, reportOf, setVisibility, showArtifact, startPublish, startHost, typeOf, watchArtifacts } from './artifacts.ts'
 import { connectCallback, connectUrl, disconnect as prolificaDisconnect, prolificaState } from './prolifica.ts'
 import { buildShare, publishShare, unpublishShare } from './share.ts'
@@ -960,19 +961,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       ...(kind === 'page' ? { 'content-security-policy': 'sandbox allow-scripts allow-popups' } : kind === 'image' || kind === 'file' ? { 'content-security-policy': 'sandbox' } : {}),
       ...(kind === 'file' && mediaType(file) === 'application/octet-stream' ? { 'content-disposition': 'attachment' } : {}),
     }
-    // Video and audio ask for parts (Safari plays nothing without them). An open-ended part is
-    // at most MEDIA_PART: through web.codinger.app, a whole answer is one WebSocket message.
-    const r = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ''))
-    if (r && (r[1] || r[2])) {
-      const start = r[1] ? Number(r[1]) : Math.max(0, size - Number(r[2]))
-      const end = Math.min(r[1] && r[2] ? Number(r[2]) : size - 1, size - 1, start + MEDIA_PART - 1)
-      if (start > end || start >= size) { res.writeHead(416, { 'content-range': `bytes */${size}` }); res.end(); return }
-      res.writeHead(206, { ...head, 'content-range': `bytes ${start}-${end}/${size}`, 'content-length': end - start + 1 })
-      fs.createReadStream(file, { start, end }).pipe(res)
-      return
-    }
-    res.writeHead(200, { ...head, 'content-length': size })
-    fs.createReadStream(file).pipe(res)
+    return sendFile(req, res, file, size, head)
     return
   }
   if (a === 'tasks') {
@@ -1324,15 +1313,29 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   if (b === 'mcp' && method === 'GET') {
     return send(res, 200, { servers: serversFor(s.meta.cwd), on: s.meta.mcp?.on ?? null })
   }
+  if (b === 'fs' && method === 'GET') {
+    // A folder or a file for the Files pane (server/files.ts): a folder's entries, or a file's size.
+    const abs = allowed(s.meta, s.getEvents(), url.searchParams.get('path') || '.')
+    let st: fs.Stats | null = null
+    try { st = abs ? fs.statSync(abs) : null } catch {}
+    if (!abs || !st) throw new HttpError(404, 'No such file, or not one this session can show')
+    if (st.isDirectory()) return send(res, 200, { path: abs, kind: 'dir', entries: await listDir(abs) })
+    return send(res, 200, { path: abs, kind: 'file', size: st.size, mtime: st.mtimeMs })
+  }
   if (b === 'file' && method === 'GET') {
-    // A file in the session's directory (one you attached), to open in the browser. Sandboxed,
-    // so a page among them does not run as Codinger.
-    const file = path.resolve(s.meta.cwd, url.searchParams.get('name') ?? '')
-    if (!file.startsWith(path.resolve(s.meta.cwd) + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) throw new HttpError(404, 'No such file')
+    // A file in the session's directory (one you attached: name), or one the Files pane opens
+    // (path: see server/files.ts), to show in the browser. Sandboxed, so a page among them does
+    // not run as Codinger; run=1 lets a page run its scripts, still in the sandbox.
+    const p = url.searchParams.get('path')
+    const file = p != null ? allowed(s.meta, s.getEvents(), p) : path.resolve(s.meta.cwd, url.searchParams.get('name') ?? '')
+    if (!file || (p == null && (!file.startsWith(path.resolve(s.meta.cwd) + path.sep) || isSecret(file))) || !fs.existsSync(file) || !fs.statSync(file).isFile()) throw new HttpError(404, 'No such file')
     const type = typeOf(file)
-    res.writeHead(200, { 'content-type': type.startsWith('text/') && !type.includes('charset') ? `${type}; charset=utf-8` : type, 'content-security-policy': 'sandbox', 'x-content-type-options': 'nosniff', 'cache-control': 'no-store' })
-    fs.createReadStream(file).pipe(res)
-    return
+    const kind = mediaKind(file)
+    const csp = kind === 'pdf' ? null : kind === 'page' && url.searchParams.get('run') === '1' ? 'sandbox allow-scripts allow-popups' : 'sandbox'
+    return sendFile(req, res, file, fs.statSync(file).size, {
+      'content-type': type.startsWith('text/') && !type.includes('charset') ? `${type}; charset=utf-8` : type,
+      ...(csp ? { 'content-security-policy': csp } : {}), 'x-content-type-options': 'nosniff', 'cache-control': 'no-store', 'accept-ranges': 'bytes',
+    })
   }
   if (b === 'notes' && !c && method === 'GET') return send(res, 200, { path: notesPath(s.meta), text: readNotes(s.meta) })
   if (b === 'autopilot' && method === 'DELETE') { endAutopilot(s, 'you turned it off'); return send(res, 200, s.meta) }
@@ -1536,6 +1539,23 @@ if (DEV) {
 // Files whose history is kept: the notes every session reads, and any you add in Settings.
 const BUILT_IN = () => [AGENTS_FILE, path.join(os.homedir(), '.claude', 'CLAUDE.md'), LEAD_NOTES]
 moveHistory(OLD_LEAD_NOTES, LEAD_NOTES)
+// A file, or the part that the request asks for: video and audio ask for parts (Safari plays
+// nothing without them), and the Files pane asks for the first part of a long text file. An
+// open-ended part is at most MEDIA_PART: through web.codinger.app, a whole answer is one WebSocket message.
+function sendFile(req: http.IncomingMessage, res: http.ServerResponse, file: string, size: number, head: Record<string, string>) {
+  const r = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ''))
+  if (r && (r[1] || r[2])) {
+    const start = r[1] ? Number(r[1]) : Math.max(0, size - Number(r[2]))
+    const end = Math.min(r[1] && r[2] ? Number(r[2]) : size - 1, size - 1, start + MEDIA_PART - 1)
+    if (start > end || start >= size) { res.writeHead(416, { 'content-range': `bytes */${size}` }); res.end(); return }
+    res.writeHead(206, { ...head, 'content-range': `bytes ${start}-${end}/${size}`, 'content-length': end - start + 1 })
+    fs.createReadStream(file, { start, end }).pipe(res)
+    return
+  }
+  res.writeHead(200, { ...head, 'content-length': size })
+  fs.createReadStream(file).pipe(res)
+}
+
 const trackedFiles = () => [...new Set([...BUILT_IN(), ...(settings.trackedFiles ?? [])])]
 initFileHistory({
   files: trackedFiles,

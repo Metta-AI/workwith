@@ -16,11 +16,12 @@ import type { Anchor } from '../../../shared/types.ts'
 import { holdKeyboard, marked, renderInline, renderText, served } from '../util.ts'
 import { anchorFromRange, mediaIn, passageQuote, rangesFor, setHighlights } from '../anchoring.ts'
 import { render as renderLive } from '../mdlive.ts'
-import { addDraft, api, changed, dismissItem, draftsOf, markDone, removeDraft, reviveItem, setDoneText, state, uid, undismissItem, updateDraft, useStore, type AnswerDraft, type DoneDraft, type NoteDraft } from '../store.ts'
+import { addDraft, api, changed, LOCAL, machineOf, dismissItem, draftsOf, markDone, removeDraft, reviveItem, setDoneText, state, uid, undismissItem, updateDraft, useStore, type AnswerDraft, type DoneDraft, type NoteDraft } from '../store.ts'
 import type { TrackedItem } from '../items.ts'
 import { focusField, RichInput, Thumbs } from './Inputs.tsx'
 import { CheckIcon, ChevronIcon, CommentIcon, TerminalIcon, UndoIcon, XIcon } from './Icons.tsx'
 import { EmojiPicker } from './EmojiPicker.tsx'
+import { openFile } from './FileBrowser.tsx'
 import { focusPassage, onPassage } from './Margin.tsx'
 import { lastEmoji, topEmoji, usedEmoji } from '../emoji.ts'
 import { highlight } from '../highlight.ts'
@@ -499,7 +500,8 @@ function useCodeCopy(root: React.RefObject<HTMLDivElement | null>, live: boolean
     const click = (e: MouseEvent) => {
       const code = (e.target as Element).closest<HTMLElement>('code')
       // Not code blocks, not code in a link, and not the end of a drag that selected some of it.
-      if (!code || code.closest('pre, a') || !el.contains(code) || !getSelection()?.isCollapsed) return
+      // A path is a link to the Files pane instead (useReveal).
+      if (!code || code.closest('pre, a') || code.classList.contains('file-link') || !el.contains(code) || !getSelection()?.isCollapsed) return
       void navigator.clipboard.writeText(code.textContent ?? '').then(() => {
         // A flash of the accent colour that fades.
         code.classList.add('copied')
@@ -545,27 +547,41 @@ function useBlockCopy(root: React.RefObject<HTMLDivElement | null>, pieces: Piec
   }, [root, pieces, live])
 }
 
-// Inline code that names a file or folder on this machine gets a folder button
-// after it: a click shows it in Finder. Only paths that are there get one.
-const PATH = /^(?:(?:~|\.{0,2})\/[^\n<>"|*?]*|[\w.@+-]+\/[^\s<>"|*?]*)$/
-const found = new Map<string, string | null>()   // cwd + path → the full path, or null
+// Inline code that names a file or folder on the session's machine opens it in the Files pane
+// (FileBrowser.tsx), and on this machine it gets a folder button after it too: a click shows it
+// in Finder. Only paths that are there get them. A link to a path opens it in the pane too.
+const PATH = /^(?:(?:~|\.{0,2})\/[^\n<>"|*?]*|[\w.@+-]+\/[^\s<>"|*?]*|[\w@+-][\w.@+-]*\.\w{1,8}(?::\d+){0,2})$/
+const LOCAL_HREF = /^(?![a-z][a-z0-9+.-]*:|\/\/|#|\/api\/)/i
+const found = new Map<string, string | null>()   // machine + cwd + path → the full path, or null
 const FOLDER = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M2 4.5V12a1 1 0 001 1h10a1 1 0 001-1V6a1 1 0 00-1-1H8L6.5 3.5H3A1 1 0 002 4.5z"/></svg>'
 
 function useReveal(root: React.RefObject<HTMLDivElement | null>, sid: string, pieces: Piece[], live: boolean) {
   useEffect(() => {
     const el = root.current
     if (!el || live || state.share) return
+    for (const a of el.querySelectorAll<HTMLAnchorElement>('a[href]')) {
+      const href = a.getAttribute('href')!
+      if (!LOCAL_HREF.test(href) || a.dataset.file) continue
+      a.dataset.file = '1'
+      a.addEventListener('click', (e) => { e.preventDefault(); openFile(sid, decodeURI(href.split('#')[0])) })
+    }
+    const machine = machineOf(sid)
     const cwd = state.sessions.find((s) => s.id === sid)?.cwd ?? '~'
+    const key = (t: string) => `${machine}\n${cwd}\n${t}`
     const codes = [...el.querySelectorAll<HTMLElement>('code')].filter((c) => {
       const t = c.textContent?.trim() ?? ''
-      return !c.closest('pre, a') && !c.nextElementSibling?.classList.contains('reveal') && t.length < 400 && !t.includes('://') && PATH.test(t)
+      return !c.closest('pre, a') && !c.classList.contains('file-link') && t.length < 400 && !t.includes('://') && PATH.test(t)
     })
     if (!codes.length) return
     let gone = false
     const add = () => {
       for (const c of codes) {
-        const abs = found.get(`${cwd}\n${c.textContent!.trim()}`)
-        if (!abs || !c.isConnected || c.nextElementSibling?.classList.contains('reveal')) continue
+        const t = c.textContent!.trim()
+        const abs = found.get(key(t))
+        if (!abs || !c.isConnected || c.classList.contains('file-link')) continue
+        c.classList.add('file-link')
+        c.addEventListener('click', () => { if (getSelection()?.isCollapsed) openFile(sid, t) })
+        if (machine !== LOCAL || state.web) continue
         const b = document.createElement('button')
         b.className = 'reveal'
         b.title = state.platform === 'darwin' ? 'Show in Finder' : 'Show in its folder'
@@ -574,10 +590,10 @@ function useReveal(root: React.RefObject<HTMLDivElement | null>, sid: string, pi
         c.after(b)
       }
     }
-    const ask = [...new Set(codes.map((c) => c.textContent!.trim()))].filter((t) => !found.has(`${cwd}\n${t}`))
+    const ask = [...new Set(codes.map((c) => c.textContent!.trim()))].filter((t) => !found.has(key(t)))
     if (!ask.length) add()
-    else void api<Record<string, string | null>>('/api/fs/exists', 'POST', { cwd, paths: ask }).then((r) => {
-      for (const t of ask) found.set(`${cwd}\n${t}`, r[t] ?? null)
+    else void api<Record<string, string | null>>('/api/fs/exists', 'POST', { cwd, paths: ask }, machine).then((r) => {
+      for (const t of ask) found.set(key(t), r[t] ?? null)
       if (!gone) add()
     }).catch(() => {})
     return () => { gone = true }
