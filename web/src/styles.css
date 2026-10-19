@@ -167,7 +167,7 @@ body.resizing-v .splitter-v::after { background: var(--accent); }
 .archive-search { position: relative; flex: 1; min-width: 0; }
 .archive-search input[type=search] { width: 100%; box-sizing: border-box; padding: 4px 8px; font-size: inherit; }
 /* The folders the box suggests: a list under it, over the sessions. */
-.archive-options { position: absolute; top: calc(100% + 3px); left: 0; right: 0; z-index: 20; background: var(--card); border: 1px solid var(--line); border-radius: 7px; box-shadow: 0 6px 18px rgba(0, 0, 0, .18); padding: 3px; max-height: calc(5 * (8px + 1.5em) + 6px); overflow-y: auto; }
+.archive-options { position: absolute; top: calc(100% + 3px); left: 0; right: 0; z-index: 20; background: var(--card); border-radius: 7px; box-shadow: 0 6px 18px rgba(0, 0, 0, .18); padding: 3px; max-height: calc(5 * (8px + 1.5em) + 6px); overflow-y: auto; }
 /* Five rows show; the list scrolls to the others. */
 .archive-option { display: flex; align-items: baseline; gap: 6px; padding: 4px 7px; line-height: 1.5; border-radius: 5px; cursor: pointer; }
 .archive-option.on { background: color-mix(in srgb, var(--text) 9%, transparent); }
