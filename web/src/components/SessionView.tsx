@@ -568,7 +568,7 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
     <div className="session">
       <SessionHeader m={m} extra={<>
         {extra}
-        <button className={`panel-toggle icon-tall${tab ? ' on' : ''}`} data-tip={tab ? 'Hide the panel' : 'Show the panel: preview, files, items'} onClick={togglePanel}><PanelIcon size={15} />{open.length > 0 && <ItemCount items={open} />}</button>
+        <button className={`panel-toggle icon-tall${tab ? ' on' : ''}`} data-tip={tab ? 'Hide the panel' : 'Show the panel: issues, artifacts, files'} onClick={togglePanel}><PanelIcon size={15} />{open.length > 0 && <ItemCount items={open} />}</button>
       </>} />
       <div ref={body} className={`session-body${wide ? ' panel-wide' : ''}`}>
         <DropZone m={m}>
