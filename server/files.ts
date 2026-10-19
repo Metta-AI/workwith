@@ -93,3 +93,77 @@ export async function listDir(dir: string): Promise<Entry[]> {
   }
   return out.sort((a, b) => a.kind !== b.kind ? (a.kind === 'dir' ? -1 : 1) : a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
 }
+
+const run = (cmd: string, args: string[], cwd: string) => new Promise<{ ok: boolean; out: string }>((ok) => {
+  execFile(cmd, args, { cwd, timeout: 5000, maxBuffer: 64 * 1024 * 1024 }, (err, out) => ok({ ok: !err, out: String(out ?? '') }))
+})
+
+// The files under dir (relative paths), for search: what git knows and what it does not ignore,
+// or, outside a git repository, a walk that leaves out node_modules and .git. Kept for 10 seconds.
+const lists = new Map<string, { at: number; files: Promise<string[]> }>()
+function filesUnder(dir: string): Promise<string[]> {
+  const had = lists.get(dir)
+  if (had && Date.now() - had.at < 10_000) return had.files
+  const files = run('git', ['ls-files', '-co', '--exclude-standard', '-z'], dir).then(({ ok, out }) => {
+    if (ok) return out.split('\0').filter(Boolean)
+    const found: string[] = []
+    const walk = (rel: string) => {
+      if (found.length >= 20_000) return
+      let list: fs.Dirent[] = []
+      try { list = fs.readdirSync(path.join(dir, rel), { withFileTypes: true }) } catch { return }
+      for (const d of list) {
+        const p = rel ? `${rel}/${d.name}` : d.name
+        if (d.isDirectory()) { if (d.name !== 'node_modules' && d.name !== '.git') walk(p) } else found.push(p)
+      }
+    }
+    walk('')
+    return found
+  })
+  lists.set(dir, { at: Date.now(), files })
+  return files
+}
+
+// Files under dir whose path has q: a name that has it first, then a path that has it, then a
+// name that has its letters in order.
+export async function findFiles(dir: string, q: string, max = 100): Promise<string[]> {
+  const t = q.trim().toLowerCase()
+  if (!t) return []
+  const score = (p: string) => {
+    const l = p.toLowerCase(), name = l.slice(l.lastIndexOf('/') + 1)
+    if (name.startsWith(t)) return 0
+    if (name.includes(t)) return 1
+    if (l.includes(t)) return 2
+    let i = 0
+    for (const c of name) if (c === t[i]) i++
+    return i === t.length ? 3 : -1
+  }
+  return (await filesUnder(dir))
+    .map((p) => ({ p, s: score(p) })).filter((x) => x.s >= 0 && !isSecret(x.p))
+    .sort((a, b) => a.s - b.s || a.p.length - b.p.length).slice(0, max).map((x) => x.p)
+}
+
+// What changed in a file since the last commit, as a unified diff: a file git does not track
+// yet is all new. status: 'none' outside a git repository.
+export async function diffOf(file: string): Promise<{ status: 'changed' | 'new' | 'same' | 'none'; diff: string }> {
+  const dir = path.dirname(file)
+  const top = await run('git', ['rev-parse', '--show-toplevel'], dir)
+  if (!top.ok) return { status: 'none', diff: '' }
+  const tracked = await run('git', ['ls-files', '--error-unmatch', '--', path.basename(file)], dir)
+  if (!tracked.ok) {
+    const d = await run('git', ['diff', '--no-color', '--no-index', '--', '/dev/null', path.basename(file)], dir)
+    return { status: 'new', diff: d.out }
+  }
+  const d = await run('git', ['diff', '--no-color', 'HEAD', '--', path.basename(file)], dir)
+  return { status: d.out.trim() ? 'changed' : 'same', diff: d.out }
+}
+
+// Whether a file is text: no NUL in its first 8 KB.
+export function isText(file: string): boolean {
+  try {
+    const fd = fs.openSync(file, 'r')
+    const buf = Buffer.alloc(8192)
+    const n = fs.readSync(fd, buf, 0, buf.length, 0)
+    fs.closeSync(fd)
+    return !buf.subarray(0, n).includes(0)
+  } catch { return false }
+}

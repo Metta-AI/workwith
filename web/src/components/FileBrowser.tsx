@@ -1,15 +1,16 @@
-// The Files pane: the session's folder as a tree, the files the agent wrote or edited, the files
-// you attached (shared/files.ts), and a viewer for the one you pick. A path in a reply opens here
-// too (AssistantMessage.tsx). The server decides which files the pane may open (server/files.ts).
+// The Files tab of the panel beside a session (SidePanel.tsx): a search of its files, the files the
+// agent wrote or edited, the files you attached (shared/files.ts), its folder as a tree, and the
+// file you pick (FileView.tsx), beside the list when there is room and in its place when not. A path
+// in a reply opens here too (AssistantMessage.tsx). The server decides which files the tab may open
+// (server/files.ts).
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { SessionMeta } from '../../../shared/types.ts'
 import { filesIn } from '../../../shared/files.ts'
-import { mediaKind } from '../../../shared/media.ts'
 import { api, changed, LOCAL, localId, machineOf, media, state, useStore } from '../store.ts'
-import { highlight, langOfPath } from '../highlight.ts'
-import { renderMd } from '../util.ts'
-import { BackIcon, ChevronIcon, FileIcon, FolderIcon, OpenIcon, XIcon } from './Icons.tsx'
+import { ChevronIcon, FolderIcon } from './Icons.tsx'
+import { Splitter, useWidth } from './Splitter.tsx'
+import { baseName, dirName, FileView, ltr, sepOf, type Edit } from './FileView.tsx'
 
 type Entry = { name: string; kind: 'dir' | 'file'; size: number; mtime: number; dim?: boolean; secret?: boolean }
 type Node = { path: string; kind: 'dir'; entries: Entry[] } | { path: string; kind: 'file'; size: number; mtime: number }
@@ -21,36 +22,34 @@ export function filesOf(sid: string): string[] {
   return [...new Set(names.reverse())]
 }
 
-// The files the agent wrote or edited, newest first.
-function changedOf(sid: string): string[] {
-  const out: string[] = []
+// The edits the agent made, by file, the newest file first.
+function editsOf(sid: string): Map<string, Edit[]> {
+  const out = new Map<string, Edit[]>()
   for (const e of state.events[sid] ?? []) {
     if (e.t !== 'assistant') continue
-    for (const b of e.blocks) if (b.type === 'tool_use' && /^(Write|Edit|MultiEdit|NotebookEdit)$/.test(b.name)) {
+    for (const b of e.blocks) {
+      if (b.type !== 'tool_use' || !/^(Write|Edit|MultiEdit|NotebookEdit)$/.test(b.name)) continue
       const p = b.input?.file_path ?? b.input?.notebook_path
-      if (typeof p === 'string') out.push(p)
+      if (typeof p !== 'string') continue
+      const list = out.get(p) ?? []
+      out.delete(p)
+      if (b.name === 'Write' && typeof b.input.content === 'string') list.push({ new: b.input.content })
+      else if (b.name === 'Edit' && typeof b.input.new_string === 'string') list.push({ old: b.input.old_string ?? '', new: b.input.new_string })
+      else if (b.name === 'MultiEdit' && Array.isArray(b.input.edits)) for (const x of b.input.edits) list.push({ old: x.old_string ?? '', new: x.new_string ?? '' })
+      out.set(p, list)
     }
   }
-  return [...new Set(out.reverse())]
+  return new Map([...out].reverse())
 }
 
-// Opens the pane on a path (absolute, ~/, or under the session's directory), maybe with :line.
-export function openFile(sid: string, p: string) {
+// Opens the Files tab on a path (absolute, ~/, or under the session's directory), maybe with :line.
+// changes: show what changed in it.
+export function openFile(sid: string, p: string, changes = false) {
   const m = /^(.*?)(?::(\d+))?(?::\d+)?$/.exec(p.trim())!
-  state.filesPane = true
-  state.fileOpen = { ...state.fileOpen, [sid]: { path: m[1], line: m[2] ? Number(m[2]) : undefined, at: Date.now() } }
+  state.panelTab = 'files'
+  state.fileOpen = { ...state.fileOpen, [sid]: { path: m[1], line: m[2] ? Number(m[2]) : undefined, changes, at: Date.now() } }
   changed()
 }
-
-const TEXT_MAX = 512 * 1024      // the first part of a long text file
-const TEXT_MORE = 4 * 1024 * 1024 // and the most that "Show more" loads (through web.codinger.app an answer is one message)
-const HIGHLIGHT_MAX = 200 * 1024 // longer text shows without colours
-const sepOf = (p: string) => p.includes('\\') && !p.includes('/') ? '\\' : '/'
-const baseName = (p: string) => p.split(/[\\/]/).pop() || p
-const dirName = (p: string) => p.slice(0, Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')))
-// A path in a box that cuts it at the start (direction: rtl) keeps its slashes where they are.
-const ltr = (p: string) => `\u200e${p}\u200e`
-const kb = (n: number) => n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`
 
 async function getJson<T>(url: string): Promise<T> {
   const r = await fetch(url)
@@ -59,20 +58,34 @@ async function getJson<T>(url: string): Promise<T> {
   return j
 }
 
-export function FileBrowser({ m, width, onHide }: { m: SessionMeta; width: number; onHide(): void }) {
+export function FileBrowser({ m }: { m: SessionMeta }) {
   const st = useStore()
   const machine = machineOf(m.id)
   const base = `/api/sessions/${localId(m.id)}`
-  const fsUrl = (p: string) => media(`${base}/fs?path=${encodeURIComponent(p)}`, machine)
-  const fileUrl = (p: string, run = false) => media(`${base}/file?path=${encodeURIComponent(p)}${run ? '&run=1' : ''}`, machine)
+  const q = (p: string) => `path=${encodeURIComponent(p)}`
+  const fsUrl = (p: string) => media(`${base}/fs?${q(p)}`, machine)
+  const fileUrl = (p: string, run = false) => media(`${base}/file?${q(p)}${run ? '&run=1' : ''}`, machine)
   const [root, setRoot] = useState<string | null>(null)
   const [roots, setRoots] = useState<string[]>([])     // folders outside the session's folder that a link opened
   const [dirs, setDirs] = useState<Record<string, Entry[] | string>>({})
   const [open, setOpen] = useState<Set<string>>(new Set())
-  const [file, setFile] = useState<{ path: string; size: number; line?: number; at: number } | null>(null)
+  const [file, setFile] = useState<{ path: string; size: number; line?: number; changes: boolean; at: number } | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [stamp, setStamp] = useState(0)                // a change makes the open file load again
+  const [search, setSearch] = useState('')
+  const [found, setFound] = useState<string[] | null>(null)
+  const [treeW, setTreeW] = useWidth('filetree', 240)
   const want = st.fileOpen[m.id]
+
+  // Its own width: the list and the file side by side when there is room.
+  const el = useRef<HTMLDivElement>(null)
+  const [w, setW] = useState(0)
+  useLayoutEffect(() => {
+    const ro = new ResizeObserver(() => setW(el.current?.clientWidth ?? 0))
+    if (el.current) ro.observe(el.current)
+    return () => ro.disconnect()
+  }, [])
+  const split = w >= 600
 
   const load = (dir: string) => getJson<Node>(fsUrl(dir))
     .then((n) => { if (n.kind === 'dir') setDirs((d) => ({ ...d, [dir]: n.entries })) })
@@ -90,17 +103,15 @@ export function FileBrowser({ m, width, onHide }: { m: SessionMeta; width: numbe
     if (!want || !root) return
     setErr(null)
     void getJson<Node>(fsUrl(want.path)).then((n) => {
-      const sep = sepOf(n.path)
-      const inRoot = n.path === root || n.path.startsWith(root + sep)
-      const top = inRoot ? root : n.kind === 'dir' ? n.path : dirName(n.path)
-      if (!inRoot && n.kind === 'dir' && !roots.includes(top)) setRoots((r) => [...r, top])
+      const inRoot = n.path === root || n.path.startsWith(root + sepOf(n.path))
+      if (!inRoot && n.kind === 'dir' && !roots.includes(n.path)) setRoots((r) => [...r, n.path])
       // Open the folders down to it.
       const chain: string[] = []
       for (let d = n.kind === 'dir' ? n.path : dirName(n.path); inRoot && d.length >= root.length; d = dirName(d)) { chain.push(d); if (d === root) break }
       if (n.kind === 'dir') { chain.push(n.path); setDirs((d) => ({ ...d, [n.path]: n.entries })) }
       setOpen((o) => new Set([...o, ...chain]))
       for (const d of chain) if (!dirs[d]) void load(d)
-      setFile(n.kind === 'file' ? { path: n.path, size: n.size, line: want.line, at: want.at } : null)
+      setFile(n.kind === 'file' ? { path: n.path, size: n.size, line: want.line, changes: !!want.changes, at: want.at } : null)
     }).catch((e: Error) => { setFile(null); setErr(`${want.path}: ${e.message}`) })
   }, [want?.at, root])
 
@@ -115,32 +126,43 @@ export function FileBrowser({ m, width, onHide }: { m: SessionMeta; width: numbe
     return () => clearTimeout(t)
   }, [n])
 
+  // A search of the file names, as you type.
+  useEffect(() => {
+    if (!search.trim()) { setFound(null); return }
+    let gone = false
+    const t = setTimeout(() => void getJson<string[]>(media(`${base}/find?q=${encodeURIComponent(search)}`, machine))
+      .then((r) => { if (!gone) setFound(r) }).catch(() => { if (!gone) setFound([]) }), 120)
+    return () => { gone = true; clearTimeout(t) }
+  }, [search])
+
   const rel = (p: string) => {
     if (root && p.startsWith(root + sepOf(p))) return p.slice(root.length + 1)
     return st.home && p.startsWith(st.home) ? '~' + p.slice(st.home.length) : p
   }
-  const pick = (p: string) => openFile(m.id, p)
+  const pick = (p: string, changes = false) => openFile(m.id, p, changes)
   const toggle = (d: string) => setOpen((o) => {
     const x = new Set(o)
     if (x.has(d)) x.delete(d); else { x.add(d); if (!dirs[d]) void load(d) }
     return x
   })
+  const isOn = (p: string) => !!file && (file.path === p || rel(file.path) === p || rel(file.path) === rel(p))
 
   const tree = (dir: string, depth: number): React.ReactNode => {
     const list = dirs[dir]
-    if (list === undefined) return <div className="fb-note muted" style={{ paddingLeft: 8 + depth * 14 }}>Loading…</div>
-    if (typeof list === 'string') return <div className="fb-note muted" style={{ paddingLeft: 8 + depth * 14 }}>{list}</div>
-    if (!list.length) return <div className="fb-note muted" style={{ paddingLeft: 8 + depth * 14 }}>Empty</div>
+    const pad = { paddingLeft: 8 + depth * 14 }
+    if (list === undefined) return <div className="fb-note muted" style={pad}>Loading…</div>
+    if (typeof list === 'string') return <div className="fb-note muted" style={pad}>{list}</div>
+    if (!list.length) return <div className="fb-note muted" style={pad}>Empty</div>
     const sep = sepOf(dir)
     return list.map((e) => {
       const p = dir + sep + e.name
       const isOpen = open.has(p)
       return (
         <div key={e.name}>
-          <button className={`fb-row${e.dim ? ' dim' : ''}${file?.path === p ? ' on' : ''}`} style={{ paddingLeft: 4 + depth * 14 }}
+          <button className={`fb-row${e.dim ? ' dim' : ''}${isOn(p) ? ' on' : ''}`} style={{ paddingLeft: 4 + depth * 14 }}
             disabled={e.secret} onClick={() => e.kind === 'dir' ? toggle(p) : pick(p)}>
             {e.kind === 'dir' ? <span className={`fb-chev${isOpen ? ' open' : ''}`}><ChevronIcon size={10} /></span> : <span className="fb-chev" />}
-            {e.kind === 'dir' ? <FolderIcon size={13} /> : <FileIcon size={13} />}
+            {e.kind === 'dir' ? <FolderIcon size={13} /> : <FileTypeIcon name={e.name} />}
             <span className="fb-name">{e.name}</span>
             {e.secret && <span className="fb-dir muted">can hold keys, not shown</span>}
           </button>
@@ -150,29 +172,16 @@ export function FileBrowser({ m, width, onHide }: { m: SessionMeta; width: numbe
     })
   }
 
-  const changedFiles = changedOf(m.id)
-  const attached = filesOf(m.id)
-  const flat = (title: string, paths: string[]) => paths.length > 0 && (
+  const edits = editsOf(m.id)
+  const flat = (title: string | null, paths: string[], changes = false) => paths.length > 0 && (
     <div className="fb-group">
-      <div className="attention-head">{title}</div>
+      {title && <div className="attention-head">{title}</div>}
       {paths.map((p) => (
-        <button key={p} className={`fb-row${file && (file.path === p || rel(file.path) === p) ? ' on' : ''}`} onClick={() => pick(p)}>
-          <FileIcon size={13} /><span className="fb-name">{baseName(p)}</span>
+        <button key={p} className={`fb-row${isOn(p) ? ' on' : ''}`} onClick={() => pick(p, changes)}>
+          <FileTypeIcon name={p} /><span className="fb-name">{baseName(p)}</span>
           <span className="fb-dir muted">{ltr(dirName(rel(p)))}</span>
         </button>
       ))}
-    </div>
-  )
-  const split = width >= 720
-  const list = (
-    <div className="fb-list">
-      {flat('Changed in this session', changedFiles.slice(0, 30))}
-      {flat('Attached', attached)}
-      {root && <div className="fb-group">
-        <div className="attention-head">{baseName(root)}</div>
-        {tree(root, 0)}
-      </div>}
-      {roots.map((r) => <div key={r} className="fb-group"><div className="attention-head">{rel(r)}</div>{tree(r, 0)}</div>)}
     </div>
   )
   const close = () => {
@@ -182,147 +191,76 @@ export function FileBrowser({ m, width, onHide }: { m: SessionMeta; width: numbe
     state.fileOpen = rest
     changed()
   }
-  return (
-    <aside className={`attention files-panel file-browser${split ? ' split' : ''}`} style={{ width }}>
-      <div className="attention-top">
-        <span className="attention-head"><FolderIcon size={12} /> Files</span>
-        <button className="icon-btn" data-tip="Hide" onClick={onHide}><XIcon size={13} /></button>
-      </div>
-      {err && !file && <div className="fb-note error-text">{err}</div>}
-      <div className="fb-body">
-        {(split || !file) && list}
-        {file && <FileView key={file.path} path={file.path} size={file.size} line={file.line} at={file.at} stamp={stamp} rel={rel(file.path)}
-          url={fileUrl} canBack={!split} onBack={close} reveal={machine === LOCAL && !st.web ? () => void api('/api/fs/reveal', 'POST', { path: file.path }) : undefined}
-          onLink={(href) => pick(dirName(file.path) + sepOf(file.path) + href)} />}
-      </div>
-    </aside>
-  )
-}
-
-type ViewProps = {
-  path: string; size: number; line?: number; at: number; stamp: number; rel: string
-  url(p: string, run?: boolean): string; canBack: boolean; onBack(): void; reveal?(): void; onLink(href: string): void
-}
-
-function FileView({ path, size, line, at, stamp, rel, url, canBack, onBack, reveal, onLink }: ViewProps) {
-  const kind = mediaKind(path)
-  const ext = langOfPath(path)?.toLowerCase() ?? ''
-  const isMd = ext === 'md' || ext === 'markdown'
-  const isCsv = ext === 'csv' || ext === 'tsv'
-  const [source, setSource] = useState(false)
-  const [more, setMore] = useState(false)
-  const limit = more ? TEXT_MORE : TEXT_MAX
-  const [text, setText] = useState<string | null>(null)
-  const [binary, setBinary] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
-  const asText = kind === 'file' || (kind === 'page' && source) || (kind === 'image' && ext === 'svg' && source)
-  useEffect(() => {
-    if (!asText) return
-    let gone = false
-    fetch(url(path), { headers: size > limit ? { range: `bytes=0-${limit - 1}` } : {} })
-      .then(async (r) => {
-        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? r.statusText)
-        const buf = new Uint8Array(await r.arrayBuffer())
-        if (gone) return
-        if (buf.subarray(0, 8000).includes(0)) { setBinary(true); return }
-        setText(new TextDecoder().decode(buf))
-      })
-      .catch((e: Error) => { if (!gone) setErr(e.message) })
-    return () => { gone = true }
-  }, [path, asText, stamp, limit])
-
-  const can = kind === 'page' || isMd || isCsv || ext === 'svg'
-  return (
-    <div className="fb-view">
-      <div className="fb-bar">
-        {canBack && <button className="icon-btn" data-tip="Back to the list" onClick={onBack}><BackIcon size={14} /></button>}
-        <span className="fb-path mono">{ltr(rel)}</span>
-        <span className="muted fb-size">{kb(size)}</span>
-        {can && <button className={`fb-toggle${source ? ' on' : ''}`} onClick={() => setSource(!source)}>Source</button>}
-        {reveal && <button className="icon-btn" data-tip="Show in Finder" onClick={reveal}><FolderIcon size={13} /></button>}
-        <a className="icon-btn" href={url(path, kind === 'page')} target="_blank" rel="noreferrer" data-tip="Open in a new tab"><OpenIcon size={13} /></a>
-      </div>
-      <div className="fb-content">
-        {err ? <div className="fb-note error-text">{err}</div>
-          : binary ? <div className="fb-note muted">This file is not text. Use the button at the top right to open it in a new tab.</div>
-          : kind === 'image' && !source ? <div className="fb-media"><img src={`${url(path)}&t=${stamp}`} alt={rel} /></div>
-          : kind === 'video' ? <div className="fb-media"><video src={url(path)} controls /></div>
-          : kind === 'audio' ? <div className="fb-media"><audio src={url(path)} controls /></div>
-          : kind === 'pdf' ? <iframe className="fb-frame" src={url(path)} title={rel} />
-          : kind === 'page' && !source ? <iframe className="fb-frame" sandbox="allow-scripts allow-popups" src={`${url(path, true)}&t=${stamp}`} title={rel} />
-          : text === null ? <div className="fb-note muted">Loading…</div>
+  const list = (
+    <div className="fb-side" style={split && file ? { width: treeW } : undefined}>
+      <input className="fb-search" type="search" placeholder="Search files" value={search} data-pid="file-search"
+        onChange={(e) => setSearch(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && found?.[0]) pick(found[0])
+          else if (e.key === 'Escape' && search) { e.preventDefault(); setSearch('') }
+        }} />
+      <div className="fb-list">
+        {found ? (found.length ? flat(null, found) : <div className="fb-note muted">No file has that in its name.</div>)
           : <>
-            {size > limit && <div className="fb-note muted">The file is {kb(size)}. This shows the first {kb(limit)}.{!more && <> <button className="link" onClick={() => setMore(true)}>{size > TEXT_MORE ? `Show the first ${kb(TEXT_MORE)}` : 'Show all'}</button></>}</div>}
-            {isMd && !source ? <Markdown text={text} url={url} dir={dirName(path)} onLink={onLink} />
-              : isCsv && !source ? <Table text={text} tab={ext === 'tsv'} />
-              : <Code text={text} lang={ext} line={line} at={at} />}
+            {flat('Changed in this session', [...edits.keys()].slice(0, 30), true)}
+            {flat('Attached', filesOf(m.id))}
+            {root && <div className="fb-group">
+              <div className="attention-head">{baseName(root)}</div>
+              {tree(root, 0)}
+            </div>}
+            {roots.map((r) => <div key={r} className="fb-group"><div className="attention-head">{rel(r)}</div>{tree(r, 0)}</div>)}
           </>}
       </div>
     </div>
   )
-}
-
-function Code({ text, lang, line, at }: { text: string; lang: string; line?: number; at: number }) {
-  const mark = useRef<HTMLDivElement>(null)
-  const html = text.length > HIGHLIGHT_MAX ? highlight(text, undefined) : highlight(text, lang)
-  const count = text.split('\n').length - (text.endsWith('\n') ? 1 : 0)
-  useLayoutEffect(() => { mark.current?.scrollIntoView({ block: 'center' }) }, [line, at])
+  const fileEdits = file ? [...edits].find(([p]) => p === file.path || rel(p) === rel(file.path))?.[1] ?? [] : []
   return (
-    <div className="fb-code">
-      <pre className="fb-gutter">{Array.from({ length: Math.max(count, 1) }, (_, i) => i + 1).join('\n')}</pre>
-      <div className="fb-lines">
-        {line && line <= count && <div ref={mark} className="fb-mark" style={{ top: `calc(${line - 1} * var(--fb-lh))` }} />}
-        <pre><code className="hljs" dangerouslySetInnerHTML={{ __html: html }} /></pre>
+    <div ref={el} className={`file-browser${split ? ' split' : ''}`}>
+      {err && !file && <div className="fb-note error-text">{err}</div>}
+      <div className="fb-body">
+        {(split || !file) && list}
+        {split && file && <Splitter width={treeW} setWidth={setTreeW} min={160} max={Math.max(200, w - 280)} initial={240} />}
+        {file && <FileView key={file.path} path={file.path} size={file.size} line={file.line} at={file.at} stamp={stamp} rel={rel(file.path)}
+          changes={file.changes} edits={fileEdits} url={fileUrl}
+          tabUrl={media(`${base}/file/${encodeURIComponent(baseName(file.path))}?${q(file.path)}&run=1`, machine)}
+          diffUrl={media(`${base}/diff?${q(file.path)}`, machine)}
+          canBack={!split} onBack={close} reveal={machine === LOCAL && !st.web ? () => void api('/api/fs/reveal', 'POST', { path: file.path }) : undefined}
+          onLink={(href) => pick(dirName(file.path) + sepOf(file.path) + href)} />}
       </div>
     </div>
   )
 }
 
-// Images and links with a path relative to the file come from its folder.
-function Markdown({ text, url, dir, onLink }: { text: string; url(p: string): string; dir: string; onLink(href: string): void }) {
-  const el = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const root = el.current
-    if (!root) return
-    const local = (u: string | null) => !!u && !/^([a-z][a-z0-9+.-]*:|\/\/|#|\/api\/)/i.test(u)
-    for (const img of root.querySelectorAll('img')) {
-      const src = img.getAttribute('src')
-      if (local(src)) img.src = url(dir + sepOf(dir) + decodeURI(src!))
-    }
-    for (const a of root.querySelectorAll('a')) {
-      const href = a.getAttribute('href')
-      if (local(href)) a.addEventListener('click', (e) => { e.preventDefault(); onLink(decodeURI(href!.split('#')[0])) })
-    }
-  }, [text])
-  return <div ref={el} className="md fb-md" dangerouslySetInnerHTML={{ __html: renderMd(text) }} />
+// An icon for a file by its type: its colour says the language or kind, its mark the kind.
+type Mark = 'code' | 'doc' | 'data' | 'image' | 'video' | 'audio' | 'pdf' | 'key' | 'plain'
+const TYPES: [RegExp, Mark, string][] = [
+  [/\.(tsx?|mts|cts)$/, 'code', '#3178c6'], [/\.(jsx?|mjs|cjs)$/, 'code', '#c9a227'], [/\.py$/, 'code', '#3b78b8'],
+  [/\.go$/, 'code', '#00a7cf'], [/\.rs$/, 'code', '#c45f2b'], [/\.(sh|zsh|bash|ps1)$/, 'code', '#3f9c4b'],
+  [/\.(css|scss|less)$/, 'code', '#8b5cf6'], [/\.(html?|xml|svelte|vue)$/, 'code', '#e0573e'], [/\.(c|h|cpp|hpp|java|kt|swift|rb|php|lua)$/, 'code', '#7c8ea3'],
+  [/\.(md|markdown|mdx)$/, 'doc', '#4f8fd6'], [/\.(txt|log|rst)$/, 'doc', '#8a8a8a'],
+  [/\.(json|jsonl|ya?ml|toml|ini|lock)$/, 'data', '#c98a2b'], [/\.(csv|tsv|xlsx?|sqlite|db|sql)$/, 'data', '#2e9b5b'],
+  [/\.(png|jpe?g|gif|webp|avif|svg|bmp|ico)$/, 'image', '#d1559c'], [/\.(mp4|m4v|webm|mov|ogv)$/, 'video', '#9a5bd0'],
+  [/\.(mp3|wav|m4a|aac|ogg|oga|opus|flac)$/, 'audio', '#26a093'], [/\.pdf$/, 'pdf', '#d64a45'],
+  [/(^|\/)\.env(\..+)?$|\.(pem|key)$/, 'key', '#a08a5a'],
+]
+const MARKS: Record<Mark, string> = {
+  code: 'M7 8.5L5.5 10.25 7 12M9 8.5l1.5 1.75L9 12',
+  doc: 'M5.5 8.5h5M5.5 10.5h5M5.5 12.5h3',
+  data: 'M5.5 8.5h5v4h-5zM5.5 10.5h5M8 8.5v4',
+  image: 'M5 12.5l2-2.5 1.5 1.5 1-1 1.5 2',
+  video: 'M6.5 8.5v4l3.5-2z',
+  audio: 'M7 12.5a1 1 0 11-.01 0M8 12.5V8.5l2.5-.5',
+  pdf: 'M5.5 9h5M5.5 11h5M5.5 13h2',
+  key: 'M7 11.25a1.25 1.25 0 11-.01 0M8.2 11.25h2.8M10 11.25v1.25',
+  plain: '',
 }
-
-// CSV with quoted fields; the first 2,000 rows.
-function parseCsv(text: string, sep: string): string[][] {
-  const rows: string[][] = []
-  let row: string[] = [], cell = '', q = false
-  for (let i = 0; i < text.length && rows.length < 2001; i++) {
-    const c = text[i]
-    if (q) { if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++ } else q = false } else cell += c }
-    else if (c === '"') q = true
-    else if (c === sep) { row.push(cell); cell = '' }
-    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = '' }
-    else cell += c
-  }
-  if (cell || row.length) { row.push(cell); rows.push(row) }
-  return rows
-}
-
-function Table({ text, tab }: { text: string; tab: boolean }) {
-  const [head, ...rows] = parseCsv(text, tab ? '\t' : ',')
-  if (!head) return <div className="fb-note muted">Empty</div>
+export function FileTypeIcon({ name }: { name: string }) {
+  const t = TYPES.find(([re]) => re.test(name.toLowerCase()))
+  const [mark, color] = t ? [t[1], t[2]] : ['plain' as Mark, 'currentColor']
   return (
-    <div className="fb-table">
-      <table>
-        <thead><tr>{head.map((h, i) => <th key={i}>{h}</th>)}</tr></thead>
-        <tbody>{rows.slice(0, 2000).map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j}>{c}</td>)}</tr>)}</tbody>
-      </table>
-      {rows.length > 2000 && <div className="fb-note muted">This shows the first 2,000 rows.</div>}
-    </div>
+    <svg className="fb-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M4 2h5l3 3v9H4z" opacity={t ? 0.9 : 0.6} /><path d="M9 2v3h3" opacity={t ? 0.9 : 0.6} />
+      {MARKS[mark] && <path d={MARKS[mark]} />}
+    </svg>
   )
 }

@@ -1,14 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Mail, PermissionMode, SessionMeta, SlashCommand } from '../../../shared/types.ts'
 import { MAX_RUN } from '../../../shared/mail.ts'
-import { api, changed, closeSession, composerOf, draftsOf, hasContent, loadEvents, queuedParts, select, sendQueued, setComposer, state, undismissItem, useStore, deselect, globalId, machineOf, localId, quietly } from '../store.ts'
+import { api, changed, closeSession, composerOf, draftsOf, hasContent, loadEvents, queuedParts, select, sendQueued, setComposer, state, undismissItem, useStore, deselect, globalId, machineOf, localId, quietly, type PanelTab } from '../store.ts'
 import { fatigue, kTokens } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { RichInput } from './Inputs.tsx'
 import { Transcript } from './Transcript.tsx'
-import { AttentionPanel, ItemCount } from './AttentionPanel.tsx'
-import { ArtifactIcon, ArtifactPane, hasPreview } from './Artifacts.tsx'
-import { FileBrowser } from './FileBrowser.tsx'
+import { ItemCount } from './AttentionPanel.tsx'
+import { hasPreview } from './Artifacts.tsx'
+import { SidePanel } from './SidePanel.tsx'
 import { revealItem, useItems } from '../items.ts'
 import { CheckIcon, ChevronIcon, ChildrenIcon, ClipIcon, FolderIcon, MailIcon, MoreIcon, PanelIcon, UndoIcon, XIcon } from './Icons.tsx'
 import { inboxLabel } from '../../../shared/inbox.ts'
@@ -522,56 +522,56 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
   const m = st.sessions.find((s) => s.id === id)
   useEffect(() => { void loadEvents(id) }, [id])
   const items = useItems(id)
-  // On a phone the panels cover the session (styles.css), so they start closed there.
-  const phone = matchMedia('(max-width: 720px)').matches
-  const [panel, setPanel] = useState(() => !phone && localStorage.getItem('codinger.panel') !== '0')
-  const togglePanel = () => { localStorage.setItem('codinger.panel', panel ? '0' : '1'); setPanel(!panel) }
-  const [panelW, setPanelW] = useWidth('attention', 300)
-  // The preview pane (Artifacts.tsx): open while you leave it open, and whenever the agent shows something.
-  // Both are in the page's address (url.ts).
-  const preview = st.previewPane
-  const togglePreview = () => { state.previewPane = !preview; changed() }
-  const [previewW, setPreviewW] = useWidth('preview', 480)
-  // wide: the pane takes the conversation's place too (the conversation stays mounted, hidden).
-  const wide = st.previewWide
-  const toggleWide = () => { state.previewWide = !wide; changed() }
-  // The Files pane (FileBrowser.tsx): open while you leave it open, and whenever you click a path in a reply.
-  const filesOn = st.filesPane
-  const toggleFiles = () => { state.filesPane = !filesOn; changed() }
-  const [filesW, setFilesW] = useWidth('filebrowser', 420)
-  const shownAt = st.preview[id]?.at
-  useEffect(() => { if (shownAt && Date.now() - shownAt < 5000 && !state.previewPane) quietly(() => { state.previewPane = true; changed() }) }, [shownAt])
-  if (!m) return <div className="empty">No such session.</div>
-  const open = items.filter((i) => i.status === 'open').length
+  // The panel beside the session (SidePanel.tsx): the tab you left open, Preview whenever the agent
+  // shows something, and Files whenever you click a path in a reply. A tab this session has
+  // nothing for does not show. The tab and wide are in the page's address (url.ts).
   const canPreview = hasPreview(id)
+  const tabs = (['preview', 'files', 'items'] as const).filter((t) => t === 'files' || (t === 'preview' ? canPreview : items.length > 0))
+  const tab = st.panelTab && tabs.includes(st.panelTab) ? st.panelTab : null
+  const setTab = (t: PanelTab | null) => { if (t) localStorage.setItem('codinger.panelLast', t); state.panelTab = t; changed() }
+  const togglePanel = () => {
+    const last = localStorage.getItem('codinger.panelLast') as PanelTab | null
+    setTab(tab ? null : last && tabs.includes(last) ? last : tabs[0])
+  }
+  const [panelW, setPanelW] = useWidth('panel', 440)
+  // Where the session is too narrow for the conversation beside the panel, the panel takes its place.
+  const body = useRef<HTMLDivElement>(null)
+  const [bodyW, setBodyW] = useState(0)
+  useLayoutEffect(() => {
+    const el = body.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setBodyW(el.clientWidth))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [!!m])
+  const auto = bodyW > 0 && bodyW - panelW < CONVERSATION_MIN
+  const wide = !!tab && (st.panelWide || auto)
+  const toggleWide = () => { state.panelWide = !st.panelWide; changed() }
+  const shownAt = st.preview[id]?.at
+  useEffect(() => { if (shownAt && Date.now() - shownAt < 5000 && state.panelTab !== 'preview') quietly(() => { state.panelTab = 'preview'; changed() }) }, [shownAt])
+  if (!m) return <div className="empty">No such session.</div>
+  const open = items.filter((i) => i.status === 'open')
   return (
     <div className="session">
       <SessionHeader m={m} extra={<>
         {extra}
-        {canPreview && <button className={`panel-toggle icon-tall${preview ? ' on' : ''}`} title="Preview" onClick={togglePreview}><ArtifactIcon size={15} /></button>}
-        <button className={`panel-toggle icon-tall${filesOn ? ' on' : ''}`} data-tip="Files" onClick={toggleFiles}><FolderIcon size={15} /></button>
-        {items.length > 0 && <button className={`panel-toggle icon-tall${panel ? ' on' : ''}`} title="Questions and items" onClick={togglePanel}><PanelIcon size={15} />{open > 0 && <ItemCount items={items.filter((i) => i.status === 'open')} />}</button>}
+        <button className={`panel-toggle icon-tall${tab ? ' on' : ''}`} data-tip={tab ? 'Hide the panel' : 'Show the panel: preview, files, items'} onClick={togglePanel}><PanelIcon size={15} />{open.length > 0 && <ItemCount items={open} />}</button>
       </>} />
-      <div className={`session-body${preview && canPreview && wide ? ' preview-wide' : ''}`}>
+      <div ref={body} className={`session-body${wide ? ' panel-wide' : ''}`}>
         <DropZone m={m}>
           {(attachRef) => <>
             <Transcript sid={id} />
             <Composer m={m} attachRef={attachRef} />
           </>}
         </DropZone>
-        {preview && canPreview && <>
-          {!wide && <Splitter width={previewW} setWidth={setPreviewW} min={280} max={1400} initial={480} reverse />}
-          <ArtifactPane sid={id} width={previewW} wide={wide} onWide={toggleWide} onHide={togglePreview} />
-        </>}
-        {filesOn && <>
-          <Splitter width={filesW} setWidth={setFilesW} min={220} max={1400} initial={420} reverse />
-          <FileBrowser m={m} width={filesW} onHide={toggleFiles} />
-        </>}
-        {panel && items.length > 0 && <>
-          <Splitter width={panelW} setWidth={setPanelW} min={220} max={640} initial={300} reverse />
-          <AttentionPanel sid={id} width={panelW} onHide={togglePanel} />
+        {tab && <>
+          {!wide && <Splitter width={panelW} setWidth={setPanelW} min={260} max={Math.max(320, bodyW - CONVERSATION_MIN)} initial={440} reverse />}
+          <SidePanel m={m} tab={tab} tabs={tabs} width={panelW} wide={wide} auto={auto} onTab={setTab} onWide={toggleWide} onHide={() => setTab(null)} />
         </>}
       </div>
     </div>
   )
 }
+
+// The least width of the conversation beside the panel.
+const CONVERSATION_MIN = 380

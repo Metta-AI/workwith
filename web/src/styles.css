@@ -262,26 +262,39 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .attention-top { display: flex; justify-content: space-between; align-items: center; position: sticky; top: -6px; background: var(--panel); z-index: 1; padding-top: 4px; }
 .attention-head { font-size: calc(11.5px * var(--fs, 1)); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 8px 0 6px; display: flex; gap: 6px; align-items: center; }
 .attention-empty { font-size: calc(12.5px * var(--fs, 1)); padding: 4px 2px 8px; }
-/* Scoped: the files dialog has its own .file-row and .file-name (one name over its folder). */
-.files-panel .file-row { flex-direction: row; align-items: center; gap: 4px; padding: 3px 2px; }
-.files-panel .file-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; color: var(--text); text-decoration: none; font-size: calc(12.5px * var(--fs, 1)); font-weight: 400; }
-.files-panel .file-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.files-panel .file-name:hover span { text-decoration: underline; }
-.files-panel .file-name .icon { flex: none; opacity: .6; }
-.files-panel .file-row .icon-btn { flex: none; }
-/* The Files pane (FileBrowser.tsx): the list, and the file on view below it (or beside it when wide). */
-.file-browser { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+/* The panel beside a session (SidePanel.tsx): its tabs at the top, one tab's content below. */
+.side-panel { flex: none; display: flex; flex-direction: column; min-height: 0; min-width: 0; border-left: 1px solid var(--line); background: var(--panel); }
+.side-panel.wide { flex: 1; border-left: none; }
+.panel-tabs { flex: none; display: flex; align-items: center; gap: 2px; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+.panel-tabs .grow { flex: 1; }
+.panel-tabs .icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 5px; }
+.panel-tab { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; color: var(--muted); padding: 4px 9px; border-radius: 6px; cursor: pointer; font-size: calc(12.5px * var(--fs, 1)); }
+.panel-tab:hover { color: var(--text); background: rgba(127, 127, 127, .1); }
+.panel-tab.on { color: var(--text); background: var(--card); box-shadow: 0 0 0 1px var(--line); }
+.panel-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.panel-body[hidden] { display: none; }
+.panel-body > .attention { flex: 1; border-left: none; }
+.panel-body > .artifact-pane { flex: 1; border-left: none; }
+.session-body.panel-wide > .session-main { display: none; }
+
+/* The Files tab (FileBrowser.tsx): the list, and the file on view beside it (or in its place when narrow). */
+.file-browser { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 8px 10px 0; font-size: calc(13px * var(--fs, 1)); }
 .fb-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.file-browser.split .fb-body { flex-direction: row; gap: 10px; }
+.file-browser.split .fb-body { flex-direction: row; }
+.fb-side { flex: 1; min-height: 0; display: flex; flex-direction: column; min-width: 0; }
+.file-browser.split .fb-side { flex: none; width: 240px; }
+.file-browser.split .fb-side:only-child { flex: 1; width: auto !important; }
+.file-browser.split > .fb-body > .splitter { margin: 0 4px; }
+.fb-search { flex: none; width: 100%; box-sizing: border-box; margin: 0 0 6px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; font-size: calc(12.5px * var(--fs, 1)); }
 .fb-list { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 16px; }
-.file-browser.split .fb-list { flex: none; width: 260px; border-right: 1px solid var(--line); padding-right: 6px; }
 .fb-group + .fb-group { margin-top: 6px; }
 .fb-row { display: flex; align-items: center; gap: 5px; width: 100%; border: 0; background: none; color: var(--text); text-align: left; padding: 2px 4px; border-radius: 5px; cursor: pointer; font-size: calc(12.5px * var(--fs, 1)); min-width: 0; }
 .fb-row:hover { background: var(--card); }
+.fb-row:disabled { cursor: default; background: none; }
 .fb-row.on { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .fb-row.dim { opacity: .55; }
-.fb-row:disabled { cursor: default; background: none; }
-.fb-row > svg { flex: none; opacity: .6; }
+.fb-row > svg { flex: none; }
+.fb-row > svg:not(.fb-icon) { opacity: .6; }
 .fb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: none; max-width: 100%; }
 .fb-dir { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; flex: 1; min-width: 0; font-size: calc(11.5px * var(--fs, 1)); }
 .fb-chev { flex: none; width: 10px; display: inline-flex; color: var(--muted); transition: transform .12s; }
@@ -290,20 +303,26 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .fb-note.error-text { color: var(--bad); }
 .fb-view { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .file-browser:not(.split) .fb-view { border-top: 1px solid var(--line); }
-.fb-bar { display: flex; align-items: center; gap: 4px; padding: 6px 0; flex: none; }
+.fb-bar { display: flex; align-items: center; gap: 4px; padding: 0 0 6px; flex: none; }
 .fb-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; font-size: calc(12px * var(--fs, 1)); }
 .fb-size { font-size: calc(11.5px * var(--fs, 1)); flex: none; }
 .fb-toggle { flex: none; border: 1px solid var(--line); background: none; color: var(--muted); border-radius: 5px; padding: 1px 7px; font-size: calc(11.5px * var(--fs, 1)); cursor: pointer; }
 .fb-toggle.on { color: var(--text); background: var(--card); }
 .fb-bar a.icon-btn { display: inline-flex; color: inherit; }
 .fb-content { flex: 1; min-height: 0; overflow: auto; padding-bottom: 16px; }
-.fb-code { --fb-lh: 1.5em; display: flex; font-family: var(--mono); font-size: calc(12px * var(--fs, 1)); line-height: var(--fb-lh); }
-.fb-code pre { margin: 0; padding: 0; line-height: inherit; font: inherit; background: none; }
-.fb-gutter { flex: none; text-align: right; color: var(--muted); opacity: .6; padding-right: 10px !important; user-select: none; }
-.fb-lines { position: relative; flex: 1; min-width: 0; }
-.fb-lines pre { white-space: pre; }
-.fb-lines code { background: none; padding: 0; }
-.fb-mark { position: absolute; left: -4px; right: 0; height: var(--fb-lh); background: color-mix(in srgb, var(--accent) 18%, transparent); border-radius: 3px; pointer-events: none; }
+.fb-code { font-family: var(--mono); font-size: calc(12px * var(--fs, 1)); line-height: 1.5; background: none; padding: 0; width: max-content; min-width: 100%; }
+.fb-code.wrap { width: auto; }
+.fb-ln { display: flex; }
+.fb-n { flex: none; width: var(--fb-nw); padding-right: 8px; text-align: right; color: var(--muted); opacity: .7; user-select: none; position: sticky; left: 0; background: var(--panel); }
+.fb-n + .fb-n { left: var(--fb-nw); }
+.fb-c { flex: 1; white-space: pre; padding-left: 6px; }
+.fb-code.wrap .fb-c { white-space: pre-wrap; overflow-wrap: anywhere; }
+.fb-ln.mark .fb-c, .fb-ln.mark .fb-n { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
+.fb-ln.add .fb-c { background: color-mix(in srgb, var(--ok) 16%, transparent); }
+.fb-ln.del .fb-c { background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.fb-ln.add .fb-n { color: var(--ok); }
+.fb-ln.del .fb-n { color: var(--bad); }
+.fb-ln.hunk .fb-c { color: var(--muted); background: rgba(127, 127, 127, .08); font-style: italic; }
 .fb-md { font-size: calc(13.5px * var(--fs, 1)); }
 .fb-md img { max-width: 100%; }
 .fb-media { display: flex; justify-content: center; padding: 8px 0; }
@@ -1171,7 +1190,6 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .picker-menu button:hover { background: rgba(127, 127, 127, .12); }
 .picker-menu button.on { background: var(--accent-soft); }
 .picker-sub { font-size: calc(11.5px * var(--fs, 1)); color: var(--muted); }
-.session-body.preview-wide > .session-main { display: none; }
 .artifact-version { display: flex; align-items: center; gap: 8px; padding: 5px 10px; font-size: calc(12.5px * var(--fs, 1)); background: color-mix(in srgb, var(--warn) 14%, transparent); border-bottom: 1px solid var(--line); }
 .artifact-line .tool-sum .muted { color: inherit; opacity: .75; }
 .media-line a.tool-line { text-decoration: none; }
@@ -1291,7 +1309,6 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
 
   /* The panels at the side of a session cover it. */
   .session-body > .splitter { display: none; }
-  .session-body > .attention, .session-body > .artifact-pane { position: fixed; inset: 0; z-index: 20; width: auto !important; border-left: none; padding-top: env(safe-area-inset-top); }
   .artifacts-view { flex-direction: column; }
   .artifacts-list { flex: 1; width: auto !important; border-right: none; }
   .artifacts-view > .splitter, .artifact-detail > .splitter-v { display: none; }

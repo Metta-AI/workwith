@@ -16,9 +16,9 @@ const Svg = ({ size = 14, children }: { size?: number; children: React.ReactNode
 )
 export const ArtifactIcon = ({ size }: { size?: number }) => <Svg size={size}><rect x="2" y="2.5" width="12" height="11" rx="1.5" /><path d="M2 5.5h12M5 11V9M8 11V7.5M11 11V8.5" /></Svg>
 const RefreshIcon = ({ size }: { size?: number }) => <Svg size={size}><path d="M13 8a5 5 0 11-1.5-3.6" /><path d="M13 2.5v3h-3" /></Svg>
-const WideIcon = ({ size }: { size?: number }) => <Svg size={size}><path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5L9 7M2.5 13.5L7 9" /></Svg>
+export const WideIcon = ({ size }: { size?: number }) => <Svg size={size}><path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5L9 7M2.5 13.5L7 9" /></Svg>
 const HistoryIcon = ({ size }: { size?: number }) => <Svg size={size}><path d="M2.5 8a5.5 5.5 0 101.6-3.9" /><path d="M2.5 2.5V5H5" /><path d="M8 5v3l2 1.5" /></Svg>
-const NarrowIcon = ({ size }: { size?: number }) => <Svg size={size}><path d="M13 6.5H9.5V3M3 9.5h3.5V13M9.5 6.5L14 2M6.5 9.5L2 14" /></Svg>
+export const NarrowIcon = ({ size }: { size?: number }) => <Svg size={size}><path d="M13 6.5H9.5V3M3 9.5h3.5V13M9.5 6.5L14 2M6.5 9.5L2 14" /></Svg>
 
 export const SHOW_ARTIFACT = 'mcp__codinger__show_artifact'
 const SANDBOX = 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-downloads allow-modals'
@@ -237,9 +237,9 @@ function VersionBar({ a, v, onLatest }: { a: Artifact; v: number; onLatest(): vo
   return <div className="artifact-version">Version {v} of {a.latest}<button className="link" onClick={onLatest}>Show the latest</button></div>
 }
 
-// The preview pane beside a session: what its agent showed last, or an artifact it worked on.
-// wide: it takes the conversation's place too.
-export function ArtifactPane({ sid, width, wide, onWide, onHide }: { sid: string; width: number; wide: boolean; onWide(): void; onHide(): void }) {
+// The Preview tab of the panel beside a session (SidePanel.tsx): what its agent showed last, or
+// an artifact it worked on.
+export function ArtifactPane({ sid }: { sid: string }) {
   const st = useStore()
   const mine = st.artifacts.filter((a) => a.edits.some((e) => e.sid === sid))
   const shown = st.preview[sid]
@@ -250,7 +250,7 @@ export function ArtifactPane({ sid, width, wide, onWide, onHide }: { sid: string
   const key = target ? ('url' in target ? target.url : `${target.artifact}@${v ?? ''}`) : ''
   const tab = target && srcOf(target, a, st.artifactsPort, 0)
   return (
-    <aside className={`artifact-pane${wide ? ' wide' : ''}`} style={wide ? undefined : { width }}>
+    <div className="artifact-pane">
       <div className="artifact-top">
         {target && 'url' in target
           ? <span className="artifact-url" title={target.url}>{target.url}</span>
@@ -260,17 +260,15 @@ export function ArtifactPane({ sid, width, wide, onWide, onHide }: { sid: string
         {/* The title at the left; the view's buttons, then the version and Publish together, at the right. */}
         <button className="icon-btn" data-tip="Load again" onClick={() => setReload(Date.now())}><RefreshIcon size={14} /></button>
         {tab && <a className="icon-btn" data-tip="Open in a new tab" href={tab} target="_blank" rel="noreferrer"><OpenIcon size={14} /></a>}
-        <button className="icon-btn" data-tip={wide ? 'Show the conversation' : 'Use the full width'} onClick={onWide}>{wide ? <NarrowIcon size={14} /> : <WideIcon size={14} />}</button>
         {a && <>
           <span className="artifact-sep" />
           <VersionPicker a={a} v={v} onPick={(n) => showIn(sid, { artifact: a.name, v: n })} />
           <PublishControl a={a} v={v} />
         </>}
-        <button className="icon-btn" data-tip="Hide" onClick={onHide}><XIcon size={13} /></button>
       </div>
       {a && v != null && <VersionBar a={a} v={v} onLatest={() => showIn(sid, { artifact: a.name })} />}
       {target ? <ArtifactFrame key={key} target={target} at={Math.max(shown?.at ?? 0, reload)} /> : <div className="artifact-missing muted">Nothing to show yet.</div>}
-    </aside>
+    </div>
   )
 }
 

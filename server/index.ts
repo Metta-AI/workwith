@@ -47,7 +47,7 @@ import {
 } from './store.ts'
 import { embedOf, mediaKind, mediaType } from '../shared/media.ts'
 import { MEDIA_MAX, MEDIA_PART, keepMedia, mediaFile } from './media.ts'
-import { allowed, isSecret, listDir } from './files.ts'
+import { allowed, diffOf, findFiles, isSecret, isText, listDir } from './files.ts'
 import { ARTIFACTS, artifactsChanged, artifactsPrompt, checkArtifact, forgetPublish, listArtifacts, noteTool, reportOf, setVisibility, showArtifact, startPublish, startHost, typeOf, watchArtifacts } from './artifacts.ts'
 import { connectCallback, connectUrl, disconnect as prolificaDisconnect, prolificaState } from './prolifica.ts'
 import { buildShare, publishShare, unpublishShare } from './share.ts'
@@ -1322,19 +1322,28 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     if (st.isDirectory()) return send(res, 200, { path: abs, kind: 'dir', entries: await listDir(abs) })
     return send(res, 200, { path: abs, kind: 'file', size: st.size, mtime: st.mtimeMs })
   }
+  if (b === 'find' && method === 'GET') return send(res, 200, await findFiles(path.resolve(s.meta.cwd), url.searchParams.get('q') ?? ''))
+  if (b === 'diff' && method === 'GET') {
+    const abs = allowed(s.meta, s.getEvents(), url.searchParams.get('path') || '')
+    if (!abs || !fs.existsSync(abs)) throw new HttpError(404, 'No such file, or not one this session can show')
+    return send(res, 200, await diffOf(abs))
+  }
   if (b === 'file' && method === 'GET') {
     // A file in the session's directory (one you attached: name), or one the Files pane opens
     // (path: see server/files.ts), to show in the browser. Sandboxed, so a page among them does
-    // not run as Codinger; run=1 lets a page run its scripts, still in the sandbox.
+    // not run as Codinger; run=1 lets a page run its scripts, still in the sandbox. The address
+    // can end in the file's name (file/<name>), for the tab's title. Text of any kind comes as
+    // text/plain, so a new tab shows it instead of saving it.
     const p = url.searchParams.get('path')
     const file = p != null ? allowed(s.meta, s.getEvents(), p) : path.resolve(s.meta.cwd, url.searchParams.get('name') ?? '')
     if (!file || (p == null && (!file.startsWith(path.resolve(s.meta.cwd) + path.sep) || isSecret(file))) || !fs.existsSync(file) || !fs.statSync(file).isFile()) throw new HttpError(404, 'No such file')
-    const type = typeOf(file)
     const kind = mediaKind(file)
+    const type = kind === 'file' && isText(file) ? 'text/plain; charset=utf-8' : typeOf(file)
     const csp = kind === 'pdf' ? null : kind === 'page' && url.searchParams.get('run') === '1' ? 'sandbox allow-scripts allow-popups' : 'sandbox'
     return sendFile(req, res, file, fs.statSync(file).size, {
       'content-type': type.startsWith('text/') && !type.includes('charset') ? `${type}; charset=utf-8` : type,
       ...(csp ? { 'content-security-policy': csp } : {}), 'x-content-type-options': 'nosniff', 'cache-control': 'no-store', 'accept-ranges': 'bytes',
+      ...(type === 'application/octet-stream' ? { 'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(file))}` } : {}),
     })
   }
   if (b === 'notes' && !c && method === 'GET') return send(res, 200, { path: notesPath(s.meta), text: readNotes(s.meta) })

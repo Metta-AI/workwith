@@ -25,10 +25,9 @@ export function AttentionPanel({ sid }: { sid: string }) {
   const done = msgs.flatMap((m) => items.filter((i) => i.msg === m && !OPEN.has(i.status)))
   const waiting = open.filter((i) => i.status === 'open')
   return (
-    <aside className="attention" style={{ width }}>
+    <div className="attention">
       <div className="attention-top">
         <span className="attention-head">Open {waiting.length > 0 && <ItemCount items={waiting} />}</span>
-        <button className="icon-btn" title="Hide" onClick={onHide}><XIcon size={13} /></button>
       </div>
       {!open.length && <div className="attention-empty muted">Nothing open</div>}
       {open.map((i) => i.kind === 'ask'
@@ -44,7 +43,7 @@ export function AttentionPanel({ sid }: { sid: string }) {
         </button>
       )}
       {showDone && <div className="attention-done">{done.map((i) => <Done key={i.key} item={i} />)}</div>}
-    </aside>
+    </div>
   )
 }
 

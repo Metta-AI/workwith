@@ -44,6 +44,10 @@ export type Machine = {
   device?: 'laptop' | 'desktop'
 }
 
+// The tabs of the panel beside a session: what its agent showed, its files, its questions and items.
+export type PanelTab = 'preview' | 'files' | 'items'
+const savedTab = localStorage.getItem('codinger.panelTab') as PanelTab | 'none' | null
+
 type State = {
   // These belong to a machine: the current one (the selected session's), or for
   // sessions, all of them. Set on the state, they go to that machine.
@@ -78,10 +82,9 @@ type State = {
   artifact: string | null            // the artifact chosen on the Artifacts page
   artifactV?: number                 // and the version of it on view there (none: the latest)
   settingsPage: string | null        // Settings is open, on this page
-  previewPane: boolean               // a session's preview pane is open (Artifacts.tsx)
-  previewWide: boolean               // and it takes the conversation's place too
-  filesPane: boolean                 // a session's Files pane is open (FileBrowser.tsx)
-  fileOpen: Record<string, { path: string; line?: number; at: number }>   // by session: the file or folder it shows
+  panelTab: PanelTab | null          // the tab of the panel beside a session (SidePanel.tsx); null: closed
+  panelWide: boolean                 // and it takes the conversation's place too
+  fileOpen: Record<string, { path: string; line?: number; changes?: boolean; at: number }>   // by session: the file or folder its Files tab shows
   artifacts: Artifact[]
   artifactsPort: number              // where the server that runs artifacts listens
   prolifica: ProlificaState
@@ -126,10 +129,9 @@ export const state = {
   page: null,
   artifact: localStorage.getItem('codinger.artifact'),
   settingsPage: null,
-  // On a phone the panes cover the session (styles.css), so the preview starts closed there.
-  previewPane: !matchMedia('(max-width: 720px)').matches && localStorage.getItem('codinger.previewPane') !== '0',
-  previewWide: localStorage.getItem('codinger.previewWide') === '1',
-  filesPane: !matchMedia('(max-width: 720px)').matches && localStorage.getItem('codinger.filesPane') === '1',
+  // On a phone the panel covers the conversation, so it starts closed there.
+  panelTab: matchMedia('(max-width: 720px)').matches || savedTab === 'none' ? null : savedTab ?? 'items',
+  panelWide: localStorage.getItem('codinger.panelWide') === '1',
   fileOpen: {},
   artifacts: [],
   artifactsPort: 0,
@@ -241,9 +243,8 @@ export function changed() {
     localStorage.setItem('codinger.sideHidden', JSON.stringify(state.sideHidden))
     localStorage.setItem('codinger.machineOrder', JSON.stringify(state.machineOrder))
     if (state.artifact) localStorage.setItem('codinger.artifact', state.artifact)
-    localStorage.setItem('codinger.previewPane', state.previewPane ? '1' : '0')
-    localStorage.setItem('codinger.previewWide', state.previewWide ? '1' : '0')
-    localStorage.setItem('codinger.filesPane', state.filesPane ? '1' : '0')
+    localStorage.setItem('codinger.panelTab', state.panelTab ?? 'none')
+    localStorage.setItem('codinger.panelWide', state.panelWide ? '1' : '0')
   }, 300)
 }
 // Tell the server which sessions you are writing a reply in, so the lead's
