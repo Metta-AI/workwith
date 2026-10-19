@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Mail, PermissionMode, SessionMeta, SlashCommand } from '../../../shared/types.ts'
 import { MAX_RUN } from '../../../shared/mail.ts'
-import { api, changed, closeSession, composerOf, draftsOf, hasContent, loadEvents, queuedParts, select, sendQueued, setComposer, state, undismissItem, useStore, selectFallback, globalId, machineOf, localId, quietly } from '../store.ts'
+import { api, changed, closeSession, composerOf, draftsOf, hasContent, loadEvents, queuedParts, select, sendQueued, setComposer, state, undismissItem, useStore, deselect, globalId, machineOf, localId, quietly } from '../store.ts'
 import { fatigue, kTokens } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { RichInput } from './Inputs.tsx'
@@ -231,7 +231,7 @@ function SessionMenu({ m, open, setOpen, onPublish }: { m: SessionMeta; open: Me
     worker && <button key="publish" onClick={act(onPublish)}>{m.share ? 'Published transcript' : 'Publish transcript'}</button>,
     worker && !m.archived && <button key="close" title="Archive session" onClick={act(() => closeSession(m.id))}>Close</button>,
     worker && m.archived && <button key="reopen" onClick={act(() => api(`/api/sessions/${m.id}`, 'PATCH', { archived: false }))}>Reopen</button>,
-    worker && m.archived && <button key="delete" className="danger" title="Remove from Codinger (it stays in Resume)" onClick={act(() => { if (confirm(`Delete "${m.title}" from Codinger? Claude Code's own transcript is kept, so you can still find it under Resume.`)) return api(`/api/sessions/${m.id}`, 'DELETE').then(selectFallback) })}>Delete</button>,
+    worker && m.archived && <button key="delete" className="danger" title="Remove from Codinger (it stays in Resume)" onClick={act(() => { if (confirm(`Delete "${m.title}" from Codinger? Claude Code's own transcript is kept, so you can still find it under Resume.`)) return api(`/api/sessions/${m.id}`, 'DELETE').then(deselect) })}>Delete</button>,
   ].filter(Boolean)
   if (!items.length) return null
   return (

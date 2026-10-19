@@ -47,7 +47,7 @@ function App() {
         {!st.connected && !st.sessions.length ? <div className="empty">Connecting to the Codinger server…</div>
           : st.page === 'artifacts' ? <ArtifactsView />
           : sel ? <SessionView key={sel.id} id={sel.id} />
-          : <div className="empty">Pick a session.</div>}
+          : <div className="empty no-session">No session selected.</div>}
       </main>
       <ArtifactCheck />
       {welcome && <AppearanceDialog welcome onClose={() => setWelcome(false)} />}

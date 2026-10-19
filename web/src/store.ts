@@ -385,8 +385,8 @@ function onServer(m: ServerMsg, machine: string) {
       Object.assign(M, { sessions: own(m.sessions), settings: m.settings, usage: m.usage, loaded: true, platform: m.platform, home: m.home, auth: m.auth ?? { state: 'ok' }, stale: !!m.stale, staleAt: m.staleAt, update: m.update, remote: m.remote, device: m.device })
       if (looks) applyAppearance(m.settings.appearance)
       if (!machine) { state.restarting = false; onRemote(m.remote) }
-      // A selected session that is gone, or a lead: the latest one instead.
-      if (!state.sessions.some((s) => s.id === state.selected && s.kind === 'worker')) state.selected = fallback()
+      // A selected session that is gone, or a lead: the latest one instead. No session (after a close) stays so.
+      if (state.selected && !state.sessions.some((s) => s.id === state.selected && s.kind === 'worker')) state.selected = fallback()
       if (!state.selected) state.sideOpen = true  // nothing to show: on a phone, the sessions
       break
     case 'sessions': M.sessions = own(m.sessions); break
@@ -493,12 +493,27 @@ export function revealEvent(sid: string, seq: number) {
   setTimeout(() => find(0), 50)
 }
 
-// Closing archives the session (its process ends; Reopen brings it back).
-export const selectFallback = () => select(fallback())
+// No session shows: the blank view. On a phone the sessions show in its place.
+export function deselect() {
+  state.selected = ''
+  state.page = null
+  state.sideOpen = true
+  changed()
+}
 
+// The sidebar shows the archived sessions, or the active ones. An open session that is not in
+// that list no longer shows: the blank view instead.
+export function showArchive(on: boolean) {
+  state.showArchived = on
+  const s = state.sessions.find((x) => x.id === state.selected)
+  if (s && !!s.archived !== on) state.selected = ''
+  changed()
+}
+
+// Closing archives the session (its process ends; Reopen brings it back). If it was open, no session shows.
 export async function closeSession(id: string) {
   await api(`/api/sessions/${id}`, 'PATCH', { archived: true })
-  if (state.selected === id) select(fallback(), false)
+  if (state.selected === id) deselect()
 }
 
 // ---- drafts -------------------------------------------------------------------------

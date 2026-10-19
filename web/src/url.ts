@@ -47,7 +47,8 @@ function encode(): { nav: URLSearchParams; look: URLSearchParams } {
 
 // Show what an address says. look: the panes and the sidebar too (on a load, not on back or forward).
 function apply(q: URLSearchParams, look: boolean) {
-  const s = q.get('s') ?? state.selected
+  // On back or forward, an address with no session is the blank view.
+  const s = q.get('s') ?? (look ? state.selected : '')
   state.selected = s
   state.page = q.get('page') === 'artifacts' ? 'artifacts' : null
   const a = q.get('a'), v = num(q.get('v'))

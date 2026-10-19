@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SessionGroup, SessionMeta, Usage } from '../../../shared/types.ts'
-import { api, changed, closeSession, currentMachine, LOCAL, localId, machineList, machineOf, offline, select, state, useStore, type Machine, labelOf } from '../store.ts'
+import { api, changed, closeSession, showArchive, currentMachine, LOCAL, localId, machineList, machineOf, offline, select, state, useStore, type Machine, labelOf } from '../store.ts'
 import { HistoryDialog } from './HistoryDialog.tsx'
 import { fatigue, timeAgo } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
@@ -204,7 +204,7 @@ export function Sidebar({ width }: { width: number }) {
         </div>
       )}
       <nav className={`tree${st.showArchived ? ' archived' : ''}`}>
-        {st.showArchived && <div className="archive-banner"><ArchiveIcon size={13} /> Archived sessions<button className="icon-btn" title="Back to active sessions" onClick={() => { state.showArchived = false; changed() }}><XIcon size={12} /></button></div>}
+        {st.showArchived && <div className="archive-banner"><ArchiveIcon size={13} /> Archived sessions<button className="icon-btn" title="Back to active sessions" onClick={() => showArchive(false)}><XIcon size={12} /></button></div>}
         {tab === 'local' ? local && tree(LOCAL) : <>
           {others.map((m) => {
             const d = drag.sortable('machines', m.name)
@@ -257,7 +257,7 @@ export function Sidebar({ width }: { width: number }) {
           return <button className="link side-tasks" title={`Tasks: ${running} running`} onClick={() => setTasks(true)}><TerminalIcon size={14} />{running > 0 && <span>{running}</span>}</button>
         })()}
         {/* One toggle: pressed while the list shows archived sessions. */}
-        <button className={`link archive-toggle${st.showArchived ? ' on' : ''}`} title={st.showArchived ? 'Show active sessions' : 'Show archived sessions'} onClick={() => { state.showArchived = !state.showArchived; changed() }}><ArchiveIcon size={14} /></button>
+        <button className={`link archive-toggle${st.showArchived ? ' on' : ''}`} title={st.showArchived ? 'Show active sessions' : 'Show archived sessions'} onClick={() => showArchive(!st.showArchived)}><ArchiveIcon size={14} /></button>
       </div>
       </div>
       {newIn !== null && <NewSession cwd={newIn.cwd} machine={newIn.machine} group={newIn.group} onClose={() => setNewIn(null)} />}
