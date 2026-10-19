@@ -5,7 +5,7 @@ import { HistoryDialog } from './HistoryDialog.tsx'
 import { fatigue, timeAgo } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { NewSession } from './NewSession.tsx'
-import { ArchiveIcon, ChevronIcon, DesktopIcon, GearIcon, GlobeIcon, LaptopIcon, TerminalIcon, XIcon } from './Icons.tsx'
+import { ArchiveIcon, ChevronIcon, DesktopIcon, GearIcon, GlobeIcon, LaptopIcon, SearchIcon, TerminalIcon, XIcon } from './Icons.tsx'
 import { TasksDialog } from './TasksDialog.tsx'
 import { ArtifactIcon } from './Artifacts.tsx'
 import { SettingsDialog } from './SettingsDialog.tsx'
@@ -194,6 +194,8 @@ export function Sidebar({ width }: { width: number }) {
       <div className="side-actions">
         <button className="primary" onClick={() => setNewIn({ cwd: '', machine: tab === 'local' ? LOCAL : others[0]?.name })}>+ New session</button>
         <button onClick={() => setHistory(true)} title={`Continue any Claude Code conversation on ${st.web ? currentMachine() : 'this machine'}, including terminal ones`}>Resume…</button>
+        {/* Opens the palette (Palette.tsx), as ⌘K does: the way in on a phone. */}
+        <button className="icon-btn side-search" aria-label="Search" data-tip="Search (⌘K)" onClick={() => window.dispatchEvent(new Event('codinger:palette'))}><SearchIcon size={16} /></button>
         {/* Only on a phone, where the sidebar covers the page: its close button. A lost connection shows as a banner (main.tsx: Offline). */}
         <button className="icon-btn side-hide" aria-label="Hide sessions" onClick={() => { state.sideOpen = false; changed() }}><XIcon size={18} /></button>
       </div>

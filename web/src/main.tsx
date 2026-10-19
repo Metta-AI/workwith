@@ -15,6 +15,7 @@ import { initPeek } from './peek.ts'
 import { closeLinkedNew, initUrl, linkedNew } from './url.ts'
 import { NewSession } from './components/NewSession.tsx'
 import { Lightbox } from './components/Lightbox.tsx'
+import { Palette } from './components/Palette.tsx'
 import './styles.css'
 
 function App() {
@@ -52,6 +53,7 @@ function App() {
       <ArtifactCheck />
       {welcome && <AppearanceDialog welcome onClose={() => setWelcome(false)} />}
       {linkedNew && st.loaded && <NewSession cwd={linkedNew.cwd} title={linkedNew.title} prompt={linkedNew.prompt} onClose={closeLinkedNew} />}
+      <Palette />
       {st.lightbox && <Lightbox src={st.lightbox} onClose={() => { state.lightbox = null; changed() }} />}
       {/* Notices stack in the bottom left corner. */}
       <div className="toasts">
