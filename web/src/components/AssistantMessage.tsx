@@ -367,6 +367,12 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
         return
       }
       if (!held) return click()
+      // The press and the release are on different elements, so the browser sends the click to an
+      // element around both, at the point of release. Without this, a highlight under that point
+      // took the click and opened a comment on its own passage.
+      const eat = (c: MouseEvent) => { c.stopPropagation(); c.preventDefault() }
+      window.addEventListener('click', eat, { capture: true, once: true })
+      setTimeout(() => window.removeEventListener('click', eat, true), 300)
       const over = (document.elementFromPoint(u.clientX, u.clientY) as Element | null)?.closest<HTMLElement>('[data-emoji]')
       if (over) toggle(over.dataset.emoji!, p)
     }
