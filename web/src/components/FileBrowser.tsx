@@ -100,7 +100,8 @@ export function FileBrowser({ m }: { m: SessionMeta }) {
 
   // A path to show (a link in a reply, or a pick in the list): a folder opens in the tree, a file in the viewer.
   useEffect(() => {
-    if (!want || !root) return
+    if (!want) { setFile(null); setErr(null); return }
+    if (!root) return
     setErr(null)
     void getJson<Node>(fsUrl(want.path)).then((n) => {
       const inRoot = n.path === root || n.path.startsWith(root + sepOf(n.path))

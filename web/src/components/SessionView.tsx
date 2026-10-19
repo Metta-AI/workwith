@@ -387,7 +387,8 @@ function DismissedChip({ sid }: { sid: string }) {
   )
 }
 
-const resolve = (n: number) => `Resolve ${n} ${n === 1 ? 'issue' : 'issues'} ↑`
+// On a phone the word goes, for room.
+const resolve = (n: number) => <>Resolve {n}<span className="not-phone"> {n === 1 ? 'issue' : 'issues'}</span> ↑</>
 
 export function Composer({ m, attachRef }: { m: SessionMeta; attachRef?: React.RefObject<((files: File[]) => void) | null> }) {
   useStore()
@@ -526,7 +527,7 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
   // shows something, and Files whenever you click a path in a reply. A tab this session has
   // nothing for does not show. The tab and wide are in the page's address (url.ts).
   const canPreview = hasPreview(id)
-  const tabs = (['preview', 'files', 'items'] as const).filter((t) => t === 'files' || (t === 'preview' ? canPreview : items.length > 0))
+  const tabs = (['items', 'preview', 'files'] as const).filter((t) => t === 'files' || (t === 'preview' ? canPreview : items.length > 0))
   const tab = st.panelTab && tabs.includes(st.panelTab) ? st.panelTab : null
   const setTab = (t: PanelTab | null) => { if (t) localStorage.setItem('codinger.panelLast', t); state.panelTab = t; changed() }
   const togglePanel = () => {
@@ -544,8 +545,18 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
     ro.observe(el)
     return () => ro.disconnect()
   }, [!!m])
-  const auto = bodyW > 0 && bodyW - panelW < CONVERSATION_MIN
+  // The panel gets narrower as the session does, down to PANEL_MIN; past that it takes the full width.
+  const fit = bodyW > 0 ? Math.min(panelW, bodyW - CONVERSATION_MIN) : panelW
+  const auto = fit < PANEL_MIN
   const wide = !!tab && (st.panelWide || auto)
+  // A tap on the tab that shows: in Files, closes the file on view; else hides the panel.
+  const again = (t: PanelTab) => {
+    if (t === 'files' && state.fileOpen[id]) {
+      const { [id]: _, ...rest } = state.fileOpen
+      state.fileOpen = rest
+      changed()
+    } else setTab(null)
+  }
   const toggleWide = () => { state.panelWide = !st.panelWide; changed() }
   const shownAt = st.preview[id]?.at
   useEffect(() => { if (shownAt && Date.now() - shownAt < 5000 && state.panelTab !== 'preview') quietly(() => { state.panelTab = 'preview'; changed() }) }, [shownAt])
@@ -565,13 +576,14 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
           </>}
         </DropZone>
         {tab && <>
-          {!wide && <Splitter width={panelW} setWidth={setPanelW} min={260} max={Math.max(320, bodyW - CONVERSATION_MIN)} initial={440} reverse />}
-          <SidePanel m={m} tab={tab} tabs={tabs} width={panelW} wide={wide} auto={auto} onTab={setTab} onWide={toggleWide} onHide={() => setTab(null)} />
+          {!wide && <Splitter width={fit} setWidth={setPanelW} min={PANEL_MIN} max={Math.max(PANEL_MIN, bodyW - CONVERSATION_MIN)} initial={440} reverse />}
+          <SidePanel m={m} tab={tab} tabs={tabs} width={fit} wide={wide} auto={auto} onTab={(t) => t === tab ? again(t) : setTab(t)} onWide={toggleWide} onHide={() => setTab(null)} />
         </>}
       </div>
     </div>
   )
 }
 
-// The least width of the conversation beside the panel.
+// The least widths of the conversation and of the panel beside it.
 const CONVERSATION_MIN = 380
+const PANEL_MIN = 260
