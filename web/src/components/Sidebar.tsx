@@ -273,21 +273,24 @@ export function Sidebar({ width }: { width: number }) {
   )
 }
 
-// Does a session's folder match the text of the archived view's filter? The full path of a
-// folder that one of the sessions has matches only that folder, not the folders under it;
-// other text matches each folder that has it.
-function folderMatch(q: string, sessions: { cwd: string; machine: string }[]) {
-  const paths = (s: { cwd: string; machine: string }) => [s.cwd.toLowerCase(), shortPath(s.cwd, s.machine).toLowerCase()]
+// Does a session match the text of the archived view's filter? The full path of a folder that
+// one of the sessions has matches only that folder, not the folders under it; other text
+// matches each session whose folder or name has it.
+type Archived = { cwd: string; machine: string; title: string }
+function archiveMatch(q: string, sessions: Archived[]) {
+  const paths = (s: Archived) => [s.cwd.toLowerCase(), shortPath(s.cwd, s.machine).toLowerCase()]
   if (!q) return () => true
   const exact = sessions.some((s) => paths(s).includes(q))
-  return (s: { cwd: string; machine: string }) => exact ? paths(s).includes(q) : paths(s).some((p) => p.includes(q))
+  return (s: Archived) => exact ? paths(s).includes(q) : paths(s).some((p) => p.includes(q)) || s.title.toLowerCase().includes(q)
 }
 
-// The filter of the archived view: a box that suggests the folders of the archived sessions
-// as you type, and a checkbox that puts the sessions under their folders. The list shows 5
-// folders and scrolls to the others: with the box empty or with a folder's full path in it,
-// all of them, newest first; with other text, those that have it, names that start with it first.
-// A pick puts the folder's path in the box.
+// The filter of the archived view: a box that suggests the folders and the sessions of the
+// archived view as you type, and a checkbox that puts the sessions under their folders. The
+// list shows 5 lines and scrolls to the others. With the box empty, all folders and sessions,
+// newest first; with a folder's full path in it, all folders and the sessions in that folder;
+// with other text, the folders and the session names that have it, those that start with it
+// first. A folder you pick goes in the box; a session you pick opens.
+type Option = { kind: 'folder'; path: string; n: number; newest: number } | { kind: 'session'; s: SessionMeta; machine: string }
 function ArchiveFilter({ machines }: { machines: string[] }) {
   const st = useStore()
   const [open, setOpen] = useState(false)
@@ -295,21 +298,28 @@ function ArchiveFilter({ machines }: { machines: string[] }) {
   const list = useRef<HTMLDivElement>(null)
   const q = st.archiveQuery.trim().toLowerCase()
   const folders = new Map<string, { path: string; n: number; newest: number }>()
+  const sessions: { s: SessionMeta; machine: string; path: string }[] = []
   for (const machine of machines) for (const s of st.machines[machine]?.sessions ?? []) {
     if (s.kind !== 'worker' || !s.archived) continue
     const path = shortPath(s.cwd, machine)
     const f = folders.get(path) ?? { path, n: 0, newest: 0 }
     folders.set(path, { path, n: f.n + 1, newest: Math.max(f.newest, s.createdAt) })
+    sessions.push({ s, machine, path })
   }
   const nameOf = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path
   const picked = [...folders.keys()].find((p) => p.toLowerCase() === q)
   const typed = q && !picked ? q : ''
-  const starts = (path: string) => nameOf(path).toLowerCase().startsWith(typed) ? 0 : 1
-  const options = [...folders.values()]
+  const first = (name: string) => name.toLowerCase().startsWith(typed) ? 0 : 1
+  const dirs: Option[] = [...folders.values()]
     .filter((f) => !typed || f.path.toLowerCase().includes(typed))
-    .sort((a, b) => (typed ? starts(a.path) - starts(b.path) : 0) || b.newest - a.newest)
-    .slice(0, 100)
-  // The list opens on the folder in the box, or on the one the arrow keys reach.
+    .sort((a, b) => (typed ? first(nameOf(a.path)) - first(nameOf(b.path)) : 0) || b.newest - a.newest)
+    .slice(0, 100).map((f) => ({ kind: 'folder', ...f }))
+  const named: Option[] = sessions
+    .filter((x) => picked ? x.path === picked : !typed || x.s.title.toLowerCase().includes(typed))
+    .sort((a, b) => (typed ? first(a.s.title) - first(b.s.title) : 0) || b.s.lastActivity - a.s.lastActivity)
+    .slice(0, 100).map((x) => ({ kind: 'session', s: x.s, machine: x.machine }))
+  const options = [...dirs, ...named]
+  // The list opens on the folder in the box, or on the line the arrow keys reach.
   const shown = open && options.length > 0
   useEffect(() => {
     if (!shown) return
@@ -317,33 +327,48 @@ function ArchiveFilter({ machines }: { machines: string[] }) {
     el?.scrollIntoView({ block: 'nearest' })
   }, [shown, at, picked])
   const set = (v: string) => { state.archiveQuery = v; changed(); setAt(-1) }
-  const pick = (path: string) => { set(path); setOpen(false) }
+  const pick = (o: Option) => {
+    if (o.kind === 'folder') set(o.path)
+    else select(o.s.id)
+    setOpen(false)
+  }
+  const line = (o: Option, i: number) => (
+    <div key={o.kind === 'folder' ? `d:${o.path}` : `s:${o.s.id}`} role="option" aria-selected={i === at}
+      className={`archive-option${i === at ? ' on' : ''}${o.kind === 'folder' && o.path === picked ? ' picked' : ''}`}
+      onMouseDown={(e) => { e.preventDefault(); pick(o) }} onMouseEnter={() => setAt(i)}>
+      {o.kind === 'folder' ? <>
+        <span className="archive-option-name">{nameOf(o.path)}</span>
+        <span className="archive-option-path">{o.path}</span>
+        <span className="archive-option-n">{o.n}</span>
+      </> : <>
+        <span className="archive-option-name">{o.s.title}</span>
+        <span className="archive-option-path">{nameOf(shortPath(o.s.cwd, o.machine))}</span>
+        <span className="archive-option-n">{timeAgo(o.s.lastActivity)}</span>
+      </>}
+    </div>
+  )
   return (
     <div className="archive-filter">
       <div className="archive-search">
-        <input type="search" placeholder="Filter by folder" value={st.archiveQuery} data-pid="archive-filter"
+        <input type="search" placeholder="Filter by folder or name" value={st.archiveQuery} data-pid="archive-filter"
           onFocus={() => setOpen(true)} onClick={() => setOpen(true)} onBlur={() => { setOpen(false); setAt(-1) }}
           onChange={(e) => { set(e.target.value); setOpen(true) }}
           onKeyDown={(e) => {
             if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
               e.preventDefault()
               setOpen(true)
-              // From the folder you reached, or else from the one in the box.
-              const n = options.length, from = at >= 0 ? at : options.findIndex((f) => f.path === picked)
+              // From the line you reached, or else from the folder in the box.
+              const n = options.length, from = at >= 0 ? at : options.findIndex((o) => o.kind === 'folder' && o.path === picked)
               if (n) setAt(e.key === 'ArrowDown' ? (from + 1) % n : from < 0 ? n - 1 : (from - 1 + n) % n)
-            } else if (e.key === 'Enter' && open && options[at]) pick(options[at].path)
+            } else if (e.key === 'Enter' && open && options[at]) pick(options[at])
             else if (e.key === 'Escape' && open) { e.preventDefault(); setOpen(false) }
           }} />
         {shown && (
           <div ref={list} className="archive-options" role="listbox">
-            {options.map((f, i) => (
-              <div key={f.path} role="option" aria-selected={i === at} className={`archive-option${i === at ? ' on' : ''}${f.path === picked ? ' picked' : ''}`}
-                onMouseDown={(e) => { e.preventDefault(); pick(f.path) }} onMouseEnter={() => setAt(i)}>
-                <span className="archive-option-name">{nameOf(f.path)}</span>
-                <span className="archive-option-path">{f.path}</span>
-                <span className="archive-option-n">{f.n}</span>
-              </div>
-            ))}
+            {dirs.length > 0 && <div className="archive-options-head">Folders</div>}
+            {dirs.map((o, i) => line(o, i))}
+            {named.length > 0 && <div className="archive-options-head">Sessions</div>}
+            {named.map((o, i) => line(o, dirs.length + i))}
           </div>
         )}
       </div>
@@ -402,8 +427,8 @@ function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: s
   const q = st.showArchived ? st.archiveQuery.trim().toLowerCase() : ''
   const byDir = st.showArchived && st.archiveByFolder
   const shown = (m?.sessions ?? []).filter((s) => s.kind === 'worker' && s.archived === st.showArchived)
-  const match = folderMatch(q, shown.map((s) => ({ cwd: s.cwd, machine })))
-  const workers = shown.filter((s) => match({ cwd: s.cwd, machine }))
+  const match = archiveMatch(q, shown.map((s) => ({ cwd: s.cwd, machine, title: s.title })))
+  const workers = shown.filter((s) => match({ cwd: s.cwd, machine, title: s.title }))
   const tier = tiers(workers, (a, b) => byDir ? a.cwd === b.cwd : gid(a) === gid(b))
   const place = (s: SessionMeta) => s.order ?? -1
   workers.sort((a, b) => tier(a) - tier(b) || place(a) - place(b) || b.createdAt - a.createdAt)
@@ -440,7 +465,7 @@ function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: s
     { label: 'Rename', run: () => { naming = g.id; changed() } },
     { label: 'Delete group', run: () => saveGroups(machine, groups.filter((x) => x.id !== g.id)) },
   ])
-  if (!sections.length) return q && (m?.sessions ?? []).some((s) => s.kind === 'worker' && s.archived) ? <div className="muted pad">No folder matches “{st.archiveQuery.trim()}”.</div> : null
+  if (!sections.length) return q && (m?.sessions ?? []).some((s) => s.kind === 'worker' && s.archived) ? <div className="muted pad">No folder or session matches “{st.archiveQuery.trim()}”.</div> : null
   return <div className="groups">{sections.map(({ g, list }) => {
     const shutKey = `group:${machine}:${g.id}`
     const shut = st.collapsed.includes(shutKey)

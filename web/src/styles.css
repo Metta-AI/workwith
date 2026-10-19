@@ -172,6 +172,7 @@ body.resizing-v .splitter-v::after { background: var(--accent); }
 .archive-option { display: flex; align-items: baseline; gap: 6px; padding: 4px 7px; line-height: 1.5; border-radius: 5px; cursor: pointer; }
 .archive-option.on { background: color-mix(in srgb, var(--text) 9%, transparent); }
 .archive-option.picked .archive-option-name { font-weight: 600; }
+.archive-options-head { padding: 5px 7px 2px; color: var(--muted); font-size: calc(10.5px * var(--fs, 1)); text-transform: uppercase; letter-spacing: .05em; }
 .archive-option-name { flex: none; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .archive-option-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: calc(11px * var(--fs, 1)); }
 .archive-option-n { flex: none; color: var(--muted); font-size: calc(10.5px * var(--fs, 1)); }
