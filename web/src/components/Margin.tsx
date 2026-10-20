@@ -315,6 +315,30 @@ function NoteCard({ sid, note, onOpen, onFocus, onBlur }: { sid: string; note: N
     document.addEventListener('pointerdown', away)
     return () => document.removeEventListener('pointerdown', away)
   }, [note.id])
+  // A comment of more than one line moves its image button down under the X (data-multi), so its
+  // text can use that width. It counts the lines with the button at the top, else a line that fits
+  // only without the button would change the state again and again.
+  const measure = () => {
+    const el = card.current, ed = el?.querySelector<HTMLElement>('.ri-edit')
+    if (!el || !ed) return
+    el.removeAttribute('data-multi')
+    el.toggleAttribute('data-multi', ed.scrollHeight > 30)
+  }
+  useLayoutEffect(measure, [note.text])
+  // An image that loads, or a new width of the card, can change the lines.
+  useEffect(() => {
+    const el = card.current!
+    let width = el.offsetWidth, frame = 0
+    el.addEventListener('load', measure, true)
+    const ro = new ResizeObserver(() => {
+      if (el.offsetWidth === width) return
+      width = el.offsetWidth
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(measure)
+    })
+    ro.observe(el)
+    return () => { el.removeEventListener('load', measure, true); ro.disconnect(); cancelAnimationFrame(frame) }
+  }, [])
   const [picking, setPicking] = useState(false)
   // The passage's reactions (not sent yet), which the emoji row shows first, on.
   const k = JSON.stringify(note.anchor)

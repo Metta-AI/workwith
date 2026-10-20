@@ -793,9 +793,16 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .note-card:focus-within { box-shadow: 0 3px 14px rgba(0, 0, 0, .16); }
 /* The ring and the border make one even 3px frame: the left edge gives up 2px to the ring, and the padding takes them, so the text stays where it was. */
 .note-card.hover:not(.sent) { border-color: #f0b400; border-left-width: 1px; padding-left: 10px; box-shadow: 0 0 0 2px #f0b400, 0 3px 14px rgba(0, 0, 0, .16); }
-.note-card .ri-edit, .note-card .ri-edit:focus { border: none; background: none; padding: 2px 24px 2px 4px; outline: none; min-height: 24px !important; }
-/* The image button and the X (.card-x) sit level with the first line of the comment (18px down); the X is as far from the side as from the top. */
+/* The field runs over the card's right padding to the card's edge, so the scrollbar of a long comment is at that edge, right of the X. */
+.note-card .ri-edit, .note-card .ri-edit:focus { border: none; background: none; width: calc(100% + 30px); margin-right: -30px; padding: 2px 54px 2px 4px; outline: none; min-height: 24px !important; }
+/* The image button and the X (.card-x) sit level with the first line of the comment (18px down); the X is as far from the side as from the top.
+   The X paints over the field, which covers it now. */
 .note-card .rich-input .attach { top: 5px; right: 0; }
+.note-card .card-x { z-index: 1; }
+/* A comment of more than one line (data-multi, Margin.tsx): the image button goes under the X, centred on it
+   (18px from the card's edge, which is 30px right of the field), level with the last line, and the text runs up to the X. */
+.note-card[data-multi] .ri-edit { padding-right: 32px; }
+.note-card[data-multi] .rich-input .attach { top: auto; bottom: 5px; right: -19px; }
 .note-card .thumbs { margin: 0 0 4px; }
 /* In the gutter, where every comment you write shows, only the one you write in is open: the others
    show their text, with the X and the image button on hover. (Without a gutter a card shows only while
