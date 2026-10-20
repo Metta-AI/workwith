@@ -82,7 +82,9 @@ export function FileView({ sid, path, size, line, at, stamp, rel, changes, edits
   const diffOn = showDiff && hasChanges
 
   const can = kind === 'page' || isMd || isCsv || ext === 'svg'
-  const codeLike = diffOn || (asText && !(isMd && !source) && !(isCsv && !source))
+  // Markdown shows its changes rendered too; Source shows them as lines (with comments on lines).
+  const mdDiff = diffOn && isMd && !source
+  const codeLike = (diffOn && !mdDiff) || (asText && !(isMd && !source) && !(isCsv && !source))
   // Comments on lines: a click or a drag on the line numbers starts one.
   const lines = linesOf(sid, path)
   const focus = state.focus
@@ -98,7 +100,7 @@ export function FileView({ sid, path, size, line, at, stamp, rel, changes, edits
         <span className="fb-path mono">{ltr(rel)}</span>
         <span className="muted fb-size">{kb(size)}</span>
         {hasChanges && <button className={`fb-toggle${diffOn ? ' on' : ''}`} data-pid="file-changes" onClick={() => setShowDiff(!diffOn)}>Changes</button>}
-        {can && !diffOn && <button className={`fb-toggle${source ? ' on' : ''}`} data-pid="file-source" onClick={() => setSource(!source)}>Source</button>}
+        {can && (!diffOn || isMd) && <button className={`fb-toggle${source ? ' on' : ''}`} data-pid="file-source" onClick={() => setSource(!source)}>Source</button>}
         {codeLike && <button className={`fb-toggle${wrap ? ' on' : ''}`} data-pid="file-wrap" onClick={() => setWrap(!wrap)}>Wrap</button>}
         {reveal && <button className="icon-btn" data-tip="Show in Finder" onClick={reveal}><FolderIcon size={13} /></button>}
         <a className="icon-btn" href={tabUrl} target="_blank" rel="noreferrer" data-tip="Open in a new tab"><OpenIcon size={13} /></a>
@@ -113,7 +115,8 @@ export function FileView({ sid, path, size, line, at, stamp, rel, changes, edits
       )}
       <div className="fb-content">
         {codeLike && review && !lines.length && <div className="fb-note muted rv-hint">To comment on lines, click or drag their numbers.</div>}
-        {diffOn ? (gitChanged ? <DiffLines diff={diff!.diff} lang={ext} wrap={wrap} notes={notes} /> : <EditLines edits={edits} lang={ext} wrap={wrap} />)
+        {mdDiff ? <MarkdownChanges chunks={gitChanged ? diffChunks(diff!.diff) : editChunks(edits)} edits={!gitChanged} url={url} dir={dirName(path)} onLink={onLink} />
+          : diffOn ? (gitChanged ? <DiffLines diff={diff!.diff} lang={ext} wrap={wrap} notes={notes} /> : <EditLines edits={edits} lang={ext} wrap={wrap} />)
           : err ? <div className="fb-note error-text">{err}</div>
           : binary ? <div className="fb-note muted">This file is not text. Use the button at the top right to open it in a new tab.</div>
           : kind === 'image' && !source ? <div className="fb-media"><img src={`${url(path)}&t=${stamp}`} alt={rel} /></div>
@@ -171,7 +174,9 @@ function Rows({ rows, wrap, mark, at, notes }: { rows: Row[]; wrap: boolean; mar
     rows.forEach((r, i) => { if (r.ln != null && !!r.old === !!d.old && r.ln >= d.line && r.ln <= d.end) { sel.add(i); last = i } })
     after.set(last, [...after.get(last) ?? [], d])
   }
-  const html = rows.map((r, i) => `<div class="fb-ln${r.cls ? ` ${r.cls}` : ''}${mark === i + 1 ? ' mark' : ''}${sel.has(i) ? ' sel' : ''}${notes && r.ln != null ? ' pickable' : ''}" data-i="${i}">${r.nums.map((n) => `<span class="fb-n">${n}</span>`).join('')}<span class="fb-c">${r.html || ' '}</span></div>`)
+  // With Wrap, the rest of a long line starts under its first character, after its indent (a tab is 4).
+  const indent = (r: Row) => { const w = /^[ \t]*/.exec(r.text ?? '')![0]; return w.length + 3 * (w.split('\t').length - 1) }
+  const html = rows.map((r, i) => `<div class="fb-ln${r.cls ? ` ${r.cls}` : ''}${mark === i + 1 ? ' mark' : ''}${sel.has(i) ? ' sel' : ''}${notes && r.ln != null ? ' pickable' : ''}" data-i="${i}">${r.nums.map((n) => `<span class="fb-n">${n}</span>`).join('')}<span class="fb-c"${indent(r) ? ` style="--ind:${indent(r)}ch"` : ''}>${r.html || ' '}</span></div>`)
   const cuts = [...after.keys()].filter((i) => i >= 0).sort((a, b) => a - b)
   const segs: [number, number][] = []
   let from = 0
@@ -256,14 +261,60 @@ function EditLines({ edits, lang: l, wrap }: { edits: Edit[]; lang: string; wrap
     rows.push({ cls: 'hunk', nums: [''], html: e.old == null ? `The agent wrote the file (${i + 1} of ${edits.length})` : `Edit ${i + 1} of ${edits.length}` })
     // A last newline is the end of the last line, not a line of its own.
     const trim = (t: string) => t.endsWith('\n') ? t.slice(0, -1) : t
-    if (e.old != null) for (const h of htmlLines(highlight(trim(e.old), lang(e.old, l)))) rows.push({ cls: 'del', nums: ['−'], html: h })
-    for (const h of htmlLines(highlight(trim(e.new), lang(e.new, l)))) rows.push({ cls: 'add', nums: ['+'], html: h })
+    const add = (t: string, cls: 'del' | 'add') => {
+      const raw = trim(t).split('\n')
+      htmlLines(highlight(trim(t), lang(t, l))).forEach((h, j) => rows.push({ cls, nums: [cls === 'del' ? '−' : '+'], html: h, text: raw[j] }))
+    }
+    if (e.old != null) add(e.old, 'del')
+    add(e.new, 'add')
   })
   return (
     <>
       <div className="fb-note muted">Git shows no changes to this file, so these are the agent's edits in this session.</div>
       <Rows rows={rows} wrap={wrap} />
     </>
+  )
+}
+
+// The changes of a markdown file as runs of lines of one kind (unchanged, removed, added), each run
+// rendered on its own; a gap between hunks of the diff ends a run too.
+type Chunk = { cls: '' | 'add' | 'del' | 'gap'; text: string }
+function chunked(lines: { cls: Chunk['cls']; text: string }[]): Chunk[] {
+  const out: Chunk[] = []
+  for (const x of lines) {
+    const last = out.at(-1)
+    if (last && last.cls === x.cls && x.cls !== 'gap') last.text += '\n' + x.text
+    else out.push({ ...x })
+  }
+  return out
+}
+function diffChunks(diff: string): Chunk[] {
+  const lines: { cls: Chunk['cls']; text: string }[] = []
+  let body = false
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('@@')) { if (body) lines.push({ cls: 'gap', text: '' }); body = true; continue }
+    if (!body) continue
+    if (line.startsWith('+')) lines.push({ cls: 'add', text: line.slice(1) })
+    else if (line.startsWith('-')) lines.push({ cls: 'del', text: line.slice(1) })
+    else if (line.startsWith(' ')) lines.push({ cls: '', text: line.slice(1) })
+  }
+  return chunked(lines)
+}
+function editChunks(edits: Edit[]): Chunk[] {
+  return edits.flatMap((e, i): Chunk[] => [
+    ...(i ? [{ cls: 'gap' as const, text: '' }] : []),
+    ...(e.old != null ? [{ cls: 'del' as const, text: e.old }] : []),
+    { cls: 'add', text: e.new },
+  ])
+}
+
+function MarkdownChanges({ chunks, edits, url, dir, onLink }: { chunks: Chunk[]; edits: boolean; url(p: string): string; dir: string; onLink(href: string): void }) {
+  return (
+    <div className="fb-mdiff">
+      {edits && <div className="fb-note muted">Git shows no changes to this file, so these are the agent's edits in this session.</div>}
+      {chunks.map((c, i) => c.cls === 'gap' ? <div key={i} className="fb-mgap" />
+        : <div key={i} className={`fb-mchunk ${c.cls}`}><Markdown text={c.text} url={url} dir={dir} onLink={onLink} /></div>)}
+    </div>
   )
 }
 
