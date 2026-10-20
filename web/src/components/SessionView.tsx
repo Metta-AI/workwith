@@ -128,7 +128,8 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
           <span className="title-before muted">was “{m.titleBefore}” <button className="link" onClick={() => void api(`/api/sessions/${m.id}`, 'PATCH', { title: m.titleBefore, undo: true })}>Undo</button></span>
         )}
         <div className="head-sub">
-          <span className={`status-pill st-${m.status}`}>{m.compacting ? 'compacting' : STATUS_LABEL[m.status]}</span>
+          {/* The critter's question mark already shows a session that has questions. */}
+          {(m.compacting || m.status !== 'asking') && <span className={`status-pill st-${m.status}`}>{m.compacting ? 'compacting' : STATUS_LABEL[m.status]}</span>}
           <span className="muted mono path" title={m.cwd}>{'\u200E' + shortPath(m.cwd) + '\u200E'}</span>
           {model && <span className="muted head-model" title={m.model?.includes('-') ? undefined : 'Model used for this choice last time'}>{model}</span>}
           <IdChip m={m} />
