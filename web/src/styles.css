@@ -1442,27 +1442,28 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
 }
 
 /* The command palette (Palette.tsx, ⌘K): a search field, the tabs, and a row of one column for each
-   tab. The row moves sideways to the current tab; the next tab shows beside it when there is room. */
-.modal.palette { width: min(980px, 94vw); height: min(560px, 76vh); padding: 0; gap: 0; overflow: hidden; }
+   tab, each as wide as the palette. The row slides sideways to the current tab. */
+/* In the middle of the screen, over the page blurred a little. */
+.modal-back.pal-back { -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+.modal.palette { width: min(640px, 94vw); height: min(560px, 76vh); padding: 0; gap: 0; overflow: hidden; }
 .pal-search { flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); color: var(--muted); }
 /* While the keys work in the results, the field shows no caret. */
 .palette.in-list .pal-search input { caret-color: transparent; }
 .pal-search input { flex: 1; min-width: 0; border: none; outline: none; background: none; color: var(--text); font: inherit; font-size: 15px; padding: 0; }
+.pal-close { display: none; flex: none; padding: 9px; margin: -9px -9px -9px -3px; }
 .pal-kbd { flex: none; font: 11px var(--mono); color: var(--muted); background: var(--panel); border-radius: 4px; padding: 2px 6px; }
-.pal-tabs { flex: none; display: flex; gap: 2px; padding: 6px 10px 0; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+/* The bar scrolls only sideways: its rule is a shadow inside it, and the line of the current tab covers it, not a margin that sticks out below. */
+.pal-tabs { flex: none; display: flex; gap: 2px; padding: 6px 10px 0; box-shadow: inset 0 -1px 0 var(--line); overflow-x: auto; overflow-y: hidden; overscroll-behavior: contain; touch-action: pan-x; scrollbar-width: none; }
 /* The current tab has a straight line under it: no rounded corners with a border. */
-.pal-tab { flex: none; display: flex; align-items: center; gap: 5px; border: none; border-radius: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; padding: 6px 9px 7px; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; }
+.pal-tab { flex: none; display: flex; align-items: center; gap: 5px; border: none; border-radius: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; padding: 6px 9px 7px; border-bottom: 2px solid transparent; cursor: pointer; }
 .pal-tab:hover { color: var(--text); }
 .pal-tab.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 500; }
 .pal-count { font-size: 11px; color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
 .pal-body { flex: 1; min-height: 0; overflow: clip; }
 .pal-track { display: flex; height: 100%; transition: transform .22s ease; will-change: transform; }
+.pal-track.jump { transition: none; }
 @media (prefers-reduced-motion: reduce) { .pal-track { transition: none; } }
-.pal-col { flex: none; height: 100%; box-sizing: border-box; overflow-y: auto; position: relative; padding: 6px; border-right: 1px solid var(--line); }
-/* A column beside the current one is faint, and a click on it makes it the current one. */
-.pal-col:not(.on) { opacity: .5; cursor: pointer; }
-.pal-col:not(.on):hover { opacity: .75; }
-.pal-col-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 6px 8px 4px; }
+.pal-col { flex: none; height: 100%; box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; position: relative; padding: 6px; }
 .pal-section + .pal-section { margin-top: 6px; }
 .pal-section-head { display: flex; align-items: baseline; justify-content: space-between; width: 100%; border: none; background: none; font: inherit; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 6px 8px 4px; cursor: pointer; text-align: left; }
 .pal-section-head:hover { color: var(--text); }
@@ -1484,5 +1485,6 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
   .modal.palette { width: 100vw; height: auto; max-height: none; border-radius: 0; }
   .pal-search input { font-size: 16px; }
   .pal-kbd { display: none; }
+  .pal-close { display: flex; }
   .pal-row { min-height: 46px; }
 }

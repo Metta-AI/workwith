@@ -22,6 +22,7 @@ import { createHash } from 'node:crypto'
 import { DATA } from './store.ts'
 import { ORIGIN, bytes as bytesThere, call, prolificaState } from './prolifica.ts'
 import type { Artifact, ArtifactPublished, ArtifactPublishing, ArtifactTouch, Visibility } from '../shared/artifacts.ts'
+import { onCircle } from '../shared/circle.ts'
 
 export const ARTIFACTS = path.join(DATA, 'artifacts')
 const RECORD = path.join(DATA, 'artifacts.json')
@@ -276,7 +277,9 @@ function page(src: Source, app: string, base: string): string {
   const id = (base ? base.slice(1) + '/' : '') + (src.v == null ? src.name : `${src.name}@${src.v}`)
   const config = { isle: { id, title: m.title ?? src.name, version: src.v ?? 0 }, slots: m.slots ?? {}, bindings, app, origin: '' }
   // Only the page as it is now reports its errors (to show_artifact); an old version is for looking at.
-  return inject(src.read('index.html')?.toString('utf8') ?? '', `${src.v == null ? reporter(src.name, base) : ''}<script>window.__PROLIFICA__=${esc(config)}</script><script src="${base}/bridge.js"></script>`)
+  // A circle drawn with a finger in the frame opens Codinger's command palette (shared/circle.ts).
+  const circle = app ? `<script>(${onCircle.toString()})(()=>parent.postMessage({codinger:'palette'},${esc(app)}))</script>` : ''
+  return inject(src.read('index.html')?.toString('utf8') ?? '', `${src.v == null ? reporter(src.name, base) : ''}${circle}<script>window.__PROLIFICA__=${esc(config)}</script><script src="${base}/bridge.js"></script>`)
 }
 
 export function startHost(port: number, uiOrigins: () => string[]): Promise<number> {

@@ -1,8 +1,8 @@
 // The command palette: ⌘K (Ctrl+K off a Mac) opens a search over the sessions (archived ones
 // too), the artifacts, the tasks, the files of the open session's folder and the folders of the
 // sessions. Each type has its own tab, and All shows a few of each under a head. The tabs sit in
-// a row, each as wide as the palette allows: the current one shows in full, and the next one
-// beside it when there is room. A change of tab moves the row sideways. Down goes from the field
+// a row of columns as wide as the palette, so one shows at a time, and a change of tab slides the
+// row sideways. With no query, each tab shows the most recent first. Down goes from the field
 // into the results, and up from the first result goes back to the field. In the results, left and
 // right change the tab; in the field they move the caret. Tab changes the tab anywhere, and Enter
 // opens the result marked (from the field, the first). On a phone, a fast circle drawn with one
@@ -10,22 +10,25 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useEscape } from '../escape.ts'
-import type { SessionMeta, Task } from '../../../shared/types.ts'
+import type { Event, SessionMeta, Task } from '../../../shared/types.ts'
 import type { Artifact } from '../../../shared/artifacts.ts'
-import { changed, localId, machineOf, media, select, showArchive, state, useStore } from '../store.ts'
-import { fatigue, timeAgo } from '../util.ts'
+import { artifactsBase, changed, localId, machineOf, media, select, showArchive, state, useStore } from '../store.ts'
+import { fatigue, holdKeyboard, timeAgo } from '../util.ts'
+import { onCircle } from '../../../shared/circle.ts'
 import { Mascot } from './Mascot.tsx'
-import { ArtifactIcon } from './Artifacts.tsx'
-import { FolderIcon, SearchIcon, TerminalIcon } from './Icons.tsx'
+import { ArtifactIcon, openArtifact } from './Artifacts.tsx'
+import { FolderIcon, SearchIcon, TerminalIcon, XIcon } from './Icons.tsx'
 import { StateMark, TasksDialog } from './TasksDialog.tsx'
 import { NewSession } from './NewSession.tsx'
-import { editsOf, filesOf, FileTypeIcon, openFile } from './FileBrowser.tsx'
+import { FileTypeIcon, openFile } from './FileBrowser.tsx'
+import { filesIn } from '../../../shared/files.ts'
 import { baseName, dirName, ltr } from './FileView.tsx'
 
 type Tab = 'all' | 'sessions' | 'artifacts' | 'tasks' | 'files' | 'folders'
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'all', label: 'All' }, { id: 'sessions', label: 'Sessions' }, { id: 'artifacts', label: 'Artifacts' },
-  { id: 'tasks', label: 'Tasks' }, { id: 'files', label: 'Files' }, { id: 'folders', label: 'Folders' },
+  // Folders next to Sessions: a folder is where sessions run, and a pick on one starts a session there.
+  { id: 'all', label: 'All' }, { id: 'sessions', label: 'Sessions' }, { id: 'folders', label: 'Folders' },
+  { id: 'artifacts', label: 'Artifacts' }, { id: 'tasks', label: 'Tasks' }, { id: 'files', label: 'Files' },
 ]
 // How many of each type the All tab shows.
 const ALL_MAX = 5
@@ -38,7 +41,6 @@ type Row =
   | { kind: 'files'; key: string; path: string }
   | { kind: 'folders'; key: string; f: Folder }
 
-const phone = matchMedia('(max-width: 720px)')
 
 // How well text matches the query: lower is better, -1 is no match. The start of the text, then
 // the start of a word, then anywhere; with fuzzy, last, its letters in order.
@@ -77,12 +79,19 @@ export function Palette() {
       e.preventDefault()
       setOpen((o) => !o)
     }
-    // The sidebar's search button, for a screen with no keyboard.
-    const show = () => setOpen(true)
+    // The sidebar's search button, for a screen with no keyboard. On a phone the field mounts after
+    // the tap, too late for iOS to bring up the keyboard: a hidden field takes the focus now (holdKeyboard).
+    const show = () => { holdKeyboard(); setOpen(true) }
     document.addEventListener('keydown', key)
     window.addEventListener('codinger:palette', show)
     const stop = onCircle(show)
-    return () => { document.removeEventListener('keydown', key); window.removeEventListener('codinger:palette', show); stop() }
+    // The same circle in an artifact's frame, which the artifact server's script tells of.
+    const fromFrame = (e: MessageEvent) => {
+      const base = artifactsBase(state.artifactsPort)
+      if (e.data?.codinger === 'palette' && base && e.origin === new URL(base).origin) setOpen(true)
+    }
+    window.addEventListener('message', fromFrame)
+    return () => { document.removeEventListener('keydown', key); window.removeEventListener('codinger:palette', show); window.removeEventListener('message', fromFrame); stop() }
   }, [])
   return <>
     {open && <PaletteDialog onClose={() => setOpen(false)} onTask={setTask} onFolder={setNewIn} />}
@@ -91,47 +100,22 @@ export function Palette() {
   </>
 }
 
-// A fast circle drawn with one finger on a touch screen: the direction of the path turns by most of a
-// full turn, in under a second, around a box at least 50px on each side that is near square, and
-// the finger ends near where it started. A scroll or a swipe turns little, so it does not count.
-function onCircle(done: () => void): () => void {
-  if (!matchMedia('(pointer: coarse)').matches) return () => {}
-  let pts: { x: number; y: number; t: number }[] = []
-  let turn = 0, dir: number | null = null
-  const start = (e: TouchEvent) => { pts = e.touches.length === 1 ? [{ x: e.touches[0].clientX, y: e.touches[0].clientY, t: e.timeStamp }] : []; turn = 0; dir = null }
-  const move = (e: TouchEvent) => {
-    if (!pts.length || e.touches.length !== 1) { pts = []; return }
-    const p = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: e.timeStamp }, last = pts[pts.length - 1]
-    if (Math.hypot(p.x - last.x, p.y - last.y) < 6) return
-    const d = Math.atan2(p.y - last.y, p.x - last.x)
-    if (dir !== null) { let dd = d - dir; while (dd > Math.PI) dd -= 2 * Math.PI; while (dd < -Math.PI) dd += 2 * Math.PI; turn += dd }
-    dir = d
-    pts.push(p)
-    while (pts.length > 2 && p.t - pts[0].t > 1000) pts.shift()
-    if (Math.abs(turn) < 1.6 * Math.PI) return
-    const xs = pts.map((q) => q.x), ys = pts.map((q) => q.y)
-    const w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys)
-    const back = Math.hypot(p.x - pts[0].x, p.y - pts[0].y)
-    if (w >= 50 && h >= 50 && w / h < 2.2 && h / w < 2.2 && back < 0.6 * Math.max(w, h) && p.t - pts[0].t < 1000) { pts = []; done() }
+// The files the agent wrote or edited and the files you attached, the one touched last first.
+function recentFiles(events: Event[]): string[] {
+  const out: string[] = []
+  const add = (p: unknown) => { if (typeof p === 'string') out.push(p) }
+  for (const e of events) {
+    if (e.t === 'user') for (const p of e.parts) filesIn(p.text ?? '').forEach(add)
+    else if (e.t === 'assistant') for (const b of e.blocks) if (b.type === 'tool_use' && /^(Write|Edit|MultiEdit|NotebookEdit)$/.test(b.name)) add(b.input?.file_path ?? b.input?.notebook_path)
   }
-  const end = () => { pts = [] }
-  document.addEventListener('touchstart', start, { passive: true })
-  document.addEventListener('touchmove', move, { passive: true })
-  document.addEventListener('touchend', end)
-  document.addEventListener('touchcancel', end)
-  return () => {
-    document.removeEventListener('touchstart', start)
-    document.removeEventListener('touchmove', move)
-    document.removeEventListener('touchend', end)
-    document.removeEventListener('touchcancel', end)
-  }
+  return [...new Set(out.reverse())]
 }
 
 function PaletteDialog({ onClose, onTask, onFolder }: { onClose(): void; onTask(id: string): void; onFolder(f: Folder): void }) {
   useEscape(onClose)
   const st = useStore()
   const [q, setQ] = useState('')
-  const [tab, setTab] = useState<Tab>(phone.matches ? 'all' : 'sessions')
+  const [tab, setTab] = useState<Tab>('all')
   // The result marked (-1: none), and whether the keys work in the results or in the field.
   const [active, setActive] = useState(-1)
   const [inList, setInList] = useState(false)
@@ -150,9 +134,10 @@ function PaletteDialog({ onClose, onTask, onFolder }: { onClose(): void; onTask(
 
   const rows = useMemo(() => {
     const workers = st.sessions.filter((s) => s.kind === 'worker')
-    // Active sessions first, each group by its latest activity.
-    const sessions = ranked([...workers].sort((a, b) => Number(a.archived) - Number(b.archived) || b.lastActivity - a.lastActivity), query, (s) => [s.title, s.cwd])
+    // With no query, each tab shows the most recent first, and a query keeps that order among equal matches.
+    const sessions = ranked([...workers].sort((a, b) => b.lastActivity - a.lastActivity), query, (s) => [s.title, s.cwd])
     const artifacts = ranked([...st.artifacts].sort((a, b) => b.mtime - a.mtime), query, (a) => [a.title, a.name])
+    // A running task is active now, so it counts as the most recent.
     const tasks = ranked([...st.tasks].sort((a, b) => Number(!!a.ended) - Number(!!b.ended) || (b.ended ?? b.started) - (a.ended ?? a.started)), query, (t) => [t.title, t.command])
     const byDir = new Map<string, Folder>()
     for (const s of workers) {
@@ -162,7 +147,7 @@ function PaletteDialog({ onClose, onTask, onFolder }: { onClose(): void; onTask(
       byDir.set(k, f)
     }
     const folders = ranked([...byDir.values()].sort((a, b) => b.last - a.last), query, (f) => [baseName(f.cwd), f.cwd])
-    const files = !sel ? [] : query ? found ?? [] : [...new Set([...editsOf(sel.id).keys(), ...filesOf(sel.id)])]
+    const files = !sel ? [] : query ? found ?? [] : recentFiles(st.events[sel.id] ?? [])
     return {
       sessions: sessions.map((s): Row => ({ kind: 'sessions', key: s.id, s })),
       artifacts: artifacts.map((a): Row => ({ kind: 'artifacts', key: a.name, a })),
@@ -182,17 +167,22 @@ function PaletteDialog({ onClose, onTask, onFolder }: { onClose(): void; onTask(
       // An archived session shows with the archived list beside it, so the sidebar marks it.
       if (!!r.s.archived !== state.showArchived) showArchive(!!r.s.archived)
       select(r.s.id)
-    } else if (r.kind === 'artifacts') {
-      state.page = 'artifacts'; state.artifact = r.a.name; state.artifactV = undefined; state.sideOpen = false
-      changed()
-    } else if (r.kind === 'tasks') onTask(r.t.id)
+    } else if (r.kind === 'artifacts') openArtifact(r.a.name)
+    else if (r.kind === 'tasks') onTask(r.t.id)
     else if (r.kind === 'files' && sel) {
       state.page = null; state.sideOpen = false
       openFile(sel.id, r.path)
     } else if (r.kind === 'folders') onFolder(r.f)
   }
 
-  const move = (d: number) => setTab((t) => TABS[Math.max(0, Math.min(TABS.length - 1, TABS.findIndex((x) => x.id === t) + d))].id)
+  // The keys go round: right from the last tab goes to the first, and left from the first to the
+  // last. That change shows at once, as a slide across every tab would look like a jump anyway.
+  const [jump, setJump] = useState(false)
+  const move = (d: number) => {
+    const i = TABS.findIndex((x) => x.id === tab), n = i + d
+    setJump(n < 0 || n >= TABS.length)
+    setTab(TABS[(n + TABS.length) % TABS.length].id)
+  }
   const onKey = (e: React.KeyboardEvent) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return
     if (e.key === 'ArrowDown') {
@@ -215,7 +205,7 @@ function PaletteDialog({ onClose, onTask, onFolder }: { onClose(): void; onTask(
     }
   }
 
-  // The width of one tab's column: the full width on a narrow screen, else part of it, so the next tab shows beside it.
+  // The width of one tab's column: the palette's.
   const body = useRef<HTMLDivElement>(null)
   const [w, setW] = useState(0)
   useLayoutEffect(() => {
@@ -223,7 +213,7 @@ function PaletteDialog({ onClose, onTask, onFolder }: { onClose(): void; onTask(
     if (body.current) ro.observe(body.current)
     return () => ro.disconnect()
   }, [])
-  const col = w < 600 ? w : Math.round(Math.min(560, Math.max(420, w * 0.58)))
+  const col = w
   const at = TABS.findIndex((x) => x.id === tab)
 
   // The marked row stays in view in its column, and the current tab in the bar of tabs. Not with
@@ -299,7 +289,7 @@ function PaletteDialog({ onClose, onTask, onFolder }: { onClose(): void; onTask(
     : t === 'files' && found === null ? 'Searching…'
     : query ? 'Nothing matches.' : `No ${TABS.find((x) => x.id === t)!.label.toLowerCase()} yet.`
 
-  const column = (t: Tab, i: number) => {
+  const column = (t: Tab) => {
     const on = t === tab
     let content: React.ReactNode
     if (t === 'all') {
@@ -312,7 +302,7 @@ function PaletteDialog({ onClose, onTask, onFolder }: { onClose(): void; onTask(
         const more = rows[x.id as Exclude<Tab, 'all'>].length - shown.length
         return (
           <div key={x.id} className="pal-section">
-            <button className="pal-section-head" tabIndex={-1} onClick={() => setTab(x.id)}>
+            <button className="pal-section-head" tabIndex={-1} onClick={() => { setJump(false); setTab(x.id) }}>
               <span>{x.label}</span>{more > 0 && <span className="pal-more">{more} more</span>}
             </button>
             {shown.map((r, j) => row(r, start + j, on))}
@@ -325,35 +315,34 @@ function PaletteDialog({ onClose, onTask, onFolder }: { onClose(): void; onTask(
       content = rs.length ? rs.map((r, j) => row(r, j, on)) : <div className="pal-none muted">{none(t)}</div>
     }
     return (
-      <div key={t} className={`pal-col${on ? ' on' : ''}`} style={{ width: col }} aria-hidden={!on}
-        onMouseDown={on ? undefined : () => setTab(t)}>
-        {/* The head of a column beside the current one says which tab it is. */}
-        {!on && i > at && <div className="pal-col-label">{TABS[i].label}</div>}
+      <div key={t} className={`pal-col${on ? ' on' : ''}`} style={{ width: col }} aria-hidden={!on}>
         {content}
       </div>
     )
   }
 
   return (
-    <div className="modal-back top pal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="modal-back pal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
       {/* A click outside the field keeps the focus in it, so the keys always work. */}
       <div className={`modal palette${inList ? ' in-list' : ''}`} data-pid="palette" onMouseDown={(e) => { if (!(e.target as Element).closest('input')) e.preventDefault() }}>
         <div className="pal-search">
           <SearchIcon size={15} />
-          <input autoFocus value={q} placeholder="Search sessions, artifacts, tasks, files and folders" data-pid="palette-search"
+          <input autoFocus value={q} placeholder="Search sessions, folders, artifacts, tasks and files" data-pid="palette-search"
             onChange={(e) => { setQ(e.target.value); setInList(false) }} onKeyDown={onKey} spellCheck={false} autoComplete="off" />
           <kbd className="pal-kbd">esc</kbd>
+          {/* On a phone the palette fills the screen, with no Esc key and nothing outside it to tap. */}
+          <button className="icon-btn pal-close" aria-label="Close" onClick={onClose}><XIcon size={16} /></button>
         </div>
         <div className="pal-tabs" ref={tabs} role="tablist" data-pid="palette-tabs">
           {TABS.map((x) => (
-            <button key={x.id} role="tab" aria-selected={x.id === tab} className={`pal-tab${x.id === tab ? ' on' : ''}`} tabIndex={-1} onClick={() => setTab(x.id)}>
+            <button key={x.id} role="tab" aria-selected={x.id === tab} className={`pal-tab${x.id === tab ? ' on' : ''}`} tabIndex={-1} onClick={() => { setJump(false); setTab(x.id) }}>
               {x.label}{count(x.id) != null && <span className="pal-count">{count(x.id)}</span>}
             </button>
           ))}
         </div>
         <div className="pal-body" ref={body}>
-          <div className="pal-track" style={{ transform: `translateX(${-at * col}px)` }}>
-            {w > 0 && TABS.map((x, i) => column(x.id, i))}
+          <div className={`pal-track${jump ? ' jump' : ''}`} style={{ transform: `translateX(${-at * col}px)` }}>
+            {w > 0 && TABS.map((x) => column(x.id))}
           </div>
         </div>
       </div>

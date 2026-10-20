@@ -309,6 +309,15 @@ function Description({ text }: { text: string }) {
   )
 }
 
+// Show an artifact on the Artifacts page from elsewhere (the command palette): on a phone, the
+// artifact itself, not the list.
+let pickNext = false
+export function openArtifact(name: string) {
+  state.page = 'artifacts'; state.artifact = name; state.artifactV = undefined; state.sideOpen = false
+  pickNext = true
+  changed()
+}
+
 // Every artifact: what it is, which sessions made and changed it, and whether it is published.
 export function ArtifactsView() {
   const st = useStore()
@@ -319,6 +328,7 @@ export function ArtifactsView() {
   // On a phone the list and the artifact take turns: a tap shows the artifact, Back the list.
   // There the version, Publish and the history wait behind a menu button.
   const [picked, setPicked] = useState(false)
+  useEffect(() => { if (pickNext) { pickNext = false; setPicked(true) } })
   const [more, setMore] = useState(false)
   const choose = (name: string) => { state.artifact = name; state.artifactV = undefined; setPicked(true); setMore(false); changed() }
   // As the preview pane has: load again, a new tab, the full width (no list); and the history can hide.

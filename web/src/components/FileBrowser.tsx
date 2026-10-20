@@ -25,7 +25,7 @@ export function filesOf(sid: string): string[] {
 }
 
 // The edits the agent made, by file, the newest file first.
-export function editsOf(sid: string): Map<string, Edit[]> {
+function editsOf(sid: string): Map<string, Edit[]> {
   const out = new Map<string, Edit[]>()
   for (const e of state.events[sid] ?? []) {
     if (e.t !== 'assistant') continue
