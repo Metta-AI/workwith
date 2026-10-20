@@ -852,7 +852,8 @@ button.primary.send.critical { background: var(--bad); border-color: var(--bad);
 .paste-chip { margin: 0; color: var(--text); font: inherit; font-size: .9em; padding: 2px 8px 2px 6px; }
 .paste-line { margin: 4px 0; }
 .modal.text-modal { max-height: 85vh; }
-.text-modal-body { overflow: auto; min-height: 0; flex: 1; border-top: 1px solid var(--line); padding-top: 8px; }
+/* The body goes to the sides of the dialog, so its scrollbar is at the edge, and its scroll stops at its ends instead of moving the page. */
+.text-modal-body { overflow: auto; overscroll-behavior: contain; min-height: 0; flex: 1; border-top: 1px solid var(--line); margin: 0 -20px; padding: 8px 20px 0; }
 .paste-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: calc(12.5px * var(--fs, 1)); }
 .comment-full .md > :first-child { margin-top: 0; }
 /* No position or transform on .ri-img: either one paints the image over the caret. The margins lift it 1px. */

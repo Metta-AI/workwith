@@ -3,7 +3,7 @@
 // dialog goes in document.body: a margin card is moved with a transform, which
 // would put a fixed box inside it relative to the card.
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useEscape } from '../escape.ts'
 import { pasteLabel, splitPastes } from '../../../shared/pastes.ts'
@@ -11,8 +11,19 @@ import { FileIcon, XIcon } from './Icons.tsx'
 
 export function TextDialog({ title, onClose, children, actions }: { title: string; onClose(): void; children: React.ReactNode; actions?: React.ReactNode }) {
   useEscape(onClose)
+  // Only the body scrolls: a swipe or a wheel anywhere else in the dialog or on the
+  // backdrop does nothing, so the page under the dialog does not move. React's touch
+  // and wheel handlers are passive and cannot stop the scroll, so these are added here.
+  const back = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = back.current!
+    const stop = (e: Event) => { if (!(e.target as Element).closest('.text-modal-body')) e.preventDefault() }
+    el.addEventListener('touchmove', stop, { passive: false })
+    el.addEventListener('wheel', stop, { passive: false })
+    return () => { el.removeEventListener('touchmove', stop); el.removeEventListener('wheel', stop) }
+  }, [])
   return createPortal(
-    <div className="modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }} onClick={(e) => e.stopPropagation()}>
+    <div ref={back} className="modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }} onClick={(e) => e.stopPropagation()}>
       <div className="modal wide text-modal">
         <div className="files-head">
           <h2>{title}</h2>
