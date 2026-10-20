@@ -11,7 +11,7 @@ import { useState } from 'react'
 import type { SessionMeta } from '../../../shared/types.ts'
 import type { LineVerdict, Verdict } from '../../../shared/review.ts'
 import { changed, removeDraft, state, useStore, type LineDraft } from '../store.ts'
-import { decisionOf, groupsOf, resolve, setDecisionText, setVerdict, uncommittedOf, updateLine, verdictsOf, type Group } from '../review.ts'
+import { decide, decisionOf, groupsOf, resolve, setDecisionText, setFileVerdict, setVerdict, uncommittedOf, updateLine, verdictsOf, type Group } from '../review.ts'
 import { CheckIcon, ChevronIcon, TrashIcon, XIcon } from './Icons.tsx'
 import { renderInline, renderMd } from '../util.ts'
 import { baseName, dirName, ltr } from './FileView.tsx'
@@ -91,15 +91,15 @@ export function VerdictButtons({ value, sent, onSet, label, words, big }: { valu
   return <span className={`rv-btns${big ? ' big' : ''}`}>{b('reject', <XIcon size={11} />, no)}{b('approve', <CheckIcon size={11} />, yes)}</span>
 }
 
-const GO: [string, string] = ['No go', 'Go']
-
 // The agent's text in a review: what it changed, their state, what to test, what it needs. Each line
 // of it stays a line (the agent writes them one under the other), outside code blocks.
 const lines = (t: string) => t.split(/(^```[\s\S]*?^```)/m).map((x, i) => i % 2 ? x : x.replace(/([^\n])\n(?![\n\s]|[-*+] |[>#|]|\d+\. )/g, '$1  \n')).join('')
 const Say = ({ text }: { text?: string }) => text ? <div className="md rv-say" dangerouslySetInnerHTML={{ __html: renderMd(lines(text)) }} /> : null
 
-// Your decision on a review, with a note.
-function Decision({ sid, g, ro }: { sid: string; g: { key: string; label: string }; ro: boolean }) {
+// Your decision on a review, with a note: Approve approves its files too; Reject leaves the files you
+// approved as they are. It follows its files when they all get the same verdict (review.ts setFileVerdict).
+type Review = { key: string; label: string; files: string[]; asked?: boolean }
+function Decision({ sid, g, rel, ro }: { sid: string; g: Review; rel(p: string): string; ro: boolean }) {
   const v = verdictsOf(sid)(g.key, '')
   const d = decisionOf(sid, g.key)
   return <>
@@ -109,7 +109,7 @@ function Decision({ sid, g, ro }: { sid: string; g: { key: string; label: string
           onChange={(e) => setDecisionText(sid, g.key, e.target.value)} onClick={(e) => e.stopPropagation()} />}
         {!d && <span className="grow" />}
         {v.sent && <span className="muted rv-sent">sent</span>}
-        <VerdictButtons value={v.verdict} sent={v.sent} onSet={(x) => setVerdict(sid, g.key, '', g.label, x)} words={GO} big />
+        <VerdictButtons value={v.verdict} sent={v.sent} onSet={(x) => decide(sid, g, rel, x)} label big />
       </div>
     )}
   </>
@@ -147,10 +147,10 @@ export function ReviewSection({ m, rel, isOn, onOpen }: Props) {
                 onClick={() => onOpen(f, g.key)} onKeyDown={(e) => { if (e.key === 'Enter') onOpen(f, g.key) }}>
                 <FileTypeIcon name={f} /><span className="fb-name">{baseName(f)}</span>
                 <span className="fb-dir muted">{ltr(dirName(rel(f)))}</span>
-                <VerdictButtons value={vs[i].verdict} sent={vs[i].sent} onSet={(v) => setVerdict(m.id, g.key, f, rel(f), v)} />
+                <VerdictButtons value={vs[i].verdict} sent={vs[i].sent} onSet={(v) => setFileVerdict(m.id, g, f, rel, v)} />
               </div>
             ))}
-            {open && g.asked && <Decision sid={m.id} g={g} ro={false} />}
+            {open && g.asked && <Decision sid={m.id} g={g} rel={rel} ro={false} />}
           </div>
         )
       })}
@@ -171,12 +171,13 @@ export function ReviewCard({ sid, group, title, text, files, live }: { sid: stri
   const paths = files.map((f) => resolve(f, cwd))
   const rel = (p: string) => p.startsWith(cwd + '/') ? p.slice(cwd.length + 1) : p
   const v = of(group, '')
+  const review: Review = { key: group, label: title || 'Review', files: paths, asked: true }
   return (
     <div className={`rv-ask${v.verdict ? ` ${v.verdict}` : ''}`} data-pid="review-card">
       <div className="rv-ask-head">
         <span className="rv-asked">For review</span>
         <span className="rv-label" dangerouslySetInnerHTML={{ __html: renderInline(title || 'Review') }} />
-        <span className="muted rv-meta">{v.verdict ? (v.verdict === 'approve' ? 'Go' : 'No go') : 'waits for you'}</span>
+        <span className="muted rv-meta">{v.verdict ? (v.verdict === 'approve' ? 'Approved' : 'Rejected') : 'waits for you'}</span>
       </div>
       <Say text={text} />
       {paths.map((p) => {
@@ -185,11 +186,11 @@ export function ReviewCard({ sid, group, title, text, files, live }: { sid: stri
           <div key={p} className="fb-row rv-file" role="button" tabIndex={0} onClick={() => openFile(sid, p, true, group)}>
             <FileTypeIcon name={p} /><span className="fb-name">{baseName(p)}</span>
             <span className="fb-dir muted">{ltr(dirName(rel(p)))}</span>
-            {!ro && <VerdictButtons value={fv.verdict} sent={fv.sent} onSet={(x) => setVerdict(sid, group, p, rel(p), x)} />}
+            {!ro && <VerdictButtons value={fv.verdict} sent={fv.sent} onSet={(x) => setFileVerdict(sid, review, p, rel, x)} />}
           </div>
         )
       })}
-      <Decision sid={sid} g={{ key: group, label: title || 'Review' }} ro={ro} />
+      <Decision sid={sid} g={review} rel={rel} ro={ro} />
     </div>
   )
 }

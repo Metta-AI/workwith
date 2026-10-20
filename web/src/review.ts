@@ -67,13 +67,14 @@ function sentOf(sid: string): Map<string, Verdict> {
 
 // What each file of each group has: your draft, or else what you sent; a file without a verdict of its
 // own has the decision on its whole review (path ''). The decision itself: path ''.
-export function verdictsOf(sid: string): (group: string, path: string) => { verdict?: Verdict; sent: boolean } {
+// own: only the file's own verdict, without the decision on its review.
+export function verdictsOf(sid: string, own = false): (group: string, path: string) => { verdict?: Verdict; sent: boolean } {
   const sent = sentOf(sid)
   const drafts = new Map(draftsOf(sid).flatMap((d) => d.kind === 'verdict' ? [[k(d.group, d.path), d.verdict] as const] : []))
   return (group, path) => {
-    const d = drafts.get(k(group, path)) ?? drafts.get(k(group, ''))
+    const d = drafts.get(k(group, path)) ?? (own ? undefined : drafts.get(k(group, '')))
     if (d) return { verdict: d, sent: false }
-    const s = sent.get(k(group, path)) ?? sent.get(k(group, ''))
+    const s = sent.get(k(group, path)) ?? (own ? undefined : sent.get(k(group, '')))
     return { verdict: s, sent: !!s }
   }
 }
@@ -124,4 +125,29 @@ export function uncommittedOf(sid: string): Set<string> | null {
   }, had.n < 0 ? 0 : 1500)
   pending.set(sid, had)
   return had.files
+}
+
+// The decision on a whole review the agent asked for (path ''). Approve approves its files too; Reject
+// rejects the review and leaves the verdicts you gave single files.
+export function decide(sid: string, g: { key: string; label: string; files: string[] }, rel: (p: string) => string, verdict: Verdict | null) {
+  const had = verdictsOf(sid)(g.key, '').verdict
+  setVerdict(sid, g.key, '', g.label, verdict)
+  if (verdict === 'approve') for (const f of g.files) setVerdict(sid, g.key, f, rel(f), 'approve')
+  else if (!verdict && had === 'approve') for (const f of g.files) if (draftsOf(sid).some((d) => d.kind === 'verdict' && d.group === g.key && d.path === f && d.verdict === 'approve')) setVerdict(sid, g.key, f, rel(f), null)
+}
+
+// A verdict on one file of a review: when all its files then have the same verdict, the review has
+// it too; when they stop having the same, a decision that only followed them goes.
+export function setFileVerdict(sid: string, g: { key: string; label: string; files: string[]; asked?: boolean }, path: string, rel: (p: string) => string, verdict: Verdict | null) {
+  const own = (of: ReturnType<typeof verdictsOf>) => {
+    const vs = g.files.map((f) => of(g.key, f).verdict)
+    return vs.length && vs.every((v) => v && v === vs[0]) ? vs[0] : undefined
+  }
+  const before = own(verdictsOf(sid, true))
+  const decision = verdictsOf(sid)(g.key, '').verdict
+  setVerdict(sid, g.key, path, rel(path), verdict)
+  if (!g.asked) return
+  const after = own(verdictsOf(sid, true))
+  if (after && after !== decision) setVerdict(sid, g.key, '', g.label, after)
+  else if (!after && decision && decision === before) setVerdict(sid, g.key, '', g.label, null)
 }

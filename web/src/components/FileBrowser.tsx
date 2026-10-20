@@ -12,7 +12,7 @@ import { ChevronIcon, FolderIcon } from './Icons.tsx'
 import { Splitter, useWidth } from './Splitter.tsx'
 import { baseName, dirName, FileView, ltr, sepOf, type Edit, type ReviewOf } from './FileView.tsx'
 import { groupOfFile, ReviewSection, useReview } from './Review.tsx'
-import { setVerdict } from '../review.ts'
+import { setFileVerdict } from '../review.ts'
 
 type Entry = { name: string; kind: 'dir' | 'file'; size: number; mtime: number; dim?: boolean; secret?: boolean }
 type Node = { path: string; kind: 'dir'; entries: Entry[] } | { path: string; kind: 'file'; size: number; mtime: number }
@@ -233,7 +233,7 @@ export function FileBrowser({ m, width }: { m: SessionMeta; width: number }) {
     const next = [...order.slice(here + 1), ...order.slice(0, here)].find((x) => !rv.of(x.g, x.f).verdict)
     review = {
       group: g.key, verdict: v.verdict, sent: v.sent,
-      onVerdict: (x) => setVerdict(m.id, g.key, path, rel(path), x),
+      onVerdict: (x) => setFileVerdict(m.id, g, path, rel, x),
       next: next && { label: baseName(next.f), go: () => openFile(m.id, next.f, true, next.g) },
     }
   }

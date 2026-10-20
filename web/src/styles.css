@@ -386,13 +386,14 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .rv-file { padding-left: 19px; }
 .rv-file .fb-dir { flex: 1; }
 .rv-btns { flex: none; display: inline-flex; gap: 2px; }
-/* Reject red and approve green at all times: a light fill until chosen, a full fill when chosen. */
-.rv-btn { --c: var(--ok); display: inline-flex; align-items: center; gap: 4px; border: none; background: color-mix(in srgb, var(--c) 13%, var(--panel)); color: var(--c); border-radius: 5px; padding: 1px 6px; cursor: pointer; font: inherit; font-size: calc(11.5px * var(--fs, 1)); line-height: 1.4; }
+/* Reject red and approve green at all times: an outline until chosen, a full fill when chosen. An
+   outline has square corners (no line with rounded corners). */
+.rv-btn { --c: var(--ok); display: inline-flex; align-items: center; gap: 4px; border: none; background: none; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 60%, transparent); color: var(--c); border-radius: 0; padding: 1px 6px; cursor: pointer; font: inherit; font-size: calc(11.5px * var(--fs, 1)); line-height: 1.4; }
 .rv-btn.reject { --c: var(--bad); }
-.rv-btn:hover { background: color-mix(in srgb, var(--c) 24%, var(--panel)); }
-.rv-btn.on { color: #fff; background: var(--c); }
+.rv-btn:hover { background: color-mix(in srgb, var(--c) 12%, transparent); }
+.rv-btn.on { color: #fff; background: var(--c); box-shadow: none; }
 .rv-btns.big { gap: 6px; }
-.rv-btns.big .rv-btn { padding: 4px 14px; font-size: calc(13px * var(--fs, 1)); font-weight: 600; border-radius: 6px; }
+.rv-btns.big .rv-btn { padding: 4px 14px; font-size: calc(13px * var(--fs, 1)); font-weight: 600; }
 /* A verdict you sent shows in its colour without the fill: a new one replaces it. */
 .rv-btn.on.sent { background: color-mix(in srgb, var(--c) 55%, var(--panel)); }
 .rv-older { display: block; margin: 4px 0 0 19px; font-size: calc(12px * var(--fs, 1)); }
@@ -408,7 +409,7 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .rv-say > :first-child { margin-top: 0; }
 .rv-say > :last-child { margin-bottom: 0; }
 .rv-group.asked .rv-say { padding-left: 19px; font-size: calc(12.5px * var(--fs, 1)); }
-.rv-decide { display: flex; align-items: flex-start; gap: 8px; padding: 6px 4px 2px; }
+.rv-decide { display: flex; align-items: flex-end; gap: 8px; padding: 6px 4px 2px; }
 .rv-group.asked .rv-decide { padding-left: 19px; }
 .rv-decide .rv-text { flex: 1; width: auto; min-width: 0; min-height: 0; }
 .rv-ask.approve { background: color-mix(in srgb, var(--ok) 8%, var(--card)); }
