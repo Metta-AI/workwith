@@ -143,7 +143,7 @@ export function noteEdit(name: string, input: any, by: By) {
 // ---- blame ----------------------------------------------------------------------
 
 // For each line of b, the index of the line of a it is unchanged from, if any (LCS).
-function keep(a: string[], b: string[]): (number | null)[] {
+export function keep(a: string[], b: string[]): (number | null)[] {
   const n = a.length, m = b.length
   if (n * m > 4_000_000) return b.map(() => null)
   const dp = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1))

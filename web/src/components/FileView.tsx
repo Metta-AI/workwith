@@ -10,7 +10,7 @@ import { highlight, langOfPath } from '../highlight.ts'
 import { renderMd } from '../util.ts'
 import { BackIcon, FolderIcon, OpenIcon } from './Icons.tsx'
 import { localId, state, type LineDraft } from '../store.ts'
-import { attribute, mineOf, othersOf, parseDiff, type Author, type Hunk } from '../authors.ts'
+import { attribute, mineOf, othersOf, parseDiff, type Author, type Hunk, type Who } from '../authors.ts'
 import { addLine, linesOf } from '../review.ts'
 import { LineCard, VerdictButtons } from './Review.tsx'
 
@@ -27,7 +27,7 @@ const kb = (n: number) => n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(
 
 // An edit the agent made to a file: the text it replaced (none for a file it wrote) and the new text.
 export type Edit = { old?: string; new: string }
-type Diff = { status: 'changed' | 'new' | 'same' | 'none'; diff: string; authors?: Author[] }
+type Diff = { status: 'changed' | 'new' | 'same' | 'none'; diff: string; authors?: Author[]; who?: Who | null }
 
 // The file's group for review (Review.tsx): its verdict, and the next file that has none.
 export type ReviewOf = { group: string; verdict?: Verdict; sent: boolean; onVerdict(v: Verdict | null): void; next?: { label: string; go(): void } }
@@ -82,9 +82,9 @@ export function FileView({ sid, path, size, line, at, stamp, rel, changes, edits
   const gitChanged = !!diff && (diff.status === 'changed' || diff.status === 'new') && !!diff.diff.trim()
   // git's changes by session: this session's only, until you ask for all of them.
   const me = localId(sid)
-  const hunks = useMemo(() => { const h = parseDiff(diff?.diff ?? ''); attribute(h, diff?.authors ?? []); return h }, [diff])
+  const hunks = useMemo(() => { const h = parseDiff(diff?.diff ?? ''); attribute(h, diff?.authors ?? [], diff?.who); return h }, [diff])
   const others = othersOf(hunks, me)
-  const names = new Map((diff?.authors ?? []).map((a, i) => [a.id, { title: a.id === me ? 'This session' : a.title, n: i }]))
+  const names: Names = new Map([...(diff?.authors ?? []).map((a, i) => [a.id, { title: a.id === me ? 'This session' : a.title, n: i }] as const), ['you', { title: 'You', n: -1 }]])
   const shownHunks = allChanges ? hunks : mineOf(hunks, me)
   const hasChanges = gitChanged || edits.length > 0
   const diffOn = showDiff && hasChanges
@@ -109,7 +109,7 @@ export function FileView({ sid, path, size, line, at, stamp, rel, changes, edits
         <span className="muted fb-size">{kb(size)}</span>
         {hasChanges && <button className={`fb-toggle${diffOn ? ' on' : ''}`} data-pid="file-changes" onClick={() => setShowDiff(!diffOn)}>Changes</button>}
         {diffOn && gitChanged && others.size > 0 && <button className={`fb-toggle${allChanges ? ' on' : ''}`} data-pid="file-all-changes"
-          data-tip={`Also changed by ${[...others].map((id) => names.get(id)?.title ?? id).join(', ')}`} onClick={() => setAllChanges(!allChanges)}>All changes</button>}
+          data-tip={`Also changed by ${[...others].map((id) => id === 'you' ? 'you' : names.get(id)?.title ?? id).join(', ')}`} onClick={() => setAllChanges(!allChanges)}>All changes</button>}
         {can && (!diffOn || isMd) && <button className={`fb-toggle${source ? ' on' : ''}`} data-pid="file-source" onClick={() => setSource(!source)}>Source</button>}
         {codeLike && <button className={`fb-toggle${wrap ? ' on' : ''}`} data-pid="file-wrap" onClick={() => setWrap(!wrap)}>Wrap</button>}
         {reveal && <button className="icon-btn" data-tip="Show in Finder" onClick={reveal}><FolderIcon size={13} /></button>}
@@ -254,8 +254,8 @@ function DiffLines({ hunks, me, all, names, lang: l, wrap, notes }: { hunks: Hun
   const rows: Row[] = []
   const size = hunks.reduce((t, h) => t + h.rows.reduce((u, r) => u + r.text.length, 0), 0)
   const hl = (s: string) => htmlLines(highlight(s, size > HIGHLIGHT_MAX ? undefined : l))[0] ?? ''
-  const label = (who: string | null | undefined) => who ? names.get(who)?.title ?? 'Another session' : 'No session\'s edit has these lines'
-  const tone = (who: string | null | undefined) => who === me ? ' who-me' : who ? ` who-${(names.get(who)?.n ?? 0) % 6}` : ''
+  const label = (who: string | null | undefined) => who ? names.get(who)?.title ?? 'Another session' : 'Codinger does not know who changed these lines'
+  const tone = (who: string | null | undefined) => who === me ? ' who-me' : who === 'you' ? ' who-you' : who ? ` who-${(names.get(who)?.n ?? 0) % 6}` : ''
   for (const h of hunks) {
     rows.push({ cls: 'hunk', nums: ['', ''], html: escapeHtml(h.head) })
     let prev: string | null | undefined = undefined
@@ -265,7 +265,7 @@ function DiffLines({ hunks, me, all, names, lang: l, wrap, notes }: { hunks: Hun
       if (!all && r.who && r.who !== me) {
         if (folded?.who !== r.who) { folded = { who: r.who, n: 0, row: { cls: `who fold${tone(r.who)}`, nums: ['', ''], html: '' } }; rows.push(folded.row) }
         folded.n++
-        folded.row.html = escapeHtml(`${folded.n} ${folded.n === 1 ? 'line' : 'lines'} changed by ${label(r.who)}`)
+        folded.row.html = escapeHtml(`${folded.n} ${folded.n === 1 ? 'line' : 'lines'} changed by ${r.who === 'you' ? 'you' : label(r.who)}`)
         prev = r.who
         continue
       }

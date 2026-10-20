@@ -38,6 +38,7 @@ import { ESTIMATE_TOOLS, estimateTools, estimatesPrompt, estimatesReply } from '
 import { MAIL_TOOLS, flushMail, mailTools, release, startMail, stepped, takeMail, turnEnded, userWrote } from './mail.ts'
 import { AUTOPILOT_MODES, amount, nudge, startAutopilot, usedOf, verdict } from './autopilot.ts'
 import { blame, initFileHistory, moveHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
+import { refresh, toolEnded, toolStarted, whoChanged } from './changes.ts'
 import { CLAUDE, authState, cancelLogin, childEnv, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
 import { deviceType, findDevice } from './device.ts'
 import { remoteCancelLink, remoteForget, remoteHub, remoteLink, remoteName, remoteOn, remoteProxy, remoteStatus, remoteUpgrade, startRemote } from './remote.ts'
@@ -201,6 +202,7 @@ const hooks: Hooks = {
     broadcast({ type: 'event', sessionId: s.meta.id, event })
     metaChanged()
     if (event.t === 'assistant') stepped(s, event.blocks.flatMap((b) => b.type === 'tool_use' ? [b.name] : []))
+    if (event.t === 'assistant') for (const b of event.blocks) if (b.type === 'tool_use') toolStarted(s.meta.cwd, b.id, b.name, event.ts)
     if (event.t === 'result') setImmediate(() => { autoSend(s); flushMail(s); taskTurn(s); autopilotTurn(s, event.isError); turnEnded(s) })
     // A tool call that finished may have changed a tracked file: record it with this message.
     if (event.t === 'tool_result') {
@@ -210,6 +212,7 @@ const hooks: Hooks = {
         const b = a.t === 'assistant' ? a.blocks.find((x) => x.type === 'tool_use' && x.id === event.toolUseId) : undefined
         if (b?.type === 'tool_use') {
           noteEdit(b.name, b.input, { kind: 'session', sid: s.meta.id, title: s.meta.title, seq: a.seq })
+          toolEnded(s.meta.cwd, b.id, b.name, b.input, s.meta.id, a.ts)
           if (!event.isError && noteTool(b.name, b.input, { sid: s.meta.id, seq: a.seq, ts: event.ts, tool: b.id })) artifactsChanged()
           break
         }
@@ -1356,7 +1359,18 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     const abs = allowed(s.meta, s.getEvents(), url.searchParams.get('path') || '')
     if (!abs || !fs.existsSync(abs)) throw new HttpError(404, 'No such file, or not one this session can show')
     const d = await diffOf(abs)
-    return send(res, 200, d.status === 'changed' || d.status === 'new' ? { ...d, authors: await authorsOf(abs) } : d)
+    if (d.status !== 'changed' && d.status !== 'new') return send(res, 200, d)
+    await refresh(s.meta.cwd)
+    let real = abs
+    try { real = fs.realpathSync(abs) } catch {}
+    const who = await whoChanged(real)
+    // The sessions that changed it with a shell command only have no edits, but a name.
+    const authors = await authorsOf(abs)
+    for (const id of new Set([...Object.values(who?.add ?? {}), ...Object.values(who?.del ?? {})])) {
+      const o = sessions.get(id)
+      if (o && !authors.some((a) => a.id === id)) authors.push({ id, title: o.meta.title, edits: [] })
+    }
+    return send(res, 200, { ...d, authors, who })
   }
   if (b === 'file' && method === 'GET') {
     // A file in the session's directory (one you attached: name), or one the Files pane opens

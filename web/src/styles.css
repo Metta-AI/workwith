@@ -339,6 +339,7 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .fb-ln.hunk .fb-c, .fb-ln.hunk .fb-n { color: var(--muted); background: color-mix(in srgb, var(--muted) 10%, var(--panel)); font-style: italic; }
 /* Which session changed a run of lines (FileView.tsx DiffLines): its name above the run, and a line of its colour at the left. */
 .fb-ln.who-me { --who: var(--accent); }
+.fb-ln.who-you { --who: var(--muted); }
 .fb-ln.who-0 { --who: var(--blue); }
 .fb-ln.who-1 { --who: #a371f7; }
 .fb-ln.who-2 { --who: var(--warn); }
