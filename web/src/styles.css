@@ -329,9 +329,6 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .fb-n + .fb-n { left: calc(var(--fb-nw) + 10px); }
 .fb-c { flex: 1; white-space: pre; padding-left: 6px; }
 .fb-code.wrap .fb-c { white-space: pre-wrap; overflow-wrap: anywhere; }
-/* With Wrap, the rest of a long line starts under its first character: --ind is its indent (FileView.tsx Rows). */
-.fb-code { tab-size: 4; }
-.fb-code.wrap .fb-c { padding-left: calc(6px + var(--ind, 0ch)); text-indent: calc(-1 * var(--ind, 0ch)); }
 .fb-ln.mark .fb-c, .fb-ln.mark .fb-n { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
 .fb-ln.add .fb-n { background: color-mix(in srgb, var(--ok) 10%, var(--panel)); }
 .fb-ln.del .fb-n { background: color-mix(in srgb, var(--bad) 9%, var(--panel)); }
@@ -340,6 +337,17 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .fb-ln.add .fb-n { color: var(--ok); }
 .fb-ln.del .fb-n { color: var(--bad); }
 .fb-ln.hunk .fb-c, .fb-ln.hunk .fb-n { color: var(--muted); background: color-mix(in srgb, var(--muted) 10%, var(--panel)); font-style: italic; }
+/* Which session changed a run of lines (FileView.tsx DiffLines): its name above the run, and a line of its colour at the left. */
+.fb-ln.who-me { --who: var(--accent); }
+.fb-ln.who-0 { --who: var(--blue); }
+.fb-ln.who-1 { --who: #a371f7; }
+.fb-ln.who-2 { --who: var(--warn); }
+.fb-ln.who-3 { --who: #db61a2; }
+.fb-ln.who-4 { --who: #2ea0a0; }
+.fb-ln.who-5 { --who: var(--hot); }
+.fb-ln.add[class*="who-"] .fb-c, .fb-ln.del[class*="who-"] .fb-c { box-shadow: inset 3px 0 var(--who); }
+.fb-ln.who .fb-c { font-family: var(--font); font-size: calc(11px * var(--fs, 1)); font-weight: 600; color: var(--who, var(--muted)); padding-top: 3px; }
+.fb-ln.who.fold .fb-c { font-weight: 400; font-style: italic; padding: 1px 6px; background: color-mix(in srgb, var(--muted) 8%, var(--panel)); box-shadow: inset 3px 0 var(--who); }
 .fb-md { font-size: calc(13.5px * var(--fs, 1)); }
 .fb-md img { max-width: 100%; }
 /* The changes of a markdown file, rendered (FileView.tsx MarkdownChanges): removed runs red, added runs green. */

@@ -179,6 +179,12 @@ export async function uncommitted(dir: string): Promise<string[] | null> {
   return out
 }
 
+// When the last commit that changed a file was made (ms); null when git has none.
+export async function committedAt(file: string): Promise<number | null> {
+  const r = await run('git', ['log', '-1', '--format=%ct', '--', path.basename(file)], path.dirname(file))
+  return r.ok && r.out.trim() ? Number(r.out.trim()) * 1000 : null
+}
+
 // Whether a file is text: no NUL in its first 8 KB.
 export function isText(file: string): boolean {
   try {

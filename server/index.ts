@@ -43,11 +43,11 @@ import { deviceType, findDevice } from './device.ts'
 import { remoteCancelLink, remoteForget, remoteHub, remoteLink, remoteName, remoteOn, remoteProxy, remoteStatus, remoteUpgrade, startRemote } from './remote.ts'
 import { startUpdates, updateModeChanged, updateNow, updatePrompt, updateStatus } from './update.ts'
 import {
-  DATA, LEAD_DIR, LEAD_NOTES, OLD_LEAD_NOTES, appendEvent, deleteEvents, expandHome, imageFile, knownWindow, leadRenamed, resolveModel, loadSessions, promptFile, loadSettings, saveImage, saveSessions, saveSettings,
+  DATA, LEAD_DIR, LEAD_NOTES, OLD_LEAD_NOTES, appendEvent, deleteEvents, readEvents, expandHome, imageFile, knownWindow, leadRenamed, resolveModel, loadSessions, promptFile, loadSettings, saveImage, saveSessions, saveSettings,
 } from './store.ts'
 import { embedOf, mediaKind, mediaType } from '../shared/media.ts'
 import { MEDIA_MAX, MEDIA_PART, keepMedia, mediaFile } from './media.ts'
-import { allowed, diffOf, findFiles, isSecret, isText, listDir, uncommitted } from './files.ts'
+import { allowed, committedAt, diffOf, findFiles, isSecret, isText, listDir, uncommitted } from './files.ts'
 import { ARTIFACTS, artifactsChanged, artifactsPrompt, checkArtifact, forgetPublish, listArtifacts, noteTool, reportOf, setVisibility, showArtifact, startPublish, startHost, typeOf, watchArtifacts } from './artifacts.ts'
 import { connectCallback, connectUrl, disconnect as prolificaDisconnect, prolificaState } from './prolifica.ts'
 import { buildShare, publishShare, unpublishShare } from './share.ts'
@@ -156,6 +156,34 @@ function runWindows(sid: string, cwd: string, cmd: string): string {
 let lastCommands: SlashCommand[] = (() => { try { return JSON.parse(fs.readFileSync(COMMANDS_FILE, 'utf8')) } catch { return [] } })()
 
 const metas = () => [...sessions.values()].map((s) => s.meta)
+
+// The sessions that edited a file since its last commit (or, for a file git does not have, in the
+// last 14 days), with those edits: the Changes view tells by them which session wrote which line
+// (web/src/components/FileView.tsx). An archived session's events are read and not kept.
+async function authorsOf(abs: string): Promise<{ id: string; title: string; edits: { old?: string; new: string; ts: number }[] }[]> {
+  const since = (await committedAt(abs)) ?? Date.now() - 14 * 86400_000
+  const real = new Map<string, string>()
+  const realOf = (p: string) => { let r = real.get(p); if (r == null) { try { r = fs.realpathSync(p) } catch { r = p }; real.set(p, r) } return r }
+  const want = realOf(abs)
+  const out: Awaited<ReturnType<typeof authorsOf>> = []
+  for (const s of sessions.values()) {
+    if (s.meta.lastActivity < since) continue
+    const edits: { old?: string; new: string; ts: number }[] = []
+    for (const e of s.meta.archived ? readEvents(s.meta.id) : s.getEvents()) {
+      if (e.t !== 'assistant' || e.ts < since) continue
+      for (const b of e.blocks) {
+        if (b.type !== 'tool_use' || !/^(Write|Edit|MultiEdit)$/.test(b.name) || typeof b.input?.file_path !== 'string') continue
+        if (realOf(path.resolve(s.meta.cwd, b.input.file_path)) !== want) continue
+        const one = (x: any) => typeof x?.new_string === 'string' && edits.push({ old: String(x.old_string ?? ''), new: x.new_string, ts: e.ts })
+        if (b.name === 'Write') { if (typeof b.input.content === 'string') edits.push({ new: b.input.content, ts: e.ts }) }
+        else if (b.name === 'Edit') one(b.input)
+        else for (const x of Array.isArray(b.input.edits) ? b.input.edits : []) one(x)
+      }
+    }
+    if (edits.length) out.push({ id: s.meta.id, title: s.meta.title, edits })
+  }
+  return out
+}
 function broadcast(msg: ServerMsg) {
   const s = JSON.stringify(msg)
   for (const ws of sockets) if (ws.readyState === ws.OPEN) ws.send(s)
@@ -1327,7 +1355,8 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   if (b === 'diff' && method === 'GET') {
     const abs = allowed(s.meta, s.getEvents(), url.searchParams.get('path') || '')
     if (!abs || !fs.existsSync(abs)) throw new HttpError(404, 'No such file, or not one this session can show')
-    return send(res, 200, await diffOf(abs))
+    const d = await diffOf(abs)
+    return send(res, 200, d.status === 'changed' || d.status === 'new' ? { ...d, authors: await authorsOf(abs) } : d)
   }
   if (b === 'file' && method === 'GET') {
     // A file in the session's directory (one you attached: name), or one the Files pane opens

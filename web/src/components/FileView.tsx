@@ -3,13 +3,14 @@
 // shows what changed: git's diff against the last commit, or, where git has none, the edits the
 // agent made in this session. Wrap (kept for every file) wraps long lines of code and changes.
 
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { mediaKind } from '../../../shared/media.ts'
 import type { Verdict } from '../../../shared/review.ts'
 import { highlight, langOfPath } from '../highlight.ts'
 import { renderMd } from '../util.ts'
 import { BackIcon, FolderIcon, OpenIcon } from './Icons.tsx'
-import { state, type LineDraft } from '../store.ts'
+import { localId, state, type LineDraft } from '../store.ts'
+import { attribute, mineOf, othersOf, parseDiff, type Author, type Hunk } from '../authors.ts'
 import { addLine, linesOf } from '../review.ts'
 import { LineCard, VerdictButtons } from './Review.tsx'
 
@@ -26,7 +27,7 @@ const kb = (n: number) => n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(
 
 // An edit the agent made to a file: the text it replaced (none for a file it wrote) and the new text.
 export type Edit = { old?: string; new: string }
-type Diff = { status: 'changed' | 'new' | 'same' | 'none'; diff: string }
+type Diff = { status: 'changed' | 'new' | 'same' | 'none'; diff: string; authors?: Author[] }
 
 // The file's group for review (Review.tsx): its verdict, and the next file that has none.
 export type ReviewOf = { group: string; verdict?: Verdict; sent: boolean; onVerdict(v: Verdict | null): void; next?: { label: string; go(): void } }
@@ -44,6 +45,7 @@ export function FileView({ sid, path, size, line, at, stamp, rel, changes, edits
   const isCsv = ext === 'csv' || ext === 'tsv'
   const [source, setSource] = useState(false)
   const [showDiff, setShowDiff] = useState(changes)
+  const [allChanges, setAllChanges] = useState(false)   // also the changes of other sessions
   const [wrap, setWrapState] = useState(() => localStorage.getItem('codinger.fileWrap') === '1')
   const setWrap = (on: boolean) => { localStorage.setItem('codinger.fileWrap', on ? '1' : '0'); setWrapState(on) }
   const [more, setMore] = useState(false)
@@ -78,6 +80,12 @@ export function FileView({ sid, path, size, line, at, stamp, rel, changes, edits
     return () => { gone = true }
   }, [path, stamp])
   const gitChanged = !!diff && (diff.status === 'changed' || diff.status === 'new') && !!diff.diff.trim()
+  // git's changes by session: this session's only, until you ask for all of them.
+  const me = localId(sid)
+  const hunks = useMemo(() => { const h = parseDiff(diff?.diff ?? ''); attribute(h, diff?.authors ?? []); return h }, [diff])
+  const others = othersOf(hunks, me)
+  const names = new Map((diff?.authors ?? []).map((a, i) => [a.id, { title: a.id === me ? 'This session' : a.title, n: i }]))
+  const shownHunks = allChanges ? hunks : mineOf(hunks, me)
   const hasChanges = gitChanged || edits.length > 0
   const diffOn = showDiff && hasChanges
 
@@ -100,6 +108,8 @@ export function FileView({ sid, path, size, line, at, stamp, rel, changes, edits
         <span className="fb-path mono">{ltr(rel)}</span>
         <span className="muted fb-size">{kb(size)}</span>
         {hasChanges && <button className={`fb-toggle${diffOn ? ' on' : ''}`} data-pid="file-changes" onClick={() => setShowDiff(!diffOn)}>Changes</button>}
+        {diffOn && gitChanged && others.size > 0 && <button className={`fb-toggle${allChanges ? ' on' : ''}`} data-pid="file-all-changes"
+          data-tip={`Also changed by ${[...others].map((id) => names.get(id)?.title ?? id).join(', ')}`} onClick={() => setAllChanges(!allChanges)}>All changes</button>}
         {can && (!diffOn || isMd) && <button className={`fb-toggle${source ? ' on' : ''}`} data-pid="file-source" onClick={() => setSource(!source)}>Source</button>}
         {codeLike && <button className={`fb-toggle${wrap ? ' on' : ''}`} data-pid="file-wrap" onClick={() => setWrap(!wrap)}>Wrap</button>}
         {reveal && <button className="icon-btn" data-tip="Show in Finder" onClick={reveal}><FolderIcon size={13} /></button>}
@@ -115,8 +125,9 @@ export function FileView({ sid, path, size, line, at, stamp, rel, changes, edits
       )}
       <div className="fb-content">
         {codeLike && review && !lines.length && <div className="fb-note muted rv-hint">To comment on lines, click or drag their numbers.</div>}
-        {mdDiff ? <MarkdownChanges chunks={gitChanged ? diffChunks(diff!.diff) : editChunks(edits)} edits={!gitChanged} url={url} dir={dirName(path)} onLink={onLink} />
-          : diffOn ? (gitChanged ? <DiffLines diff={diff!.diff} lang={ext} wrap={wrap} notes={notes} /> : <EditLines edits={edits} lang={ext} wrap={wrap} />)
+        {diffOn && gitChanged && !shownHunks.length && <div className="fb-note muted">This session did not change this file. Other sessions did: use All changes to see them.</div>}
+        {mdDiff ? <MarkdownChanges chunks={gitChanged ? diffChunks(shownHunks) : editChunks(edits)} edits={!gitChanged} url={url} dir={dirName(path)} onLink={onLink} />
+          : diffOn ? (gitChanged ? <DiffLines hunks={shownHunks} me={me} all={allChanges} names={names} lang={ext} wrap={wrap} notes={notes} /> : <EditLines edits={edits} lang={ext} wrap={wrap} />)
           : err ? <div className="fb-note error-text">{err}</div>
           : binary ? <div className="fb-note muted">This file is not text. Use the button at the top right to open it in a new tab.</div>
           : kind === 'image' && !source ? <div className="fb-media"><img src={`${url(path)}&t=${stamp}`} alt={rel} /></div>
@@ -174,9 +185,7 @@ function Rows({ rows, wrap, mark, at, notes }: { rows: Row[]; wrap: boolean; mar
     rows.forEach((r, i) => { if (r.ln != null && !!r.old === !!d.old && r.ln >= d.line && r.ln <= d.end) { sel.add(i); last = i } })
     after.set(last, [...after.get(last) ?? [], d])
   }
-  // With Wrap, the rest of a long line starts under its first character, after its indent (a tab is 4).
-  const indent = (r: Row) => { const w = /^[ \t]*/.exec(r.text ?? '')![0]; return w.length + 3 * (w.split('\t').length - 1) }
-  const html = rows.map((r, i) => `<div class="fb-ln${r.cls ? ` ${r.cls}` : ''}${mark === i + 1 ? ' mark' : ''}${sel.has(i) ? ' sel' : ''}${notes && r.ln != null ? ' pickable' : ''}" data-i="${i}">${r.nums.map((n) => `<span class="fb-n">${n}</span>`).join('')}<span class="fb-c"${indent(r) ? ` style="--ind:${indent(r)}ch"` : ''}>${r.html || ' '}</span></div>`)
+  const html = rows.map((r, i) => `<div class="fb-ln${r.cls ? ` ${r.cls}` : ''}${mark === i + 1 ? ' mark' : ''}${sel.has(i) ? ' sel' : ''}${notes && r.ln != null ? ' pickable' : ''}" data-i="${i}">${r.nums.map((n) => `<span class="fb-n">${n}</span>`).join('')}<span class="fb-c">${r.html || ' '}</span></div>`)
   const cuts = [...after.keys()].filter((i) => i >= 0).sort((a, b) => a - b)
   const segs: [number, number][] = []
   let from = 0
@@ -238,18 +247,35 @@ function Code({ text, lang: l, line, at, wrap, notes }: { text: string; lang: st
 }
 
 // A unified diff: each line with its number before and after, a removed line red, an added one green.
-function DiffLines({ diff, lang: l, wrap, notes }: { diff: string; lang: string; wrap: boolean; notes?: Notes }) {
+// Without all, a run of lines that another session changed folds to one line with its name. With all
+// (All changes), each run has the name of its session above it and a line of its colour at its left.
+type Names = Map<string, { title: string; n: number }>
+function DiffLines({ hunks, me, all, names, lang: l, wrap, notes }: { hunks: Hunk[]; me: string; all: boolean; names: Names; lang: string; wrap: boolean; notes?: Notes }) {
   const rows: Row[] = []
-  let o = 0, n = 0
-  const hl = (s: string) => htmlLines(highlight(s, lang(diff, l)))[0] ?? ''
-  for (const line of diff.split('\n')) {
-    const h = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/.exec(line)
-    if (h) { o = Number(h[1]); n = Number(h[2]); rows.push({ cls: 'hunk', nums: ['', ''], html: escapeHtml(line) }); continue }
-    if (!o && !n) continue   // the header: diff --git, index, ---, +++
-    const text = line.slice(1)
-    if (line.startsWith('+')) rows.push({ cls: 'add', nums: ['', n], html: hl(text), ln: n++, text })
-    else if (line.startsWith('-')) rows.push({ cls: 'del', nums: [o, ''], html: hl(text), ln: o++, old: true, text })
-    else if (line.startsWith(' ')) rows.push({ nums: [o++, n], html: hl(text), ln: n++, text })
+  const size = hunks.reduce((t, h) => t + h.rows.reduce((u, r) => u + r.text.length, 0), 0)
+  const hl = (s: string) => htmlLines(highlight(s, size > HIGHLIGHT_MAX ? undefined : l))[0] ?? ''
+  const label = (who: string | null | undefined) => who ? names.get(who)?.title ?? 'Another session' : 'No session\'s edit has these lines'
+  const tone = (who: string | null | undefined) => who === me ? ' who-me' : who ? ` who-${(names.get(who)?.n ?? 0) % 6}` : ''
+  for (const h of hunks) {
+    rows.push({ cls: 'hunk', nums: ['', ''], html: escapeHtml(h.head) })
+    let prev: string | null | undefined = undefined
+    let folded = null as { who: string; n: number; row: Row } | null
+    for (const r of h.rows) {
+      if (r.kind === 'ctx') { prev = undefined; folded = null; rows.push({ nums: [r.o, r.n], html: hl(r.text), ln: r.n, text: r.text }); continue }
+      if (!all && r.who && r.who !== me) {
+        if (folded?.who !== r.who) { folded = { who: r.who, n: 0, row: { cls: `who fold${tone(r.who)}`, nums: ['', ''], html: '' } }; rows.push(folded.row) }
+        folded.n++
+        folded.row.html = escapeHtml(`${folded.n} ${folded.n === 1 ? 'line' : 'lines'} changed by ${label(r.who)}`)
+        prev = r.who
+        continue
+      }
+      folded = null
+      if (all && r.who !== prev) rows.push({ cls: `who${tone(r.who)}`, nums: ['', ''], html: escapeHtml(label(r.who)) })
+      prev = r.who
+      const t = all ? tone(r.who) : ''
+      if (r.kind === 'add') rows.push({ cls: `add${t}`, nums: ['', r.n], html: hl(r.text), ln: r.n, text: r.text })
+      else rows.push({ cls: `del${t}`, nums: [r.o, ''], html: hl(r.text), ln: r.o, old: true, text: r.text })
+    }
   }
   return <Rows rows={rows} wrap={wrap} notes={notes} />
 }
@@ -288,17 +314,11 @@ function chunked(lines: { cls: Chunk['cls']; text: string }[]): Chunk[] {
   }
   return out
 }
-function diffChunks(diff: string): Chunk[] {
-  const lines: { cls: Chunk['cls']; text: string }[] = []
-  let body = false
-  for (const line of diff.split('\n')) {
-    if (line.startsWith('@@')) { if (body) lines.push({ cls: 'gap', text: '' }); body = true; continue }
-    if (!body) continue
-    if (line.startsWith('+')) lines.push({ cls: 'add', text: line.slice(1) })
-    else if (line.startsWith('-')) lines.push({ cls: 'del', text: line.slice(1) })
-    else if (line.startsWith(' ')) lines.push({ cls: '', text: line.slice(1) })
-  }
-  return chunked(lines)
+function diffChunks(hunks: Hunk[]): Chunk[] {
+  return chunked(hunks.flatMap((h, i) => [
+    ...(i ? [{ cls: 'gap' as const, text: '' }] : []),
+    ...h.rows.map((r) => ({ cls: r.kind === 'ctx' ? '' as const : r.kind, text: r.text })),
+  ]))
 }
 function editChunks(edits: Edit[]): Chunk[] {
   return edits.flatMap((e, i): Chunk[] => [
