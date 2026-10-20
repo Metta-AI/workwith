@@ -19,8 +19,10 @@ const own = (p: string) => /[\\/]\.codinger[\\/]notes[\\/]/.test(p) || (!!state.
 const firstWords = (e: Extract<Event, { t: 'user' }>) => {
   const p = e.parts.find((x) => x.kind === 'text' && x.text.trim()) ?? e.parts.find((x) => x.kind === 'mail')
   if (p?.kind === 'mail') return `Message from ${p.title}`
-  const t = (p?.text ?? '').replace(/\s+/g, ' ').trim()
-  return t ? (t.length > 60 ? t.slice(0, 60) + '…' : t) : 'Your replies'
+  // An image in the message (markdown) is no words for its name.
+  const raw = p?.text ?? ''
+  const t = raw.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim()
+  return t ? (t.length > 60 ? t.slice(0, 60) + '…' : t) : /!\[/.test(raw) ? 'An image' : 'Your replies'
 }
 
 // A path in a <review> tag: absolute, ~/, or under the session's folder.

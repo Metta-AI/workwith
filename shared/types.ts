@@ -49,6 +49,7 @@ export type SessionMeta = {
   context: { used: number; window: number }
   pendingAsks: number
   pendingCritical?: number   // of pendingAsks: the items marked critical
+  pendingReviews?: number    // of pendingAsks: the reviews the agent asked for (<review>)
   lastText: string        // the tail of the last thing Claude said, for overviews
   error: string | null
   archived: boolean

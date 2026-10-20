@@ -344,6 +344,7 @@ export class Session {
     this.meta.unread = false
     this.meta.pendingAsks = 0
     this.meta.pendingCritical = 0
+    this.meta.pendingReviews = 0
     this.meta.error = null
     this.record('user', { parts, uuid, csid: this.meta.claudeSessionId, ...(from ? { from } : {}), ...(tasks?.length ? { tasks } : {}) })
     this.refresh()
@@ -407,7 +408,7 @@ export class Session {
     this.seqFrom = this.nextSeq()
     this.events = []
     writeEvents(m.id, [])
-    Object.assign(m, { claudeSessionId: randomUUID(), started: false, resumeAt: null, context: { used: 0, window: m.context.window }, error: null, unread: false, pendingAsks: 0, pendingCritical: 0, lastText: '' })
+    Object.assign(m, { claudeSessionId: randomUUID(), started: false, resumeAt: null, context: { used: 0, window: m.context.window }, error: null, unread: false, pendingAsks: 0, pendingCritical: 0, pendingReviews: 0, lastText: '' })
     this.hooks.truncate(this, 0)
     this.notice(note)
     this.refresh()
@@ -601,6 +602,7 @@ export class Session {
         m.context.used = 0
         m.pendingAsks = 0
         m.pendingCritical = 0
+        m.pendingReviews = 0
         this.notice('Conversation cleared. Claude starts fresh from here.')
         this.refresh()
         return
@@ -638,15 +640,15 @@ export class Session {
   }
 
   // Questions and items to consider in Claude's text since the user last spoke.
-  private openAsks(): { pendingAsks: number; pendingCritical: number } {
+  private openAsks(): { pendingAsks: number; pendingCritical: number; pendingReviews: number } {
     const ev = this.getEvents()
-    let n = 0, critical = 0
+    let n = 0, critical = 0, reviews = 0
     for (let i = ev.length - 1; i >= 0; i--) {
       const e = ev[i]
       if (e.t === 'user') break
-      if (e.t === 'assistant') for (const b of e.blocks) if (b.type === 'text') for (const it of itemsOf(b.text)) { n++; if (it.kind === 'consider' && it.critical) critical++ }
+      if (e.t === 'assistant') for (const b of e.blocks) if (b.type === 'text') for (const it of itemsOf(b.text)) { n++; if (it.kind === 'consider' && it.critical) critical++; if (it.kind === 'review') reviews++ }
     }
-    return { pendingAsks: n, pendingCritical: critical }
+    return { pendingAsks: n, pendingCritical: critical, pendingReviews: reviews }
   }
 
   // A plain-text rendering of the recent transcript, for the lead agent.

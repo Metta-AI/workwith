@@ -141,9 +141,11 @@ export function reviewFilesOf(sec: Section): string[] {
   return out
 }
 
-// The text of a <review> section without its lines of paths.
+// The text of a <review> section without its lines of paths. Each line of it is a paragraph of its
+// own (the agent writes them one under the other), outside code blocks and lists.
+const paragraphs = (t: string) => t.split(/(^```[\s\S]*?^```)/m).map((x, i) => i % 2 ? x : x.replace(/([^\n])\n(?![\n\s]|[-*+] |[>#|]|\d+\. )/g, '$1\n\n')).join('')
 export const reviewTextOf = (sec: Section): string =>
-  bodyOf(sec).split('\n').filter((l) => { const p = PATH_LINE.exec(l)?.[1]; return !(p && isPath(p)) }).join('\n').replace(/^\s+|\s+$/g, '')
+  paragraphs(bodyOf(sec).split('\n').filter((l) => { const p = PATH_LINE.exec(l)?.[1]; return !(p && isPath(p)) }).join('\n').replace(/^\s+|\s+$/g, ''))
 
 // The <review> sections of a message, in order.
 export function reviewsOf(text: string): { title: string; text: string; files: string[] }[] {

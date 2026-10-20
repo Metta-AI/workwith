@@ -117,7 +117,7 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
   }, [])
   return (
     <header ref={head} className={`session-head${narrow ? ' narrow' : ''}${more ? ' head-open' : ''}`}>
-      <Mascot status={m.status} look={m.look} fatigue={fatigue(m.context.used, m.context.window)} size={44} title={STATUS_LABEL[m.status]} child={!!m.parentId} />
+      <Mascot status={m.status} look={m.look} fatigue={fatigue(m.context.used, m.context.window)} size={44} title={STATUS_LABEL[m.status]} child={!!m.parentId} review={!!m.pendingReviews} />
       <div className="head-main">
         {editing
           ? <input className="title-edit" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} onBlur={save} onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setTitle(m.title); setEditing(false) } }} />

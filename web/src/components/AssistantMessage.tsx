@@ -61,7 +61,7 @@ type Piece =
   | { kind: 'html'; html: string; block: number }
   | { kind: 'ask'; ask: Ask; block: number }
   | { kind: 'run'; title: string; command: string; block: number; closed: boolean }
-  | { kind: 'review'; title: string; text: string; files: string[]; n: number; block: number }
+  | { kind: 'review'; title: string; files: string[]; n: number; block: number; pieces: Piece[] }
   | SectionPiece
 
 function piecesOf(text: string): Piece[] {
@@ -72,7 +72,7 @@ function piecesOf(text: string): Piece[] {
       if (s.kind === 'ask') return [{ kind: 'ask', block: base++, ask: askOf(s, asks++) }]
       if (s.kind === 'draft') return [{ kind: 'ask', block: base++, ask: draftOf(s, drafts++) }]
       if (s.kind === 'run') return [{ kind: 'run', block: base++, title: s.title, command: commandOf(s), closed: s.closed }]
-      if (s.kind === 'review') return [{ kind: 'review', block: base++, title: s.title, text: reviewTextOf(s), files: reviewFilesOf(s), n: ++reviews }]
+      if (s.kind === 'review') return [{ kind: 'review', block: base++, title: s.title, files: reviewFilesOf(s), n: ++reviews, pieces: walk([{ text: reviewTextOf(s) }]) }]
       const id = s.kind === 'consider' ? `c${++considers}` : ''
       return [{ kind: s.kind, title: s.title, id, block: base++, closed: s.closed, task: s.kind === 'consider' && isTask(s), critical: s.kind === 'consider' && isCritical(s), pieces: walk(s.body) }]
     }
@@ -626,7 +626,7 @@ function Pieces({ c, pieces }: { c: Ctx; pieces: Piece[] }) {
         </details>
       )
       case 'consider': return <ConsiderCard key={p.block} c={c} p={p} />
-      case 'review': return <ReviewCard key={p.block} sid={c.sid} group={`${c.msg}:r${p.n}`} title={p.title} text={p.text} files={p.files} live={c.live} />
+      case 'review': return <ReviewCard key={p.block} sid={c.sid} group={`${c.msg}:r${p.n}`} title={p.title} block={p.block} files={p.files} live={c.live}><Pieces c={c} pieces={p.pieces} /></ReviewCard>
       case 'run': return <RunCard key={p.block} c={c} card={`${c.msg}:${p.block}`} block={p.block} title={p.title} command={p.command} ready={p.closed && !c.live} />
     }
   })}</>

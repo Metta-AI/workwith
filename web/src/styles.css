@@ -409,7 +409,7 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .rv-btn.on.sent { background: color-mix(in srgb, var(--c) 55%, var(--panel)); }
 .rv-older { display: block; margin: 4px 0 0 19px; font-size: calc(12px * var(--fs, 1)); }
 .rv-asked { flex: none; font-size: calc(10.5px * var(--fs, 1)); text-transform: uppercase; letter-spacing: .04em; color: var(--hot); }
-.count.rv-count { background: var(--blue); }
+.count.rv-count { background: var(--hot); }
 /* A <review> tag in a reply (ReviewCard): a filled card with the files and their verdicts. */
 /* A review in a reply has the size, spacing and shape of an item to consider (.consider): an orange
    line at its left until you decide, green after. Its text is the size of the reply's. */
@@ -426,6 +426,7 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .rv-details { font-size: calc(12px * var(--fs, 1)); margin: 0 0 2px; }
 .rv-ask .rv-file:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
 .rv-bar { gap: 6px; }
+.rv-bar .rv-btn { padding: 4px 10px; font-size: calc(12.5px * var(--fs, 1)); }
 .rv-say { font-size: calc(13px * var(--fs, 1)); padding: 2px 4px 6px; }
 .rv-say > :first-child { margin-top: 0; }
 .rv-say > :last-child { margin-bottom: 0; }
@@ -454,7 +455,8 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .rv-chip.on.approve { color: #fff; background: var(--ok); }
 .rv-chip.on.reject { color: #fff; background: var(--bad); }
 .rv-chip.on.unsure { color: #000; background: var(--warn); }
-.rv-text { display: block; width: 100%; box-sizing: border-box; resize: vertical; min-height: 40px; border: none; border-radius: 5px; background: var(--panel); color: var(--text); font: inherit; padding: 4px 6px; }
+/* The note boxes look like the other text boxes (input, textarea at the top of this file). */
+.rv-text { display: block; width: 100%; box-sizing: border-box; resize: vertical; min-height: 40px; }
 .sent-verdict.approve { color: var(--ok); }
 .sent-verdict.reject { color: var(--bad); }
 .sent-line { font-size: calc(12.5px * var(--fs, 1)); }

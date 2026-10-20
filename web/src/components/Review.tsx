@@ -92,10 +92,9 @@ export function VerdictButtons({ value, sent, onSet, label, words, big, dim }: {
   return <span className={`rv-btns${big ? ' big' : ''}${dim ? ' dim' : ''}`}>{b('reject', <XIcon size={11} />, no)}{b('approve', <CheckIcon size={11} />, yes)}</span>
 }
 
-// The agent's text in a review: what it changed, their state, what to test, what it needs. Each line
-// of it is a paragraph of its own (the agent writes them one under the other), outside code blocks.
-const lines = (t: string) => t.split(/(^```[\s\S]*?^```)/m).map((x, i) => i % 2 ? x : x.replace(/([^\n])\n(?![\n\s]|[-*+] |[>#|]|\d+\. )/g, '$1\n\n')).join('')
-const Say = ({ text }: { text?: string }) => text ? <div className="md rv-say" dangerouslySetInnerHTML={{ __html: renderMd(lines(text)) }} /> : null
+// The agent's text in a review: what it changed, their state, what to test, what it needs (in a reply,
+// AssistantMessage.tsx renders it, so you can comment on it and react to it).
+const Say = ({ text }: { text?: string }) => text ? <div className="md rv-say" dangerouslySetInnerHTML={{ __html: renderMd(text) }} /> : null
 
 // In the Files tab the agent's text is closed until you ask for it.
 function Details({ text }: { text?: string }) {
@@ -175,7 +174,8 @@ export function ReviewSection({ m, rel, isOn, onOpen }: Props) {
 
 // A <review> tag in a reply: what the agent asks you to decide on, its files, and Go or No go.
 // A click on a file opens it on its changes in the Files tab.
-export function ReviewCard({ sid, group, title, text, files, live }: { sid: string; group: string; title: string; text: string; files: string[]; live: boolean }) {
+// block: the title's number among the message's blocks, for comments on it; children: the agent's text.
+export function ReviewCard({ sid, group, title, block, files, live, children }: { sid: string; group: string; title: string; block: number; files: string[]; live: boolean; children: React.ReactNode }) {
   const st = useStore()
   const m = st.sessions.find((x) => x.id === sid)
   const cwd = m?.cwd ?? ''
@@ -191,10 +191,10 @@ export function ReviewCard({ sid, group, title, text, files, live }: { sid: stri
   return (
     <div className={`rv-ask st-${st8}`} data-pid="review-card" data-item={group}>
       <div className="rv-ask-head">
-        <span className="rv-label" dangerouslySetInnerHTML={{ __html: renderInline(title || 'Review') }} />
+        <div data-block={block} className="md-block rv-label" dangerouslySetInnerHTML={{ __html: renderInline(title || 'Review') }} />
         <span className={`rv-meta ${status.done ? (status.verdict === 'approve' ? 'rv-ok' : 'rv-bad') : 'muted'}`}>{status.word}</span>
       </div>
-      <Say text={text} />
+      <div className="rv-say">{children}</div>
       {paths.map((p) => {
         const fv = of(group, p)
         return (

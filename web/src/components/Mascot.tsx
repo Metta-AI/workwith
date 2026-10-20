@@ -9,22 +9,23 @@ import { BODY_COLORS, DRAWINGS, partsOf, rects } from './looks.tsx'
 import { inkOn } from '../../../shared/appearance.ts'
 
 
-// body: a colour of your own, in place of the look's; alert: whose badge to show, if not its own.
-type Props = { status: Status; fatigue: number; size?: number; title?: string; look?: Look; body?: string; alert?: Status; child?: boolean }
+// body: a colour of your own, in place of the look's; alert: whose badge to show, if not its own;
+// review: an open item is a review the agent asked for, so its "?" is orange.
+type Props = { status: Status; fatigue: number; size?: number; title?: string; look?: Look; body?: string; alert?: Status; child?: boolean; review?: boolean }
 
 // Drawn back to front.
 const LAYERS = ['face', 'hair', 'neck', 'eyewear', 'hat', 'held'] as const
 
 const SHOE = '#ff2a2a'
 
-export function Mascot({ status, fatigue, size = 28, title, look = {}, body, alert, child }: Props) {
+export function Mascot({ status, fatigue, size = 28, title, look = {}, body, alert, child, review }: Props) {
   // Looks saved before 'teal' became the default may still say 'classic'.
   const BODY = body ?? BODY_COLORS[look.color ?? 'teal'] ?? BODY_COLORS.teal
   const ink = (body ? inkOn(body) === '#ffffff' : look.color === 'midnight') ? '#e8ecff' : '#2a1f1a'
   const tired = fatigue >= 0.55
   const spent = fatigue >= 0.85
   const eyes = status === 'error' ? xEyes(ink) : spent && status !== 'working' ? sleepEyes(ink) : tired ? droopyEyes(ink) : openEyes(status, ink)
-  const badge = BADGES[alert ?? status]
+  const badge = (alert ?? status) === 'asking' && review ? { ...BADGES.asking!, bg: '#e08a3c' } : BADGES[alert ?? status]
   const parts = LAYERS.map((slot) => ({ slot, ...partsOf(look[slot] ? (DRAWINGS[slot] as Record<string, any>)[look[slot]!] : undefined) }))
   return (
     <svg
