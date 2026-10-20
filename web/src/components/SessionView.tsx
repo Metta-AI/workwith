@@ -579,7 +579,7 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
         </DropZone>
         {tab && <>
           {!wide && <Splitter width={fit} setWidth={setPanelW} min={PANEL_MIN} max={Math.max(PANEL_MIN, bodyW - CONVERSATION_MIN)} initial={440} reverse />}
-          <SidePanel m={m} tab={tab} tabs={tabs} width={fit} wide={wide} auto={auto} onTab={(t) => t === tab ? again(t) : setTab(t)} onWide={toggleWide} onHide={() => setTab(null)} />
+          <SidePanel m={m} tab={tab} tabs={tabs} width={fit} full={bodyW} wide={wide} auto={auto} onTab={(t) => t === tab ? again(t) : setTab(t)} onWide={toggleWide} onHide={() => setTab(null)} />
         </>}
       </div>
     </div>

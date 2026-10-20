@@ -15,9 +15,10 @@ import type { SessionMeta } from '../../../shared/types.ts'
 const LABEL: Record<PanelTab, string> = { preview: 'Artifacts', files: 'Files', items: 'Issues' }
 const ICON: Record<PanelTab, React.ReactNode> = { preview: <ArtifactIcon size={13} />, files: <FolderIcon size={13} />, items: <PanelIcon size={13} /> }
 
-type Props = { m: SessionMeta; tab: PanelTab; tabs: PanelTab[]; width: number; wide: boolean; auto: boolean; onTab(t: PanelTab): void; onWide(): void; onHide(): void }
+// full: the session's width, which the panel takes when wide.
+type Props = { m: SessionMeta; tab: PanelTab; tabs: PanelTab[]; width: number; full: number; wide: boolean; auto: boolean; onTab(t: PanelTab): void; onWide(): void; onHide(): void }
 
-export function SidePanel({ m, tab, tabs, width, wide, auto, onTab, onWide, onHide }: Props) {
+export function SidePanel({ m, tab, tabs, width, full, wide, auto, onTab, onWide, onHide }: Props) {
   const [seen, setSeen] = useState<Set<PanelTab>>(() => new Set([tab]))
   if (!seen.has(tab)) setSeen(new Set([...seen, tab]))
   const waiting = useItems(m.id).filter((i) => i.status === 'open')
@@ -35,7 +36,7 @@ export function SidePanel({ m, tab, tabs, width, wide, auto, onTab, onWide, onHi
       </div>
       {tabs.filter((t) => seen.has(t)).map((t) => (
         <div key={t} className="panel-body" hidden={t !== tab}>
-          {t === 'preview' ? <ArtifactPane sid={m.id} /> : t === 'files' ? <FileBrowser m={m} /> : <AttentionPanel sid={m.id} />}
+          {t === 'preview' ? <ArtifactPane sid={m.id} /> : t === 'files' ? <FileBrowser m={m} width={wide ? full : width} /> : <AttentionPanel sid={m.id} />}
         </div>
       ))}
     </aside>

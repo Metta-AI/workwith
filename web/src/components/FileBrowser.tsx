@@ -60,7 +60,8 @@ async function getJson<T>(url: string): Promise<T> {
   return j
 }
 
-export function FileBrowser({ m }: { m: SessionMeta }) {
+// width: the panel's width, so the first view already has the right layout (no flash).
+export function FileBrowser({ m, width }: { m: SessionMeta; width: number }) {
   const st = useStore()
   const machine = machineOf(m.id)
   const base = `/api/sessions/${localId(m.id)}`
@@ -81,10 +82,10 @@ export function FileBrowser({ m }: { m: SessionMeta }) {
 
   // Its own width: the list and the file side by side when there is room.
   const el = useRef<HTMLDivElement>(null)
-  const [w, setW] = useState(0)
+  const [w, setW] = useState(width)
   useLayoutEffect(() => {
-    const ro = new ResizeObserver(() => setW(el.current?.clientWidth ?? 0))
-    if (el.current) ro.observe(el.current)
+    const ro = new ResizeObserver(() => setW(el.current?.clientWidth || width))
+    if (el.current) { ro.observe(el.current); setW(el.current.clientWidth || width) }
     return () => ro.disconnect()
   }, [])
   const split = w >= 600
