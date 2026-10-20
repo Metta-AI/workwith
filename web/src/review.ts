@@ -10,7 +10,7 @@ import { addDraft, changed, draftsOf, localId, machineOf, media, removeDraft, st
 
 // key: for a turn, the seq of the message that started it ('0' before the first one); for a <review>
 // tag, "<seq>.<block>:r<n>" (its message and its place in it). asked: the agent asked with a tag.
-export type Group = { key: string; label: string; ts: number; files: string[]; live: boolean; asked?: boolean }
+export type Group = { key: string; label: string; ts: number; files: string[]; live: boolean; asked?: boolean; text?: string }
 
 const EDIT = /^(Write|Edit|MultiEdit|NotebookEdit)$/
 // The agent's own notes and memory are not changes to review.
@@ -38,14 +38,14 @@ export function groupsOf(sid: string, cwd: string, busy: boolean): Group[] {
     const named = new Set(asked.flatMap((g) => g.files))
     cur.files = cur.files.filter((f) => !named.has(f))
     if (cur.files.length) out.push(cur)
-    out.push(...asked.filter((g) => g.files.length))
+    out.push(...asked)
     asked = []
   }
   for (const e of state.events[sid] ?? []) {
     if (e.t === 'user') { close(); cur = { key: String(e.seq), label: firstWords(e), ts: e.ts, files: [], live: false }; continue }
     if (e.t !== 'assistant' || e.synthetic) continue
     e.blocks.forEach((b, i) => {
-      if (b.type === 'text') reviewsOf(b.text).forEach((r, n) => asked.push({ key: `${e.seq}.${i}:r${n + 1}`, label: r.title || 'Review', ts: e.ts, files: r.files.map((f) => resolve(f, cwd)), live: false, asked: true }))
+      if (b.type === 'text') reviewsOf(b.text).forEach((r, n) => asked.push({ key: `${e.seq}.${i}:r${n + 1}`, label: r.title || 'Review', ts: e.ts, files: r.files.map((f) => resolve(f, cwd)), live: false, asked: true, text: r.text }))
       if (b.type !== 'tool_use' || !EDIT.test(b.name)) return
       const p = b.input?.file_path ?? b.input?.notebook_path
       if (typeof p === 'string' && !own(p) && !cur.files.includes(p)) cur.files.push(p)
@@ -65,23 +65,33 @@ function sentOf(sid: string): Map<string, Verdict> {
   return out
 }
 
-// What each file of each group has: your draft, or else what you sent.
+// What each file of each group has: your draft, or else what you sent; a file without a verdict of its
+// own has the decision on its whole review (path ''). The decision itself: path ''.
 export function verdictsOf(sid: string): (group: string, path: string) => { verdict?: Verdict; sent: boolean } {
   const sent = sentOf(sid)
   const drafts = new Map(draftsOf(sid).flatMap((d) => d.kind === 'verdict' ? [[k(d.group, d.path), d.verdict] as const] : []))
   return (group, path) => {
-    const d = drafts.get(k(group, path))
+    const d = drafts.get(k(group, path)) ?? drafts.get(k(group, ''))
     if (d) return { verdict: d, sent: false }
-    const s = sent.get(k(group, path))
+    const s = sent.get(k(group, path)) ?? sent.get(k(group, ''))
     return { verdict: s, sent: !!s }
   }
 }
 
 // A click on the verdict a file has takes your draft back; a verdict equal to the sent one is no draft.
+// path '': the decision on a whole review, rel its title; its note stays when the verdict changes.
 export function setVerdict(sid: string, group: string, path: string, rel: string, verdict: Verdict | null) {
   const sent = sentOf(sid).get(k(group, path))
-  state.drafts[sid] = draftsOf(sid).filter((d) => !(d.kind === 'verdict' && d.group === group && d.path === path))
-  if (verdict && verdict !== sent) state.drafts[sid].push({ id: uid(), kind: 'verdict', group, path, rel, verdict, createdAt: Date.now() } satisfies VerdictDraft)
+  const had = draftsOf(sid).find((d): d is VerdictDraft => d.kind === 'verdict' && d.group === group && d.path === path)
+  state.drafts[sid] = draftsOf(sid).filter((d) => d !== had)
+  if (verdict && (verdict !== sent || had?.text)) state.drafts[sid].push({ id: uid(), kind: 'verdict', group, path, rel, verdict, ...(had?.text ? { text: had.text } : {}), createdAt: Date.now() } satisfies VerdictDraft)
+  changed()
+}
+
+// Your note with the decision on a whole review.
+export const decisionOf = (sid: string, group: string) => draftsOf(sid).find((d): d is VerdictDraft => d.kind === 'verdict' && d.group === group && !d.path)
+export function setDecisionText(sid: string, group: string, text: string) {
+  state.drafts[sid] = draftsOf(sid).map((d) => d.kind === 'verdict' && d.group === group && !d.path ? { ...d, text } : d)
   changed()
 }
 

@@ -6,8 +6,9 @@ export type Verdict = 'approve' | 'reject'
 export type LineVerdict = Verdict | 'unsure'
 
 // group: the seq of the message that started the turn; path: the file's absolute path; rel: the
-// path the agent gets (relative to the session's folder when it is in it).
-export type FileVerdict = { group: string; path: string; rel: string; verdict: Verdict }
+// path the agent gets (relative to the session's folder when it is in it). A verdict with path '' is
+// your decision on a whole review the agent asked for (go or no go): rel is its title, text your note.
+export type FileVerdict = { group: string; path: string; rel: string; verdict: Verdict; text?: string }
 // line to end: lines of the file after the change; old: lines that the change removed (their
 // numbers before it). code: the first of the lines, for context.
 export type LineComment = { group?: string; path: string; rel: string; line: number; end: number; old?: boolean; code: string; verdict: LineVerdict; text: string }
@@ -17,6 +18,8 @@ const WORD: Record<LineVerdict, string> = { approve: 'approve', reject: 'reject'
 // The text the agent receives.
 export function formatReview(files: FileVerdict[], comments: LineComment[]): string {
   const out = ['**Review of your changes:**']
+  for (const d of files.filter((f) => !f.path)) out.push(`- ${d.verdict === 'approve' ? '**Go**' : '**No go**'} for the review "${d.rel}"${d.text?.trim() ? `: ${d.text.trim().replace(/\n+/g, ' ')}` : ''}`)
+  files = files.filter((f) => f.path)
   const list = (v: Verdict) => [...new Set(files.filter((f) => f.verdict === v).map((f) => `\`${f.rel}\``))].join(', ')
   if (files.some((f) => f.verdict === 'approve')) out.push(`- Approved: ${list('approve')}`)
   if (files.some((f) => f.verdict === 'reject')) out.push(`- Rejected: ${list('reject')}`)

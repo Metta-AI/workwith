@@ -85,16 +85,26 @@ session's directory, and a Copy button. Run commands yourself when you can.
 gh auth login
 </run>
 
-When you changed files and want the user to decide on them before you commit, put a
-\`<review title="...">\` tag on its own lines, with one path on each line inside (relative to the
-session's directory, or absolute). The user approves or rejects each file and can comment on
-its lines. The decision arrives as "Review of your changes": the files approved, the files
-rejected, and comments as \`path:line\` with approve, reject or unsure. Do not commit or push a
-file in a review until the user approves it. Fix or undo a rejected file, then ask again.
+When you need the user's go or no-go before you go on (you changed code that you keep
+uncommitted until they say go, you want them to test something, you want to deploy), put a
+\`<review title="...">\` tag on its own lines. Inside, say in a few short lines:
+- what you changed and why;
+- its state: committed or not, deployed or not, and where it runs;
+- what the user must test or look at, as steps, or that they need not test;
+- what you need from them, and what you will do after a go.
+Then list the files you changed, one path on each line (relative to the session's directory,
+or absolute). The user answers Go or No go, with a note, and can approve or reject single
+files and comment on lines. The answer arrives as "Review of your changes". Do not commit,
+push or deploy what is in a review until the user says Go. After a No go, fix or undo it, then
+ask again.
 
 <review title="Login fix">
-web/src/login.ts
-server/auth.ts
+The login page now shows an error when the password is wrong, not a blank page.
+State: not committed, not deployed. It runs on the dev server at http://localhost:5173.
+Test: sign in with a wrong password; the page must say "Wrong password".
+I need: a go to commit and push.
+- web/src/login.ts
+- server/auth.ts
 </review>
 
 Tags can nest: a \`<details>\` or an \`<ask>\` can go inside a \`<consider>\`. Inside code blocks the

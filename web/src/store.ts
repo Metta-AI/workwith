@@ -23,7 +23,7 @@ export type DoneDraft = { id: string; kind: 'done'; key: string; label: string; 
 // A command opened in Terminal from a <run> block (by token), and how it ended.
 export type Run = { sid: string; card: string; command: string; item?: { key: string; label: string }; code?: number; tail?: string }
 // Your verdict on a file the agent changed in one turn (group), and a comment on lines of a file (shared/review.ts).
-export type VerdictDraft = { id: string; kind: 'verdict'; group: string; path: string; rel: string; verdict: Verdict; createdAt: number }
+export type VerdictDraft = { id: string; kind: 'verdict'; group: string; path: string; rel: string; verdict: Verdict; text?: string; createdAt: number }
 export type LineDraft = { id: string; kind: 'line'; createdAt: number } & LineComment
 export type Draft = NoteDraft | AnswerDraft | DismissDraft | DoneDraft | VerdictDraft | LineDraft
 export type Composer = { text: string; images: ImageRef[] }
@@ -649,7 +649,7 @@ export function queuedParts(sid: string, alsoDismiss: { key: string; label: stri
   for (const i of lead) if ((i.kind === 'answer' || i.kind === 'reply') && i.key) keyed.push({ p: inboxParts([i])[0], k: [...order(i.key.split(':')[0]), 9999], t: i.ts })
   keyed.sort((a, b) => cmp(a.k, b.k) || a.t - b.t)
   const parts: Part[] = keyed.map((x) => x.p)
-  const files = mine.flatMap((d) => d.kind === 'verdict' ? [{ group: d.group, path: d.path, rel: d.rel, verdict: d.verdict }] : [])
+  const files = mine.flatMap((d) => d.kind === 'verdict' ? [{ group: d.group, path: d.path, rel: d.rel, verdict: d.verdict, ...(d.text?.trim() ? { text: d.text.trim() } : {}) }] : [])
   const comments = mine.flatMap((d): LineComment[] => {
     if (d.kind !== 'line' || !d.text.trim()) return []
     const { id: _, kind: __, createdAt: ___, ...c } = d

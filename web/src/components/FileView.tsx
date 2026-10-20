@@ -117,10 +117,10 @@ export function FileView({ sid, path, size, line, at, stamp, rel, changes, edits
       </div>
       {review && (
         <div className="fb-bar rv-bar" data-pid="file-review">
-          <VerdictButtons value={review.verdict} sent={review.sent} onSet={review.onVerdict} label />
-          {review.sent && <span className="muted rv-sent">sent</span>}
-          <span className="grow" />
           {review.next && <button className="link rv-next" data-pid="review-next" onClick={review.next.go}>Next: {review.next.label} →</button>}
+          <span className="grow" />
+          {review.sent && <span className="muted rv-sent">sent</span>}
+          <VerdictButtons value={review.verdict} sent={review.sent} onSet={review.onVerdict} label />
         </div>
       )}
       <div className="fb-content">

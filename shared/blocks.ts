@@ -126,21 +126,29 @@ export function commandOf(sec: Section): string {
   return (/^(`{3,}|~{3,})[^\n]*\n([\s\S]*?)\n\1\s*$/.exec(body)?.[2] ?? body).trim()
 }
 
-// The paths in a <review> section: one on each line, maybe in a list or in backticks, maybe with :line.
+// A <review> section holds the agent's text (what changed, its state, what to test, what it needs from
+// you) and its files: each line that is only a path (maybe in a list, in backticks, with :line).
+const PATH_LINE = /^\s*(?:[-*+]\s+)?`?([^\s`]+?)`?(?::\d+(?:[-:]\d+)?)?\s*$/
+const isPath = (p: string) => /[\\/]/.test(p) || /\.[A-Za-z0-9]{1,8}$/.test(p)
+const bodyOf = (sec: Section) => sec.body.map((s) => ('text' in s ? s.text : '')).join('\n')
+
 export function reviewFilesOf(sec: Section): string[] {
-  const body = sec.body.map((s) => ('text' in s ? s.text : '')).join('\n')
   const out: string[] = []
-  for (const line of body.split('\n')) {
-    const p = line.trim().replace(/^[-*+]\s+/, '').replace(/^`([^`]+)`.*$/, '$1').replace(/:\d+(?:[-:]\d+)?$/, '').trim()
-    if (p && !out.includes(p)) out.push(p)
+  for (const line of bodyOf(sec).split('\n')) {
+    const p = PATH_LINE.exec(line)?.[1]
+    if (p && isPath(p) && !out.includes(p)) out.push(p)
   }
   return out
 }
 
+// The text of a <review> section without its lines of paths.
+export const reviewTextOf = (sec: Section): string =>
+  bodyOf(sec).split('\n').filter((l) => { const p = PATH_LINE.exec(l)?.[1]; return !(p && isPath(p)) }).join('\n').replace(/^\s+|\s+$/g, '')
+
 // The <review> sections of a message, in order.
-export function reviewsOf(text: string): { title: string; files: string[] }[] {
-  const out: { title: string; files: string[] }[] = []
-  const walk = (segs: Segment[]) => { for (const s of segs) if (!('text' in s)) { if (s.kind === 'review') out.push({ title: s.title, files: reviewFilesOf(s) }); else walk(s.body) } }
+export function reviewsOf(text: string): { title: string; text: string; files: string[] }[] {
+  const out: { title: string; text: string; files: string[] }[] = []
+  const walk = (segs: Segment[]) => { for (const s of segs) if (!('text' in s)) { if (s.kind === 'review') out.push({ title: s.title, text: reviewTextOf(s), files: reviewFilesOf(s) }); else walk(s.body) } }
   walk(segmentsOf(text))
   return out
 }
