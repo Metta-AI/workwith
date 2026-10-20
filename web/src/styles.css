@@ -399,6 +399,9 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .rv-btn.reject { --c: var(--bad); }
 .rv-btn:hover { background: color-mix(in srgb, var(--c) 12%, transparent); }
 .rv-btn:not(.on) { opacity: .9; }
+/* The button you did not choose, and both of a review whose files have mixed verdicts, are light. */
+.rv-btns:has(.on) .rv-btn:not(.on), .rv-btns.dim .rv-btn { opacity: .4; }
+.rv-btns:has(.on) .rv-btn:not(.on):hover, .rv-btns.dim .rv-btn:hover { opacity: .9; }
 .rv-btn.on { color: #fff; background: var(--c); box-shadow: none; }
 .rv-btns.big { gap: 6px; }
 .rv-btns.big .rv-btn { padding: 6px 14px; font-size: calc(13px * var(--fs, 1)); font-weight: 600; border-radius: 6px; }

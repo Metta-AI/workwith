@@ -11,7 +11,7 @@ import { useState } from 'react'
 import type { SessionMeta } from '../../../shared/types.ts'
 import type { LineVerdict, Verdict } from '../../../shared/review.ts'
 import { changed, removeDraft, state, useStore, type LineDraft } from '../store.ts'
-import { decide, decisionOf, groupsOf, resolve, setDecisionText, setFileVerdict, setVerdict, uncommittedOf, updateLine, verdictsOf, type Group } from '../review.ts'
+import { decide, decisionOf, groupsOf, resolve, reviewStatus, setDecisionText, setFileVerdict, setVerdict, uncommittedOf, updateLine, verdictsOf, type Group } from '../review.ts'
 import { CheckIcon, ChevronIcon, TrashIcon, XIcon } from './Icons.tsx'
 import { renderInline, renderMd } from '../util.ts'
 import { baseName, dirName, ltr } from './FileView.tsx'
@@ -36,11 +36,11 @@ export function useReview(m: SessionMeta, decided = false) {
   const count = (v: { verdict?: Verdict; sent: boolean }) => { if (!v.verdict) n.left++; else if (!v.sent) n[v.verdict]++ }
   for (const g of groups) {
     if (g.asked) {
-      const v = of(g.key, '')
+      const v = reviewStatus(m.id, g)
       for (const f of g.files) seen.add(f)
-      if (v.sent) { sent++; if (!decided) continue }
-      count(v)
-      if (!v.verdict) asked++
+      if (v.done && v.sent) { sent++; if (!decided) continue }
+      count(v.done ? v : { sent: false })
+      if (!v.done) asked++
       shown.push(g)
       continue
     }
@@ -80,7 +80,8 @@ export function Counts({ n, comments }: { n: { approve: number; reject: number; 
 }
 
 // Reject, then approve: the button that says yes is at the right. words: Go and No go, for a whole review.
-export function VerdictButtons({ value, sent, onSet, label, words, big }: { value?: Verdict; sent?: boolean; onSet(v: Verdict | null): void; label?: boolean; words?: [string, string]; big?: boolean }) {
+// dim: the files have mixed verdicts, so neither button of the whole review is chosen.
+export function VerdictButtons({ value, sent, onSet, label, words, big, dim }: { value?: Verdict; sent?: boolean; onSet(v: Verdict | null): void; label?: boolean; words?: [string, string]; big?: boolean; dim?: boolean }) {
   const [no, yes] = words ?? ['Reject', 'Approve']
   const b = (v: Verdict, icon: React.ReactNode, word: string) => (
     <button className={`rv-btn ${v}${value === v ? ' on' : ''}${value === v && sent ? ' sent' : ''}`} aria-pressed={value === v} data-pid={`verdict-${v}`}
@@ -88,12 +89,12 @@ export function VerdictButtons({ value, sent, onSet, label, words, big }: { valu
       {icon}{(label || words) && <span>{word}</span>}
     </button>
   )
-  return <span className={`rv-btns${big ? ' big' : ''}`}>{b('reject', <XIcon size={11} />, no)}{b('approve', <CheckIcon size={11} />, yes)}</span>
+  return <span className={`rv-btns${big ? ' big' : ''}${dim ? ' dim' : ''}`}>{b('reject', <XIcon size={11} />, no)}{b('approve', <CheckIcon size={11} />, yes)}</span>
 }
 
 // The agent's text in a review: what it changed, their state, what to test, what it needs. Each line
-// of it stays a line (the agent writes them one under the other), outside code blocks.
-const lines = (t: string) => t.split(/(^```[\s\S]*?^```)/m).map((x, i) => i % 2 ? x : x.replace(/([^\n])\n(?![\n\s]|[-*+] |[>#|]|\d+\. )/g, '$1  \n')).join('')
+// of it is a paragraph of its own (the agent writes them one under the other), outside code blocks.
+const lines = (t: string) => t.split(/(^```[\s\S]*?^```)/m).map((x, i) => i % 2 ? x : x.replace(/([^\n])\n(?![\n\s]|[-*+] |[>#|]|\d+\. )/g, '$1\n\n')).join('')
 const Say = ({ text }: { text?: string }) => text ? <div className="md rv-say" dangerouslySetInnerHTML={{ __html: renderMd(lines(text)) }} /> : null
 
 // In the Files tab the agent's text is closed until you ask for it.
@@ -107,7 +108,7 @@ function Details({ text }: { text?: string }) {
 }
 
 // What a review waits for, in words.
-export const reviewState = (v: { verdict?: Verdict; sent: boolean }) => !v.verdict ? 'waiting for you' : v.sent ? (v.verdict === 'approve' ? 'approved' : 'rejected') : (v.verdict === 'approve' ? 'approved, not sent' : 'rejected, not sent')
+
 
 // Your decision on a review, with a note: Approve approves its files too; Reject leaves the files you
 // approved as they are. It follows its files when they all get the same verdict (review.ts setFileVerdict).
@@ -121,7 +122,7 @@ function Decision({ sid, g, rel, ro }: { sid: string; g: Review; rel(p: string):
       <div className="rv-decide">
         <textarea className="rv-text" rows={2} placeholder={v.verdict === 'reject' ? 'What is wrong (optional)' : 'A note for the agent (optional)'} value={d?.text ?? ''}
           onChange={(e) => setDecisionText(sid, g.key, g.label, e.target.value)} onClick={(e) => e.stopPropagation()} />
-        <VerdictButtons value={v.verdict} sent={v.sent} onSet={(x) => decide(sid, g, rel, x)} label big />
+        <VerdictButtons value={v.verdict} sent={v.sent} onSet={(x) => decide(sid, g, rel, x)} label big dim={reviewStatus(sid, g).mixed} />
       </div>
     )}
   </>
@@ -139,7 +140,8 @@ export function ReviewSection({ m, rel, isOn, onOpen }: Props) {
       <div className="attention-head rv-head">For review<span className="grow" /><Counts n={n} comments={comments} /></div>
       {shown.map((g) => {
         const vs = g.files.map((f) => of(g.key, f))
-        const left = g.asked ? (of(g.key, '').verdict ? 0 : 1) : vs.filter((v) => !v.verdict).length
+        const status = g.asked ? reviewStatus(m.id, g) : undefined
+        const left = status ? (status.done ? 0 : 1) : vs.filter((v) => !v.verdict).length
         const same = vs.length && vs.every((v) => v.verdict === vs[0].verdict) ? vs[0].verdict : undefined
         const open = (left > 0) !== flip.has(g.key)
         const toggle = () => setFlip((s) => { const x = new Set(s); if (x.has(g.key)) x.delete(g.key); else x.add(g.key); return x })
@@ -150,7 +152,7 @@ export function ReviewSection({ m, rel, isOn, onOpen }: Props) {
               <span className={`fb-chev${open ? ' open' : ''}`}><ChevronIcon size={10} /></span>
               {g.asked && <span className="rv-asked">Asked</span>}
               <span className="rv-label">{g.label}</span>
-              <span className="muted rv-meta">{g.live ? 'working' : g.asked ? reviewState(of(g.key, '')) : left ? `${left} of ${g.files.length} left` : `${g.files.length} done`}</span>
+              <span className="muted rv-meta">{g.live ? 'working' : status ? status.word : left ? `${left} of ${g.files.length} left` : `${g.files.length} done`}</span>
               {!g.asked && <VerdictButtons value={same} sent={vs.every((v) => v.sent)} onSet={all} />}
             </div>
             {open && g.asked && <div className="rv-body"><Details text={g.text} /></div>}
@@ -182,17 +184,16 @@ export function ReviewCard({ sid, group, title, text, files, live }: { sid: stri
   const ro = !!state.share || live
   const paths = files.map((f) => resolve(f, cwd))
   const rel = (p: string) => p.startsWith(cwd + '/') ? p.slice(cwd.length + 1) : p
-  const v = of(group, '')
   const review: Review = { key: group, label: title || 'Review', files: paths, asked: true }
-  // Like an item to consider (AssistantMessage.tsx): orange until you decide, green after.
-  const drafted = st.drafts[sid]?.some((d) => d.kind === 'verdict' && d.group === group)
-  const st8 = drafted ? 'drafted' : v.sent ? 'answered' : live ? 'live' : 'open'
+  // Like an item to consider (AssistantMessage.tsx): orange until you decided on it or on each of its
+  // files, green after; then the words say how you decided.
+  const status = reviewStatus(sid, review)
+  const st8 = status.done ? (status.sent ? 'answered' : 'drafted') : live ? 'live' : 'open'
   return (
     <div className={`rv-ask st-${st8}`} data-pid="review-card" data-item={group}>
       <div className="rv-ask-head">
-        <span className="rv-asked">For review</span>
         <span className="rv-label" dangerouslySetInnerHTML={{ __html: renderInline(title || 'Review') }} />
-        <span className="muted rv-meta">{reviewState(v)}</span>
+        <span className={`rv-meta ${status.done ? (status.verdict === 'approve' ? 'rv-ok' : 'rv-bad') : 'muted'}`}>{status.word}</span>
       </div>
       <Say text={text} />
       {paths.map((p) => {

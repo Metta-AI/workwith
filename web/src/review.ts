@@ -154,3 +154,24 @@ export function setFileVerdict(sid: string, g: { key: string; label: string; fil
   if (after && after !== decision) setVerdict(sid, g.key, '', g.label, after)
   else if (!after && decision && decision === before) setVerdict(sid, g.key, '', g.label, null)
 }
+
+// Where a review the agent asked for stands. done: you decided on it, or gave each of its files a
+// verdict; mixed: some approved and some rejected, which counts as a partial reject.
+export type ReviewStatus = { done: boolean; mixed: boolean; sent: boolean; verdict?: Verdict; word: string }
+export function reviewStatus(sid: string, g: { key: string; files: string[] }): ReviewStatus {
+  const d = verdictsOf(sid)(g.key, '')
+  if (d.verdict) return { done: true, mixed: false, sent: d.sent, verdict: d.verdict, word: d.verdict === 'approve' ? 'approved' : 'rejected' }
+  const own = verdictsOf(sid, true)
+  const vs = g.files.map((f) => own(g.key, f))
+  if (!vs.length || vs.some((v) => !v.verdict)) return { done: false, mixed: false, sent: false, word: 'waiting for you' }
+  const mixed = vs.some((v) => v.verdict !== vs[0].verdict)
+  const verdict = mixed ? 'reject' : vs[0].verdict
+  return { done: true, mixed, sent: vs.every((v) => v.sent), verdict, word: mixed ? 'partly rejected' : verdict === 'approve' ? 'approved' : 'rejected' }
+}
+
+// The same for an item of the Issues tab (items.ts), by its key: its group of the session's reviews.
+export function reviewDone(sid: string, key: string): boolean {
+  const cwd = state.sessions.find((s) => s.id === sid)?.cwd ?? ''
+  const g = groupsOf(sid, cwd, false).find((x) => x.key === key)
+  return !!g && reviewStatus(sid, g).done
+}

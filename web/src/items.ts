@@ -5,6 +5,7 @@ import { useMemo } from 'react'
 import type { Event, Part } from '../../shared/types.ts'
 import { itemsOf, type Item } from '../../shared/blocks.ts'
 import { draftsOf, hasContent, inboxOf, useStore } from './store.ts'
+import { reviewDone } from './review.ts'
 
 export type ItemStatus =
   | 'open'        // in Claude's latest turn, nothing done yet
@@ -44,7 +45,8 @@ export function draftStatus(sid: string, key: string, critical = false): ItemSta
     if (d.kind === 'done' && d.key === key) return 'completing'
   }
   for (const d of draftsOf(sid)) {
-    if (d.kind === 'verdict' && d.group === key) return 'drafted'
+    // A review is drafted when you decided on it or on each of its files (review.ts).
+    if (d.kind === 'verdict' && d.group === key && reviewDone(sid, key)) return 'drafted'
     if (d.kind === 'answer' && d.askKey === key && hasContent(d)) return 'drafted'
     if (d.kind === 'note' && d.itemKey === key && hasContent(d) && (!critical || (!d.reaction && /[\p{L}\p{N}]/u.test(d.text)))) return 'drafted'
   }
