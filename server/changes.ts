@@ -17,7 +17,8 @@ import { DATA } from './store.ts'
 import { keep } from './filehistory.ts'
 
 // who: a session's id, 'you', or 'unknown' (changed before Codinger looked at the file the first time).
-type Version = { ts: number; who: string; text: string }
+// claim: the session said these changes are its own (claim_changes): lines of text (from 1), or all.
+type Version = { ts: number; who: string; text: string; claim?: [number, number][] | 'all' }
 
 const DIR = path.join(DATA, 'changes')
 fs.mkdirSync(DIR, { recursive: true })
@@ -145,26 +146,53 @@ export async function whoChanged(p: string): Promise<{ add: Record<number, strin
   const top = (await run(['rev-parse', '--show-toplevel'], path.dirname(p)))?.trim()
   const head = top ? await run(['show', `HEAD:${path.relative(top, p).split(path.sep).join('/')}`], top) : null
   if ((head ?? '') !== vs[0].text) { forget(p); return null }
+  // By version: which one wrote each line now, and which one removed each line of the commit.
   let lines = vs[0].text.split('\n')
-  let from: string[] = lines.map(() => 'base')
+  let from: number[] = lines.map(() => 0)
   let alive: (number | null)[] = lines.map((_, i) => i)   // where each line of the commit is now
-  const removed: Record<number, string> = {}
-  for (const v of vs.slice(1)) {
+  const removed: Record<number, number> = {}
+  vs.forEach((v, k) => {
+    if (!k) return
     const next = v.text.split('\n')
     const kept = keep(lines, next)
     const back = new Map<number, number>()
     kept.forEach((x, j) => { if (x != null) back.set(x, j) })
-    from = kept.map((x, j) => x == null ? v.who : from[x])
+    from = kept.map((x, j) => x == null ? k : from[x])
     alive = alive.map((at, i) => {
       if (at == null) return null
       const j = back.get(at)
-      if (j == null) { removed[i + 1] = v.who; return null }
+      if (j == null) { removed[i + 1] = k; return null }
       return j
     })
     lines = next
-  }
+    // A claim takes the lines it names, and the lines of the commit that the same versions removed.
+    if (v.claim) {
+      const take = from.map((f, j) => f > 0 && (v.claim === 'all' || (v.claim as [number, number][]).some(([a, b]) => j + 1 >= a && j + 1 <= b)))
+      const by = new Set(from.filter((_, j) => take[j]))
+      from = from.map((f, j) => take[j] ? k : f)
+      for (const [i, r] of Object.entries(removed)) if (v.claim === 'all' || by.has(r)) removed[Number(i)] = k
+    }
+  })
+  const who = (k: number) => vs[k].who
   const added: Record<number, string> = {}
-  from.forEach((w, j) => { if (w !== 'base' && w !== 'unknown') added[j + 1] = w })
-  for (const [k, w] of Object.entries(removed)) if (w === 'unknown') delete removed[Number(k)]
-  return { add: added, del: removed }
+  from.forEach((f, j) => { if (f > 0 && who(f) !== 'unknown') added[j + 1] = who(f) })
+  const del: Record<number, string> = {}
+  for (const [i, r] of Object.entries(removed)) if (who(r) !== 'unknown') del[Number(i)] = who(r)
+  return { add: added, del }
+}
+
+// A session says that changes in a file are its own: lines of the file as it is now, or all of them.
+// What changed before and was not looked at yet counts as yours first. Returns how many of the
+// file's changed lines it now has, or a reason why it has none.
+export async function claim(cwd: string, file: string, sid: string, lines: [number, number][] | 'all'): Promise<number | string> {
+  await refresh(cwd)
+  let p = file
+  try { p = fs.realpathSync(file) } catch { return 'There is no such file.' }
+  const vs = versions(p)
+  if (vs.length < 2) return 'Git shows no uncommitted changes in it (or it is over 1 MB).'
+  let text: string
+  try { text = fs.readFileSync(p, 'utf8') } catch { return 'Codinger cannot read it.' }
+  add(p, { ts: Date.now(), who: sid, text, claim: lines })
+  const w = await whoChanged(p)
+  return w ? Object.values(w.add).filter((x) => x === sid).length + Object.values(w.del).filter((x) => x === sid).length : 0
 }

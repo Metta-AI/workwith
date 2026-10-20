@@ -38,7 +38,7 @@ import { ESTIMATE_TOOLS, estimateTools, estimatesPrompt, estimatesReply } from '
 import { MAIL_TOOLS, flushMail, mailTools, release, startMail, stepped, takeMail, turnEnded, userWrote } from './mail.ts'
 import { AUTOPILOT_MODES, amount, nudge, startAutopilot, usedOf, verdict } from './autopilot.ts'
 import { blame, initFileHistory, moveHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
-import { refresh, toolEnded, toolStarted, whoChanged } from './changes.ts'
+import { claim, refresh, toolEnded, toolStarted, whoChanged } from './changes.ts'
 import { CLAUDE, authState, cancelLogin, childEnv, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
 import { deviceType, findDevice } from './device.ts'
 import { remoteCancelLink, remoteForget, remoteHub, remoteLink, remoteName, remoteOn, remoteProxy, remoteStatus, remoteUpgrade, startRemote } from './remote.ts'
@@ -241,7 +241,7 @@ function launchFor(meta: SessionMeta): () => Launch {
         '--mcp-config', JSON.stringify({ mcpServers: { codinger: { type: 'http', url: `http://127.0.0.1:${PORT}/mcp/${MCP_TOKEN}/look/${meta.id}` } } }),
         // Started with your MCP servers off: only Codinger's, until one is turned on (server/mcpservers.ts).
         ...(meta.mcp ? ['--strict-mcp-config'] : []),
-        '--allowedTools', `mcp__codinger__set_look,mcp__codinger__set_title,mcp__codinger__start_task,mcp__codinger__stop_task,mcp__codinger__list_tasks,mcp__codinger__show_artifact,mcp__codinger__show_file,${MAIL_TOOLS.map((t) => `mcp__codinger__${t}`).join(',')}${settings.estimates !== false ? ESTIMATE_TOOLS.map((t) => `,mcp__codinger__${t}`).join('') : ''}${meta.mcp && settings.mcpClaude !== false ? ',mcp__codinger__use_mcp_server' : ''}`,
+        '--allowedTools', `mcp__codinger__set_look,mcp__codinger__set_title,mcp__codinger__claim_changes,mcp__codinger__start_task,mcp__codinger__stop_task,mcp__codinger__list_tasks,mcp__codinger__show_artifact,mcp__codinger__show_file,${MAIL_TOOLS.map((t) => `mcp__codinger__${t}`).join(',')}${settings.estimates !== false ? ESTIMATE_TOOLS.map((t) => `,mcp__codinger__${t}`).join('') : ''}${meta.mcp && settings.mcpClaude !== false ? ',mcp__codinger__use_mcp_server' : ''}`,
         // Artifacts live in one folder for every session (server/artifacts.ts).
         '--add-dir', ARTIFACTS,
       ],
@@ -645,6 +645,43 @@ function titleTool(id: string): Tool {
       m.title = t
       metaChanged()
       return m.titleBefore != null ? `Renamed to "${t}". The user had named it "${m.titleBefore}" and can undo this.` : `Renamed to "${t}".`
+    },
+  }
+}
+
+// Codinger names who made each uncommitted change from the times of tool calls (server/changes.ts);
+// when a shell command ran while another session or the user changed the same file, the agent fixes it.
+function claimTool(id: string): Tool {
+  return {
+    name: 'claim_changes',
+    description: "Say which uncommitted changes in files are yours, when Codinger may name the wrong author for them in its Changes view: after a shell command that ran while another session or the user changed the same file, or for changes from before Codinger kept track. Call it before you ask for a review with a <review> tag. For each file, give the lines you changed in the file as it is now, or no lines when all its uncommitted changes are yours.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          items: { type: 'object', properties: { path: { type: 'string', description: 'Relative to the session\'s directory, or absolute' }, lines: { type: 'string', description: 'Line ranges in the file as it is now, like "12-20, 31"; leave out for all' } }, required: ['path'] },
+        },
+      },
+      required: ['files'],
+    },
+    run: async (args) => {
+      const s = get(id)
+      const files = Array.isArray(args?.files) ? args.files : []
+      if (!files.length) return 'Give the files, each with a path and maybe lines.'
+      const out: string[] = []
+      for (const f of files) {
+        const rel = String(f?.path ?? '').trim()
+        if (!rel) continue
+        let lines: [number, number][] | 'all' = 'all'
+        if (f.lines != null && String(f.lines).trim()) {
+          lines = [...String(f.lines).matchAll(/(\d+)\s*(?:-\s*(\d+))?/g)].map((m) => [Number(m[1]), Number(m[2] ?? m[1])] as [number, number])
+          if (!lines.length) { out.push(`${rel}: give lines like "12-20, 31".`); continue }
+        }
+        const r = await claim(s.meta.cwd, path.resolve(s.meta.cwd, expandHome(rel)), s.meta.id, lines)
+        out.push(typeof r === 'string' ? `${rel}: ${r}` : `${rel}: ${r} changed ${r === 1 ? 'line is' : 'lines are'} yours now.`)
+      }
+      return out.join('\n')
     },
   }
 }
@@ -1524,7 +1561,7 @@ const server = http.createServer(async (req, res) => {
       return await handleMcp(req, res, lead ? [...tools, lookTool(lead.meta.id)] : tools)
     }
     const look = url.pathname.startsWith(`/mcp/${MCP_TOKEN}/look/`) && url.pathname.split('/').pop()
-    if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look), mcpTool(look), artifactTool(look), fileTool(look), ...(settings.estimates !== false ? [spendTool(look), ...estimateTools(look, () => get(look).meta)] : []), ...taskTools(look), ...mailTools(look)])
+    if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look), claimTool(look), mcpTool(look), artifactTool(look), fileTool(look), ...(settings.estimates !== false ? [spendTool(look), ...estimateTools(look, () => get(look).meta)] : []), ...taskTools(look), ...mailTools(look)])
     // The web UI asks this first; here it is a machine's own page.
     if (url.pathname === '/_remote/whoami') return send(res, 200, { web: false })
     if (url.pathname.startsWith('/api/remote/m/') || url.pathname.startsWith('/api/remote/machines')) return await remoteProxy(req, res, url)

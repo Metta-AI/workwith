@@ -173,7 +173,7 @@ export function ReviewCard({ sid, group, title, text, files, live }: { sid: stri
   const v = of(group, '')
   const review: Review = { key: group, label: title || 'Review', files: paths, asked: true }
   return (
-    <div className={`rv-ask${v.verdict ? ` ${v.verdict}` : ''}`} data-pid="review-card">
+    <div className="rv-ask" data-pid="review-card">
       <div className="rv-ask-head">
         <span className="rv-asked">For review</span>
         <span className="rv-label" dangerouslySetInnerHTML={{ __html: renderInline(title || 'Review') }} />
