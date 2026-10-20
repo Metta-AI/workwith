@@ -686,7 +686,7 @@ function overview(text: string): string {
   return text
     .replace(/^```ask\b[^\n]*\n([\s\S]*?)^```[ \t]*$/gm, (_, body: string) => `Q: ${body.split('\n')[0]}`)
     .replace(/^\s*<ask\b[^>]*>\s*\n?([^\n]*)[\s\S]*?<\/ask>\s*$/gm, (_, q: string) => `Q: ${q}`)
-    .replace(/^\s*<\/?(answer|details|consider|run)\b[^>]*>\s*$/gm, '')
+    .replace(/^\s*<\/?(answer|details|consider|run|review)\b[^>]*>\s*$/gm, '')
     .trim().slice(-400)
 }
 

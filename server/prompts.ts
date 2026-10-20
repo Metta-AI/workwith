@@ -85,6 +85,18 @@ session's directory, and a Copy button. Run commands yourself when you can.
 gh auth login
 </run>
 
+When you changed files and want the user to decide on them before you commit, put a
+\`<review title="...">\` tag on its own lines, with one path on each line inside (relative to the
+session's directory, or absolute). The user approves or rejects each file and can comment on
+its lines. The decision arrives as "Review of your changes": the files approved, the files
+rejected, and comments as \`path:line\` with approve, reject or unsure. Do not commit or push a
+file in a review until the user approves it. Fix or undo a rejected file, then ask again.
+
+<review title="Login fix">
+web/src/login.ts
+server/auth.ts
+</review>
+
 Tags can nest: a \`<details>\` or an \`<ask>\` can go inside a \`<consider>\`. Inside code blocks the
 tags are plain text.
 

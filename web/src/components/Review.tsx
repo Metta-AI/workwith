@@ -1,29 +1,55 @@
-// The For review section at the top of the Files tab (FileBrowser.tsx): the files the agent changed,
-// one group for each turn, each file with approve or reject, a group all at once, and the counts of
-// what you approved, rejected and have left. A comment on lines of a file (LineCard) shows in the
+// The For review section at the top of the Files tab (FileBrowser.tsx): the files the agent asked you
+// to decide on (a <review> tag) and the files it changed in each turn, each with approve or reject, a
+// group all at once, and the counts of what you approved, rejected and have left. Only what waits for
+// you shows: a file goes when you send its verdict, and a file of a turn when git has it committed. A comment on lines of a file (LineCard) shows in the
 // file's view (FileView.tsx). They all go to the agent with your other replies (store.ts queuedParts).
 
 import { useState } from 'react'
 import type { SessionMeta } from '../../../shared/types.ts'
 import type { LineVerdict, Verdict } from '../../../shared/review.ts'
-import { removeDraft, useStore, type LineDraft } from '../store.ts'
-import { groupsOf, setVerdict, updateLine, verdictsOf, type Group } from '../review.ts'
+import { changed, removeDraft, state, useStore, type LineDraft } from '../store.ts'
+import { groupsOf, resolve, setVerdict, uncommittedOf, updateLine, verdictsOf, type Group } from '../review.ts'
 import { CheckIcon, ChevronIcon, TrashIcon, XIcon } from './Icons.tsx'
+import { renderInline } from '../util.ts'
 import { baseName, dirName, ltr } from './FileView.tsx'
-import { FileTypeIcon } from './FileBrowser.tsx'
+import { FileTypeIcon, openFile } from './FileBrowser.tsx'
 
-const RECENT = 5   // the newest groups always show; older ones only when they have a verdict
+const RECENT = 5   // outside a git repository, the files of the newest turns show
 
-export function useReview(m: SessionMeta, all = false) {
+// The groups with what waits for you (decided: also the files whose verdict you sent). A file shows
+// only in the newest group that has it: its changes show as one diff, whichever turn made them. n: your verdicts
+// not sent yet, and the files left; asked: the files left that the agent asked about with a tag.
+export function useReview(m: SessionMeta, decided = false) {
   const st = useStore()
-  const groups = groupsOf(m.id, m.status === 'working' || m.status === 'permission')
+  const groups = groupsOf(m.id, m.cwd, m.status === 'working' || m.status === 'permission')
   const of = verdictsOf(m.id)
-  const touched = (g: Group) => g.files.some((f) => of(g.key, f).verdict)
-  const shown = all ? groups : groups.filter((g, i) => i < RECENT || touched(g))
+  const git = uncommittedOf(m.id)
+  const inCwd = (f: string) => f.startsWith(m.cwd + '/') ? f.slice(m.cwd.length + 1) : null
+  const shown: Group[] = []
+  let turns = 0, sent = 0
+  const seen = new Set<string>()
+  for (const g of groups) {
+    const recent = g.asked || turns++ < RECENT
+    const files = g.files.filter((f) => {
+      if (seen.has(f)) return false
+      const v = of(g.key, f)
+      if (v.verdict && !v.sent) return true
+      if (v.sent) { sent++; return decided }
+      if (g.asked || g.live) return true
+      const r = inCwd(f)
+      return git && r != null ? git.has(r) : recent
+    })
+    for (const f of g.files) seen.add(f)
+    if (files.length) shown.push({ ...g, files })
+  }
   const n = { approve: 0, reject: 0, left: 0 }
-  for (const g of shown) for (const f of g.files) { const v = of(g.key, f).verdict; if (v) n[v]++; else n.left++ }
+  let asked = 0
+  for (const g of shown) for (const f of g.files) {
+    const v = of(g.key, f)
+    if (!v.verdict) { n.left++; if (g.asked) asked++ } else if (!v.sent) n[v.verdict]++
+  }
   const comments = (st.drafts[m.id] ?? []).filter((d) => d.kind === 'line' && d.text.trim()).length
-  return { groups, shown, of, n, comments, hidden: groups.length - shown.length }
+  return { shown, of, n, asked, comments, sent }
 }
 
 // The group for review of a file: the one you opened it from, or else the newest that has it.
@@ -56,10 +82,10 @@ export function VerdictButtons({ value, sent, onSet, label }: { value?: Verdict;
 type Props = { m: SessionMeta; rel(p: string): string; isOn(p: string): boolean; onOpen(path: string, group: string): void }
 
 export function ReviewSection({ m, rel, isOn, onOpen }: Props) {
-  const [all, setAll] = useState(false)
+  const [decided, setDecided] = useState(false)
   const [flip, setFlip] = useState<Set<string>>(new Set())   // groups you opened or closed against their default
-  const { shown, of, n, comments, hidden } = useReview(m, all)
-  if (!shown.length) return null
+  const { shown, of, n, comments, sent } = useReview(m, decided)
+  if (!shown.length && !sent) return null
   return (
     <div className="fb-group rv" data-pid="review">
       <div className="attention-head rv-head">For review<span className="grow" /><Counts n={n} comments={comments} /></div>
@@ -74,6 +100,7 @@ export function ReviewSection({ m, rel, isOn, onOpen }: Props) {
           <div key={g.key} className="rv-group" data-pid={`review-group-${g.key}`}>
             <div className="rv-ghead" onClick={toggle}>
               <span className={`fb-chev${open ? ' open' : ''}`}><ChevronIcon size={10} /></span>
+              {g.asked && <span className="rv-asked">Asked</span>}
               <span className="rv-label">{g.label}</span>
               <span className="muted rv-meta">{g.live ? 'working' : left ? `${left} of ${g.files.length} left` : `${g.files.length} done`}</span>
               <VerdictButtons value={same} sent={vs.every((v) => v.sent)} onSet={all} />
@@ -89,10 +116,50 @@ export function ReviewSection({ m, rel, isOn, onOpen }: Props) {
           </div>
         )
       })}
-      {hidden > 0 && <button className="link rv-older" onClick={() => setAll(true)}>Show {hidden} older {hidden === 1 ? 'turn' : 'turns'}</button>}
-      {all && <button className="link rv-older" onClick={() => setAll(false)}>Show only the newest turns</button>}
+      {!shown.length && <div className="fb-note muted">Nothing waits for your decision.</div>}
+      {sent > 0 && <button className="link rv-older" onClick={() => setDecided(!decided)}>{decided ? 'Hide the files you decided' : `Show the files you decided (${sent})`}</button>}
     </div>
   )
+}
+
+// A <review> tag in a reply: the files the agent asks you to decide on, each with its verdict.
+// A click on a file opens it on its changes in the Files tab.
+export function ReviewCard({ sid, group, title, files, live }: { sid: string; group: string; title: string; files: string[]; live: boolean }) {
+  const st = useStore()
+  const m = st.sessions.find((x) => x.id === sid)
+  const cwd = m?.cwd ?? ''
+  const of = verdictsOf(sid)
+  const ro = !!state.share || live
+  const paths = files.map((f) => resolve(f, cwd))
+  const rel = (p: string) => p.startsWith(cwd + '/') ? p.slice(cwd.length + 1) : p
+  const left = paths.filter((p) => !of(group, p).verdict).length
+  const show = () => { const first = paths.find((p) => !of(group, p).verdict) ?? paths[0]; if (first) openFile(sid, first, true, group) }
+  return (
+    <div className="rv-ask" data-pid="review-card">
+      <div className="rv-ask-head">
+        <span className="rv-asked">For review</span>
+        <span className="rv-label" dangerouslySetInnerHTML={{ __html: renderInline(title || 'Review') }} />
+        <span className="muted rv-meta">{left ? `${left} of ${paths.length} left` : `${paths.length} decided`}</span>
+        {!ro && <button className="link" onClick={show}>Open in Files</button>}
+      </div>
+      {paths.map((p) => {
+        const v = of(group, p)
+        return (
+          <div key={p} className="fb-row rv-file" role="button" tabIndex={0} onClick={() => openFile(sid, p, true, group)}>
+            <FileTypeIcon name={p} /><span className="fb-name">{baseName(p)}</span>
+            <span className="fb-dir muted">{ltr(dirName(rel(p)))}</span>
+            {!ro && <VerdictButtons value={v.verdict} sent={v.sent} onSet={(x) => setVerdict(sid, group, p, rel(p), x)} />}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// Shows the Files tab, where the For review section is.
+export function showReview() {
+  state.panelTab = 'files'
+  changed()
 }
 
 const LINE_WORDS: [LineVerdict, string][] = [['approve', 'Approve'], ['reject', 'Reject'], ['unsure', 'Unsure']]

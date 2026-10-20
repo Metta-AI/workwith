@@ -8,6 +8,8 @@
 //   <run title="…"> … </run>            a command for the user to run; the UI offers a button
 //   <draft id="…" title="…"> … </draft> text for the user to edit and send back (a commit
 //                                       message, an email); an item, answered like an <ask>
+//   <review title="…"> … </review>      files the agent asks you to approve or reject, one
+//                                       path on each line (the Files tab, web/src/review.ts)
 //
 //   <autopilot-stop reason="…"/>       Claude ends autopilot (server/autopilot.ts); not shown
 //
@@ -18,11 +20,11 @@
 
 import { parseAskBody, parseAsks, type Ask } from './asks.ts'
 
-export type SectionKind = 'answer' | 'details' | 'consider' | 'ask' | 'run' | 'draft'
+export type SectionKind = 'answer' | 'details' | 'consider' | 'ask' | 'run' | 'draft' | 'review'
 export type Section = { kind: SectionKind; title: string; attrs: Record<string, string>; body: Segment[]; closed: boolean }
 export type Segment = { text: string } | Section
 
-const TAGS = 'answer|details|consider|ask|run|draft'
+const TAGS = 'answer|details|consider|ask|run|draft|review'
 const OPEN = new RegExp(`^\\s*<(${TAGS})((?:\\s+[\\w-]+(?:\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]+))?)*)\\s*>(.*)$`)
 const CLOSE = new RegExp(`^(.*?)</(${TAGS})>\\s*$`)
 const LEGACY = /^:::\s*(summary|more|consider)\b\s*(.*)$/
@@ -122,6 +124,25 @@ export function draftOf(sec: Section, index: number): Ask {
 export function commandOf(sec: Section): string {
   const body = sec.body.map((s) => ('text' in s ? s.text : '')).join('\n').trim()
   return (/^(`{3,}|~{3,})[^\n]*\n([\s\S]*?)\n\1\s*$/.exec(body)?.[2] ?? body).trim()
+}
+
+// The paths in a <review> section: one on each line, maybe in a list or in backticks, maybe with :line.
+export function reviewFilesOf(sec: Section): string[] {
+  const body = sec.body.map((s) => ('text' in s ? s.text : '')).join('\n')
+  const out: string[] = []
+  for (const line of body.split('\n')) {
+    const p = line.trim().replace(/^[-*+]\s+/, '').replace(/^`([^`]+)`.*$/, '$1').replace(/:\d+(?:[-:]\d+)?$/, '').trim()
+    if (p && !out.includes(p)) out.push(p)
+  }
+  return out
+}
+
+// The <review> sections of a message, in order.
+export function reviewsOf(text: string): { title: string; files: string[] }[] {
+  const out: { title: string; files: string[] }[] = []
+  const walk = (segs: Segment[]) => { for (const s of segs) if (!('text' in s)) { if (s.kind === 'review') out.push({ title: s.title, files: reviewFilesOf(s) }); else walk(s.body) } }
+  walk(segmentsOf(text))
+  return out
 }
 
 // Things in a message that want a response: questions and items to consider.

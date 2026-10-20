@@ -47,7 +47,7 @@ import {
 } from './store.ts'
 import { embedOf, mediaKind, mediaType } from '../shared/media.ts'
 import { MEDIA_MAX, MEDIA_PART, keepMedia, mediaFile } from './media.ts'
-import { allowed, diffOf, findFiles, isSecret, isText, listDir } from './files.ts'
+import { allowed, diffOf, findFiles, isSecret, isText, listDir, uncommitted } from './files.ts'
 import { ARTIFACTS, artifactsChanged, artifactsPrompt, checkArtifact, forgetPublish, listArtifacts, noteTool, reportOf, setVisibility, showArtifact, startPublish, startHost, typeOf, watchArtifacts } from './artifacts.ts'
 import { connectCallback, connectUrl, disconnect as prolificaDisconnect, prolificaState } from './prolifica.ts'
 import { buildShare, publishShare, unpublishShare } from './share.ts'
@@ -1323,6 +1323,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     return send(res, 200, { path: abs, kind: 'file', size: st.size, mtime: st.mtimeMs })
   }
   if (b === 'find' && method === 'GET') return send(res, 200, await findFiles(path.resolve(s.meta.cwd), url.searchParams.get('q') ?? ''))
+  if (b === 'uncommitted' && method === 'GET') return send(res, 200, { files: await uncommitted(s.meta.cwd) })
   if (b === 'diff' && method === 'GET') {
     const abs = allowed(s.meta, s.getEvents(), url.searchParams.get('path') || '')
     if (!abs || !fs.existsSync(abs)) throw new HttpError(404, 'No such file, or not one this session can show')

@@ -9,6 +9,7 @@ import { useItems } from '../items.ts'
 import { ArtifactIcon, ArtifactPane, NarrowIcon, WideIcon } from './Artifacts.tsx'
 import { AttentionPanel, ItemCount } from './AttentionPanel.tsx'
 import { FileBrowser } from './FileBrowser.tsx'
+import { useReview } from './Review.tsx'
 import { FolderIcon, PanelIcon, XIcon } from './Icons.tsx'
 import type { SessionMeta } from '../../../shared/types.ts'
 
@@ -22,12 +23,13 @@ export function SidePanel({ m, tab, tabs, width, full, wide, auto, onTab, onWide
   const [seen, setSeen] = useState<Set<PanelTab>>(() => new Set([tab]))
   if (!seen.has(tab)) setSeen(new Set([...seen, tab]))
   const waiting = useItems(m.id).filter((i) => i.status === 'open')
+  const left = useReview(m).n.left
   return (
     <aside className={`side-panel${wide ? ' wide' : ''}`} style={wide ? undefined : { width }} data-pid="side-panel">
       <div className="panel-tabs" role="tablist">
         {tabs.map((t) => (
           <button key={t} role="tab" aria-selected={t === tab} className={`panel-tab${t === tab ? ' on' : ''}`} data-pid={`panel-tab-${t}`} onClick={() => onTab(t)}>
-            {ICON[t]}<span>{LABEL[t]}</span>{t === 'items' && waiting.length > 0 && <ItemCount items={waiting} />}
+            {ICON[t]}<span>{LABEL[t]}</span>{t === 'items' && waiting.length > 0 && <ItemCount items={waiting} />}{t === 'files' && left > 0 && <span className="count rv-count">{left}</span>}
           </button>
         ))}
         <span className="grow" />

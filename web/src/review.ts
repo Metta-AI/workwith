@@ -1,13 +1,16 @@
 // The changes for review (the For review section of the Files tab, components/Review.tsx): a group is
-// the files the agent wrote or edited in one turn. Your verdicts wait as drafts (store.ts VerdictDraft)
-// until you send; then the sent message keeps them (a 'review' part), so the counts still know them.
+// the files of a <review> tag in a reply (the agent asks for a decision), or else the files the agent
+// wrote or edited in one turn. Your verdicts wait as drafts (store.ts VerdictDraft) until you send;
+// then the sent message keeps them (a 'review' part).
 
 import type { Event } from '../../shared/types.ts'
 import type { Verdict } from '../../shared/review.ts'
-import { addDraft, changed, draftsOf, removeDraft, state, uid, type LineDraft, type VerdictDraft } from './store.ts'
+import { reviewsOf } from '../../shared/blocks.ts'
+import { addDraft, changed, draftsOf, localId, machineOf, media, removeDraft, state, uid, type LineDraft, type VerdictDraft } from './store.ts'
 
-// key: the seq of the message that started the turn ('0' before the first one).
-export type Group = { key: string; label: string; ts: number; files: string[]; live: boolean }
+// key: for a turn, the seq of the message that started it ('0' before the first one); for a <review>
+// tag, "<seq>.<block>:r<n>" (its message and its place in it). asked: the agent asked with a tag.
+export type Group = { key: string; label: string; ts: number; files: string[]; live: boolean; asked?: boolean }
 
 const EDIT = /^(Write|Edit|MultiEdit|NotebookEdit)$/
 // The agent's own notes and memory are not changes to review.
@@ -20,19 +23,33 @@ const firstWords = (e: Extract<Event, { t: 'user' }>) => {
   return t ? (t.length > 60 ? t.slice(0, 60) + '…' : t) : 'Your replies'
 }
 
-// The groups, newest first. busy: the agent still works on the last turn.
-export function groupsOf(sid: string, busy: boolean): Group[] {
+// A path in a <review> tag: absolute, ~/, or under the session's folder.
+export const resolve = (p: string, cwd: string) => p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p) ? p
+  : p.startsWith('~/') && state.home ? state.home + p.slice(1)
+  : cwd + '/' + p.replace(/^\.\//, '')
+
+// The groups, newest first. busy: the agent still works on the last turn. The files of a turn that
+// a <review> tag in it names are in that group, not in the turn's.
+export function groupsOf(sid: string, cwd: string, busy: boolean): Group[] {
   const out: Group[] = []
   let cur: Group = { key: '0', label: 'Start of the session', ts: 0, files: [], live: false }
-  const close = () => { if (cur.files.length) out.push(cur) }
+  let asked: Group[] = []
+  const close = () => {
+    const named = new Set(asked.flatMap((g) => g.files))
+    cur.files = cur.files.filter((f) => !named.has(f))
+    if (cur.files.length) out.push(cur)
+    out.push(...asked.filter((g) => g.files.length))
+    asked = []
+  }
   for (const e of state.events[sid] ?? []) {
     if (e.t === 'user') { close(); cur = { key: String(e.seq), label: firstWords(e), ts: e.ts, files: [], live: false }; continue }
-    if (e.t !== 'assistant') continue
-    for (const b of e.blocks) {
-      if (b.type !== 'tool_use' || !EDIT.test(b.name)) continue
+    if (e.t !== 'assistant' || e.synthetic) continue
+    e.blocks.forEach((b, i) => {
+      if (b.type === 'text') reviewsOf(b.text).forEach((r, n) => asked.push({ key: `${e.seq}.${i}:r${n + 1}`, label: r.title || 'Review', ts: e.ts, files: r.files.map((f) => resolve(f, cwd)), live: false, asked: true }))
+      if (b.type !== 'tool_use' || !EDIT.test(b.name)) return
       const p = b.input?.file_path ?? b.input?.notebook_path
       if (typeof p === 'string' && !own(p) && !cur.files.includes(p)) cur.files.push(p)
-    }
+    })
   }
   if (busy) cur.live = true
   close()
@@ -79,4 +96,22 @@ export function addLine(sid: string, c: Omit<LineDraft, 'id' | 'kind' | 'created
 export function updateLine(sid: string, id: string, patch: Partial<Pick<LineDraft, 'text' | 'verdict'>>) {
   state.drafts[sid] = draftsOf(sid).map((d) => d.id === id && d.kind === 'line' ? { ...d, ...patch } : d)
   changed()
+}
+
+// The files of each session's folder with changes git has not committed (relative to the folder when
+// they are in it); null: no git repository, or not known yet. Asked again 1.5 s after the agent did
+// more, and when it is older than 15 s (a commit you made yourself).
+const pending = new Map<string, { n: number; at: number; files: Set<string> | null; timer?: number }>()
+export function uncommittedOf(sid: string): Set<string> | null {
+  const n = state.events[sid]?.length ?? 0
+  const had = pending.get(sid) ?? { n: -1, at: 0, files: null }
+  if (had.timer || (had.n === n && Date.now() - had.at < 15000)) return had.files
+  had.timer = window.setTimeout(() => {
+    void fetch(media(`/api/sessions/${localId(sid)}/uncommitted`, machineOf(sid)))
+      .then((r) => r.ok ? r.json() : { files: null })
+      .then((j: { files: string[] | null }) => { pending.set(sid, { n, at: Date.now(), files: j.files ? new Set(j.files) : null }); changed() })
+      .catch(() => { pending.set(sid, { n, at: Date.now(), files: null }) })
+  }, had.n < 0 ? 0 : 1500)
+  pending.set(sid, had)
+  return had.files
 }

@@ -11,7 +11,7 @@ import { flushSync } from 'react-dom'
 import type { Token, Tokens } from 'marked'
 import DOMPurify from 'dompurify'
 import { parseAskBody, type Ask } from '../../../shared/asks.ts'
-import { askOf, commandOf, draftOf, isCritical, isTask, segmentsOf, type Segment } from '../../../shared/blocks.ts'
+import { askOf, commandOf, draftOf, isCritical, isTask, reviewFilesOf, segmentsOf, type Segment } from '../../../shared/blocks.ts'
 import type { Anchor } from '../../../shared/types.ts'
 import { holdKeyboard, marked, renderInline, renderText, served } from '../util.ts'
 import { anchorFromRange, mediaIn, passageQuote, rangesFor, setHighlights } from '../anchoring.ts'
@@ -22,6 +22,7 @@ import { focusField, RichInput, Thumbs } from './Inputs.tsx'
 import { CheckIcon, ChevronIcon, CommentIcon, TerminalIcon, UndoIcon, XIcon } from './Icons.tsx'
 import { EmojiPicker } from './EmojiPicker.tsx'
 import { openFile } from './FileBrowser.tsx'
+import { ReviewCard } from './Review.tsx'
 import { focusPassage, onPassage } from './Margin.tsx'
 import { lastEmoji, topEmoji, usedEmoji } from '../emoji.ts'
 import { highlight } from '../highlight.ts'
@@ -60,16 +61,18 @@ type Piece =
   | { kind: 'html'; html: string; block: number }
   | { kind: 'ask'; ask: Ask; block: number }
   | { kind: 'run'; title: string; command: string; block: number; closed: boolean }
+  | { kind: 'review'; title: string; files: string[]; n: number; block: number }
   | SectionPiece
 
 function piecesOf(text: string): Piece[] {
   // Block numbers run through the whole message; without sections they are the token indices.
-  let base = 0, asks = 0, considers = 0, drafts = 0
+  let base = 0, asks = 0, considers = 0, drafts = 0, reviews = 0
   const walk = (segs: Segment[]): Piece[] => segs.flatMap((s): Piece[] => {
     if (!('text' in s)) {
       if (s.kind === 'ask') return [{ kind: 'ask', block: base++, ask: askOf(s, asks++) }]
       if (s.kind === 'draft') return [{ kind: 'ask', block: base++, ask: draftOf(s, drafts++) }]
       if (s.kind === 'run') return [{ kind: 'run', block: base++, title: s.title, command: commandOf(s), closed: s.closed }]
+      if (s.kind === 'review') return [{ kind: 'review', block: base++, title: s.title, files: reviewFilesOf(s), n: ++reviews }]
       const id = s.kind === 'consider' ? `c${++considers}` : ''
       return [{ kind: s.kind, title: s.title, id, block: base++, closed: s.closed, task: s.kind === 'consider' && isTask(s), critical: s.kind === 'consider' && isCritical(s), pieces: walk(s.body) }]
     }
@@ -623,6 +626,7 @@ function Pieces({ c, pieces }: { c: Ctx; pieces: Piece[] }) {
         </details>
       )
       case 'consider': return <ConsiderCard key={p.block} c={c} p={p} />
+      case 'review': return <ReviewCard key={p.block} sid={c.sid} group={`${c.msg}:r${p.n}`} title={p.title} files={p.files} live={c.live} />
       case 'run': return <RunCard key={p.block} c={c} card={`${c.msg}:${p.block}`} block={p.block} title={p.title} command={p.command} ready={p.closed && !c.live} />
     }
   })}</>

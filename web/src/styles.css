@@ -373,6 +373,13 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .rv-btn.approve.on.sent { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
 .rv-btn.reject.on.sent { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
 .rv-older { display: block; margin: 4px 0 0 19px; font-size: calc(12px * var(--fs, 1)); }
+.rv-asked { flex: none; font-size: calc(10.5px * var(--fs, 1)); text-transform: uppercase; letter-spacing: .04em; color: var(--blue); }
+.count.rv-count { background: var(--blue); }
+/* A <review> tag in a reply (ReviewCard): a filled card with the files and their verdicts. */
+.rv-ask { margin: 8px 0; padding: 6px 8px 6px; border-radius: 8px; background: color-mix(in srgb, var(--blue) 8%, var(--card)); }
+.rv-ask-head { display: flex; align-items: center; gap: 8px; padding: 0 4px 4px; font-size: calc(13px * var(--fs, 1)); }
+.rv-ask .rv-file { padding-left: 4px; }
+.rv-ask .rv-file:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
 .rv-bar { padding: 0 0 6px; gap: 6px; }
 .rv-sent { font-size: calc(11.5px * var(--fs, 1)); }
 .rv-next { font-size: calc(12px * var(--fs, 1)); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

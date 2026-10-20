@@ -157,6 +157,28 @@ export async function diffOf(file: string): Promise<{ status: 'changed' | 'new' 
   return { status: d.out.trim() ? 'changed' : 'same', diff: d.out }
 }
 
+// The files with changes that are not committed in the git repository of a folder (new files too):
+// relative to the folder when they are in it, else absolute; null outside a repository.
+export async function uncommitted(dir: string): Promise<string[] | null> {
+  const top = await run('git', ['rev-parse', '--show-toplevel'], dir)
+  if (!top.ok) return null
+  const root = top.out.trim()
+  const real = fs.realpathSync(dir)
+  const st = await run('git', ['status', '--porcelain', '-z', '--untracked-files=all'], root)
+  if (!st.ok) return null
+  const out: string[] = []
+  const recs = st.out.split('\0')
+  for (let i = 0; i < recs.length; i++) {
+    const r = recs[i]
+    if (r.length < 4) continue
+    const abs = path.join(root, r.slice(3))
+    const rel = path.relative(real, abs)
+    out.push(rel.startsWith('..') || path.isAbsolute(rel) ? abs : rel)
+    if (r[0] === 'R' || r[0] === 'C') i++   // a rename has its old path in the next record
+  }
+  return out
+}
+
 // Whether a file is text: no NUL in its first 8 KB.
 export function isText(file: string): boolean {
   try {
