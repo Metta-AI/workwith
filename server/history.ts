@@ -225,7 +225,13 @@ export function entryBefore(csid: string, msg: { uuid?: string; text: string; nt
   const entries: any[] = []
   for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
     if (!line.startsWith('{')) continue
-    try { const m = JSON.parse(line); if (m.type === 'user' && !m.isSidechain) entries.push(m) } catch { /* torn write */ }
+    try {
+      const m = JSON.parse(line)
+      if (m.isSidechain) continue
+      if (m.type === 'user') entries.push(m)
+      // A message sent while Claude was busy goes in mid-turn as an attachment, with our uuid as its source_uuid.
+      else if (m.type === 'attachment' && m.attachment?.type === 'queued_command') entries.push({ type: 'user', uuid: m.attachment.source_uuid, parentUuid: m.parentUuid, message: { content: m.attachment.prompt } })
+    } catch { /* torn write */ }
   }
   let hit = msg.uuid ? entries.find((m) => m.uuid === msg.uuid) : undefined
   if (!hit && msg.text) {
