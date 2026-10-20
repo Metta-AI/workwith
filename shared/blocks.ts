@@ -158,7 +158,8 @@ export function reviewsOf(text: string): { title: string; text: string; files: s
 // done: the item is something to do, so it can be marked done (`done`, or it holds a <run>).
 // critical: the agent marked the item a big deal (`critical`), shown in red.
 // parent: the item to consider it sits in, if any.
-export type Item = ({ kind: 'ask'; id: string; label: string; ask: Ask } | { kind: 'consider'; id: string; label: string; done: boolean; critical: boolean }) & { parent?: string }
+// A <review> is an item too (r1, r2…): it waits for your decision (web/src/review.ts).
+export type Item = ({ kind: 'ask'; id: string; label: string; ask: Ask } | { kind: 'consider'; id: string; label: string; done: boolean; critical: boolean } | { kind: 'review'; id: string; label: string }) & { parent?: string }
 
 export const isCritical = (sec: Section): boolean => 'critical' in sec.attrs
 
@@ -166,7 +167,7 @@ export const isTask = (sec: Section): boolean => 'done' in sec.attrs || sec.body
 
 export function itemsOf(text: string): Item[] {
   const out: Item[] = []
-  let asks = 0, considers = 0, drafts = 0
+  let asks = 0, considers = 0, drafts = 0, reviews = 0
   const walk = (segs: Segment[], parent?: string) => {
     const under = parent ? { parent } : {}
     for (const s of segs) {
@@ -181,6 +182,8 @@ export function itemsOf(text: string): Item[] {
         const id = `c${++considers}`
         out.push({ kind: 'consider', id, label: s.title || 'Item', done: isTask(s), critical: isCritical(s), ...under })
         walk(s.body, id)
+      } else if (s.kind === 'review') {
+        out.push({ kind: 'review', id: `r${++reviews}`, label: s.title || 'Review', ...under })
       } else walk(s.body, parent)
     }
   }

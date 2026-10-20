@@ -61,7 +61,7 @@ const k = (group: string, path: string) => `${group}\n${path}`
 // The verdicts sent before, by group and file; the last one wins.
 function sentOf(sid: string): Map<string, Verdict> {
   const out = new Map<string, Verdict>()
-  for (const e of state.events[sid] ?? []) if (e.t === 'user') for (const p of e.parts) if (p.kind === 'review') for (const f of p.files) out.set(k(f.group, f.path), f.verdict)
+  for (const e of state.events[sid] ?? []) if (e.t === 'user') for (const p of e.parts) if (p.kind === 'review') for (const f of p.files) if (f.verdict) out.set(k(f.group, f.path), f.verdict)
   return out
 }
 
@@ -70,7 +70,7 @@ function sentOf(sid: string): Map<string, Verdict> {
 // own: only the file's own verdict, without the decision on its review.
 export function verdictsOf(sid: string, own = false): (group: string, path: string) => { verdict?: Verdict; sent: boolean } {
   const sent = sentOf(sid)
-  const drafts = new Map(draftsOf(sid).flatMap((d) => d.kind === 'verdict' ? [[k(d.group, d.path), d.verdict] as const] : []))
+  const drafts = new Map(draftsOf(sid).flatMap((d) => d.kind === 'verdict' && d.verdict ? [[k(d.group, d.path), d.verdict] as const] : []))
   return (group, path) => {
     const d = drafts.get(k(group, path)) ?? (own ? undefined : drafts.get(k(group, '')))
     if (d) return { verdict: d, sent: false }
@@ -85,14 +85,17 @@ export function setVerdict(sid: string, group: string, path: string, rel: string
   const sent = sentOf(sid).get(k(group, path))
   const had = draftsOf(sid).find((d): d is VerdictDraft => d.kind === 'verdict' && d.group === group && d.path === path)
   state.drafts[sid] = draftsOf(sid).filter((d) => d !== had)
-  if (verdict && (verdict !== sent || had?.text)) state.drafts[sid].push({ id: uid(), kind: 'verdict', group, path, rel, verdict, ...(had?.text ? { text: had.text } : {}), createdAt: Date.now() } satisfies VerdictDraft)
+  // A note stays without a verdict.
+  if ((verdict && (verdict !== sent || had?.text)) || (!verdict && had?.text)) state.drafts[sid].push({ id: uid(), kind: 'verdict', group, path, rel, ...(verdict ? { verdict } : {}), ...(had?.text ? { text: had.text } : {}), createdAt: Date.now() } satisfies VerdictDraft)
   changed()
 }
 
-// Your note with the decision on a whole review.
+// Your note on a whole review, with your decision or before it.
 export const decisionOf = (sid: string, group: string) => draftsOf(sid).find((d): d is VerdictDraft => d.kind === 'verdict' && d.group === group && !d.path)
-export function setDecisionText(sid: string, group: string, text: string) {
-  state.drafts[sid] = draftsOf(sid).map((d) => d.kind === 'verdict' && d.group === group && !d.path ? { ...d, text } : d)
+export function setDecisionText(sid: string, group: string, label: string, text: string) {
+  const d = decisionOf(sid, group)
+  if (d) state.drafts[sid] = draftsOf(sid).flatMap((x) => x !== d ? [x] : d.verdict || text ? [{ ...d, text }] : [])
+  else if (text) state.drafts[sid] = [...draftsOf(sid), { id: uid(), kind: 'verdict', group, path: '', rel: label, text, createdAt: Date.now() } satisfies VerdictDraft]
   changed()
 }
 

@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { showReview, useReview } from './Review.tsx'
 import type { Mail, PermissionMode, SessionMeta, SlashCommand } from '../../../shared/types.ts'
 import { MAX_RUN } from '../../../shared/mail.ts'
 import { api, changed, closeSession, composerOf, draftsOf, hasContent, loadEvents, queuedParts, select, sendQueued, setComposer, state, undismissItem, useStore, deselect, globalId, machineOf, localId, quietly, type PanelTab } from '../store.ts'
@@ -411,11 +410,6 @@ export function Composer({ m, attachRef }: { m: SessionMeta; attachRef?: React.R
   const [warned, setWarned] = useState(false)
   useEffect(() => { if (!open.length) setWarned(false) }, [open.length])
   useEffect(() => setWarned(false), [m.id])
-  // Files the agent asked you to decide on (a <review> tag) and you have not: sending warns once too.
-  const review = useReview(m).asked
-  const [reviewWarned, setReviewWarned] = useState(false)
-  useEffect(() => { if (!review) setReviewWarned(false) }, [review])
-  useEffect(() => setReviewWarned(false), [m.id])
   const slash = useSlashMenu(m.id, c.text, (text) => setComposer(m.id, { text }))
   const isCommand = /^\/[\w:.-]+/.test(c.text.trim()) && !c.images.length
   const n = isCommand ? 1 : queuedParts(m.id).length
@@ -429,7 +423,6 @@ export function Composer({ m, attachRef }: { m: SessionMeta; attachRef?: React.R
     if (!n || sending) return
     if (costly && !force) { setNudge((x) => x + 1); return }
     if (!isCommand && open.length && !warned) { setWarned(true); revealItem(open[0].key); return }
-    if (!isCommand && review && !reviewWarned) { setReviewWarned(true); showReview(); return }
     setSending(true)
     try {
       if (isCommand) {
@@ -444,7 +437,7 @@ export function Composer({ m, attachRef }: { m: SessionMeta; attachRef?: React.R
       <RunningTasks sid={m.id} />
       <Inbox m={m} />
       <Mailbox m={m} />
-      {(notes > 0 || verdicts > 0 || reactions > 0 || answers > 0 || dismissed > 0 || done > 0 || open.length > 0 || review > 0) && (
+      {(notes > 0 || verdicts > 0 || reactions > 0 || answers > 0 || dismissed > 0 || done > 0 || open.length > 0) && (
         <div className="queue">
           {verdicts > 0 && <span className="chip static">{verdicts} {verdicts === 1 ? 'verdict' : 'verdicts'}</span>}
           {notes > 0 && <span className="chip static">{notes} {notes === 1 ? 'comment' : 'comments'}</span>}
@@ -453,7 +446,6 @@ export function Composer({ m, attachRef }: { m: SessionMeta; attachRef?: React.R
           {done > 0 && <span className="chip static">{done} done</span>}
           {dismissed > 0 && <DismissedChip sid={m.id} />}
           {open.length > 0 && <button className={`chip open-chip${warned ? ' warn' : ''}`} onClick={() => revealItem(open[0].key)}>{open.length} open</button>}
-          {review > 0 && <button className={`chip open-chip${reviewWarned ? ' warn' : ''}`} data-pid="review-chip" onClick={showReview}>{review} to review</button>}
         </div>
       )}
       {costly && n > 0 && (

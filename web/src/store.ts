@@ -23,7 +23,8 @@ export type DoneDraft = { id: string; kind: 'done'; key: string; label: string; 
 // A command opened in Terminal from a <run> block (by token), and how it ended.
 export type Run = { sid: string; card: string; command: string; item?: { key: string; label: string }; code?: number; tail?: string }
 // Your verdict on a file the agent changed in one turn (group), and a comment on lines of a file (shared/review.ts).
-export type VerdictDraft = { id: string; kind: 'verdict'; group: string; path: string; rel: string; verdict: Verdict; text?: string; createdAt: number }
+// verdict: none on a note on a whole review (path '') before you decide.
+export type VerdictDraft = { id: string; kind: 'verdict'; group: string; path: string; rel: string; verdict?: Verdict; text?: string; createdAt: number }
 export type LineDraft = { id: string; kind: 'line'; createdAt: number } & LineComment
 export type Draft = NoteDraft | AnswerDraft | DismissDraft | DoneDraft | VerdictDraft | LineDraft
 export type Composer = { text: string; images: ImageRef[] }

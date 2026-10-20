@@ -96,8 +96,22 @@ export function VerdictButtons({ value, sent, onSet, label, words, big }: { valu
 const lines = (t: string) => t.split(/(^```[\s\S]*?^```)/m).map((x, i) => i % 2 ? x : x.replace(/([^\n])\n(?![\n\s]|[-*+] |[>#|]|\d+\. )/g, '$1  \n')).join('')
 const Say = ({ text }: { text?: string }) => text ? <div className="md rv-say" dangerouslySetInnerHTML={{ __html: renderMd(lines(text)) }} /> : null
 
+// In the Files tab the agent's text is closed until you ask for it.
+function Details({ text }: { text?: string }) {
+  const [open, setOpen] = useState(false)
+  if (!text) return null
+  return <>
+    <button className="link rv-details" onClick={(e) => { e.stopPropagation(); setOpen(!open) }}>{open ? 'Hide details' : 'Show details'}</button>
+    {open && <Say text={text} />}
+  </>
+}
+
+// What a review waits for, in words.
+export const reviewState = (v: { verdict?: Verdict; sent: boolean }) => !v.verdict ? 'waiting for you' : v.sent ? (v.verdict === 'approve' ? 'approved' : 'rejected') : (v.verdict === 'approve' ? 'approved, not sent' : 'rejected, not sent')
+
 // Your decision on a review, with a note: Approve approves its files too; Reject leaves the files you
 // approved as they are. It follows its files when they all get the same verdict (review.ts setFileVerdict).
+// The note box is there before you decide too, for a note on files you approve and reject one by one.
 type Review = { key: string; label: string; files: string[]; asked?: boolean }
 function Decision({ sid, g, rel, ro }: { sid: string; g: Review; rel(p: string): string; ro: boolean }) {
   const v = verdictsOf(sid)(g.key, '')
@@ -105,10 +119,8 @@ function Decision({ sid, g, rel, ro }: { sid: string; g: Review; rel(p: string):
   return <>
     {!ro && (
       <div className="rv-decide">
-        {d && <textarea className="rv-text" rows={2} placeholder={v.verdict === 'reject' ? 'What is wrong (optional)' : 'A note for the agent (optional)'} value={d.text ?? ''}
-          onChange={(e) => setDecisionText(sid, g.key, e.target.value)} onClick={(e) => e.stopPropagation()} />}
-        {!d && <span className="grow" />}
-        {v.sent && <span className="muted rv-sent">sent</span>}
+        <textarea className="rv-text" rows={2} placeholder={v.verdict === 'reject' ? 'What is wrong (optional)' : 'A note for the agent (optional)'} value={d?.text ?? ''}
+          onChange={(e) => setDecisionText(sid, g.key, g.label, e.target.value)} onClick={(e) => e.stopPropagation()} />
         <VerdictButtons value={v.verdict} sent={v.sent} onSet={(x) => decide(sid, g, rel, x)} label big />
       </div>
     )}
@@ -138,10 +150,10 @@ export function ReviewSection({ m, rel, isOn, onOpen }: Props) {
               <span className={`fb-chev${open ? ' open' : ''}`}><ChevronIcon size={10} /></span>
               {g.asked && <span className="rv-asked">Asked</span>}
               <span className="rv-label">{g.label}</span>
-              <span className="muted rv-meta">{g.live ? 'working' : g.asked ? (left ? 'waits for you' : 'decided') : left ? `${left} of ${g.files.length} left` : `${g.files.length} done`}</span>
+              <span className="muted rv-meta">{g.live ? 'working' : g.asked ? reviewState(of(g.key, '')) : left ? `${left} of ${g.files.length} left` : `${g.files.length} done`}</span>
               {!g.asked && <VerdictButtons value={same} sent={vs.every((v) => v.sent)} onSet={all} />}
             </div>
-            {open && g.asked && <Say text={g.text} />}
+            {open && g.asked && <div className="rv-body"><Details text={g.text} /></div>}
             {open && g.files.map((f, i) => (
               <div key={f} className={`fb-row rv-file${isOn(f) ? ' on' : ''}`} role="button" tabIndex={0}
                 onClick={() => onOpen(f, g.key)} onKeyDown={(e) => { if (e.key === 'Enter') onOpen(f, g.key) }}>
@@ -172,12 +184,15 @@ export function ReviewCard({ sid, group, title, text, files, live }: { sid: stri
   const rel = (p: string) => p.startsWith(cwd + '/') ? p.slice(cwd.length + 1) : p
   const v = of(group, '')
   const review: Review = { key: group, label: title || 'Review', files: paths, asked: true }
+  // Like an item to consider (AssistantMessage.tsx): orange until you decide, green after.
+  const drafted = st.drafts[sid]?.some((d) => d.kind === 'verdict' && d.group === group)
+  const st8 = drafted ? 'drafted' : v.sent ? 'answered' : live ? 'live' : 'open'
   return (
-    <div className="rv-ask" data-pid="review-card">
+    <div className={`rv-ask st-${st8}`} data-pid="review-card" data-item={group}>
       <div className="rv-ask-head">
         <span className="rv-asked">For review</span>
         <span className="rv-label" dangerouslySetInnerHTML={{ __html: renderInline(title || 'Review') }} />
-        <span className="muted rv-meta">{v.verdict ? (v.verdict === 'approve' ? 'Approved' : 'Rejected') : 'waits for you'}</span>
+        <span className="muted rv-meta">{reviewState(v)}</span>
       </div>
       <Say text={text} />
       {paths.map((p) => {
@@ -193,12 +208,6 @@ export function ReviewCard({ sid, group, title, text, files, live }: { sid: stri
       <Decision sid={sid} g={review} rel={rel} ro={ro} />
     </div>
   )
-}
-
-// Shows the Files tab, where the For review section is.
-export function showReview() {
-  state.panelTab = 'files'
-  changed()
 }
 
 const LINE_WORDS: [LineVerdict, string][] = [['approve', 'Approve'], ['reject', 'Reject'], ['unsure', 'Unsure']]

@@ -29,6 +29,8 @@ export function foldItems(events: Event[]): ItemFold {
       else if (p.kind === 'note' && p.itemKey) f.replies.set(p.itemKey, p)
       else if (p.kind === 'dismiss') for (const i of p.items) f.dismissed.add(i.key)
       else if (p.kind === 'done') for (const i of p.items) f.done.add(i.key)
+      // A review the agent asked for (<review>): your verdicts on it are the reply.
+      else if (p.kind === 'review') for (const v of p.files) if (/:r\d+$/.test(v.group)) f.replies.set(v.group, p)
     }
   }
   return f
@@ -42,6 +44,7 @@ export function draftStatus(sid: string, key: string, critical = false): ItemSta
     if (d.kind === 'done' && d.key === key) return 'completing'
   }
   for (const d of draftsOf(sid)) {
+    if (d.kind === 'verdict' && d.group === key) return 'drafted'
     if (d.kind === 'answer' && d.askKey === key && hasContent(d)) return 'drafted'
     if (d.kind === 'note' && d.itemKey === key && hasContent(d) && (!critical || (!d.reaction && /[\p{L}\p{N}]/u.test(d.text)))) return 'drafted'
   }
