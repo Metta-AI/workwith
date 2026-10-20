@@ -1485,6 +1485,8 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
 .palette.in-list .pal-search input { caret-color: transparent; }
 .pal-search input { flex: 1; min-width: 0; border: none; outline: none; background: none; color: var(--text); font: inherit; font-size: 15px; padding: 0; }
 .pal-close { display: none; flex: none; padding: 9px; margin: -9px -9px -9px -3px; }
+.pal-sort { flex: none; border: none; border-radius: 5px; background: var(--panel); color: var(--muted); font: inherit; font-size: 12px; padding: 3px 8px; cursor: pointer; white-space: nowrap; }
+.pal-sort:hover { color: var(--text); }
 .pal-kbd { flex: none; font: 11px var(--mono); color: var(--muted); background: var(--panel); border-radius: 4px; padding: 2px 6px; }
 /* The bar scrolls only sideways: its rule is a shadow inside it, and the line of the current tab covers it, not a margin that sticks out below. */
 .pal-tabs { flex: none; display: flex; gap: 2px; padding: 6px 10px 0; box-shadow: inset 0 -1px 0 var(--line); overflow-x: auto; overflow-y: hidden; overscroll-behavior: contain; touch-action: pan-x; scrollbar-width: none; }
@@ -1497,7 +1499,7 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
 .pal-track { display: flex; height: 100%; transition: transform .22s ease; will-change: transform; }
 .pal-track.jump { transition: none; }
 @media (prefers-reduced-motion: reduce) { .pal-track { transition: none; } }
-.pal-col { flex: none; height: 100%; box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; position: relative; padding: 6px; }
+.pal-col { flex: none; height: 100%; box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; position: relative; padding: 6px; }
 .pal-section + .pal-section { margin-top: 6px; }
 .pal-section-head { display: flex; align-items: baseline; justify-content: space-between; width: 100%; border: none; background: none; font: inherit; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 6px 8px 4px; cursor: pointer; text-align: left; }
 .pal-section-head:hover { color: var(--text); }
