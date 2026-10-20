@@ -400,7 +400,7 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .rv-btn:hover { background: color-mix(in srgb, var(--c) 12%, transparent); }
 .rv-btn:not(.on) { opacity: .9; }
 /* The button you did not choose, and both of a review whose files have mixed verdicts, are light. */
-.rv-btns:has(.on) .rv-btn:not(.on), .rv-btns.dim .rv-btn { opacity: .4; }
+.rv-btns:has(.on) .rv-btn:not(.on), .rv-btns.dim .rv-btn { opacity: .6; }
 .rv-btns:has(.on) .rv-btn:not(.on):hover, .rv-btns.dim .rv-btn:hover { opacity: .9; }
 .rv-btn.on { color: #fff; background: var(--c); box-shadow: none; }
 .rv-btns.big { gap: 6px; }
@@ -421,7 +421,7 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .rv-ask .rv-say { font-size: inherit; padding: 0 0 6px; }
 .rv-ask .rv-file { padding-left: 0; font-size: calc(13.5px * var(--fs, 1)); }
 .rv-ask .rv-decide { padding: 8px 0 2px; }
-.rv-item { border-left-color: var(--hot); }
+.consider.rv-item.st-open { border-left-color: var(--hot); }
 .rv-body { padding-left: 19px; }
 .rv-details { font-size: calc(12px * var(--fs, 1)); margin: 0 0 2px; }
 .rv-ask .rv-file:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }

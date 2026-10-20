@@ -110,8 +110,7 @@ function Details({ text }: { text?: string }) {
 // What a review waits for, in words.
 
 
-// Your decision on a review, with a note: Approve approves its files too; Reject leaves the files you
-// approved as they are. It follows its files when they all get the same verdict (review.ts setFileVerdict).
+// Your decision on a review, with a note: Approve approves all its files, Reject rejects all of them. It follows its files when they all get the same verdict (review.ts setFileVerdict).
 // The note box is there before you decide too, for a note on files you approve and reject one by one.
 type Review = { key: string; label: string; files: string[]; asked?: boolean }
 function Decision({ sid, g, rel, ro }: { sid: string; g: Review; rel(p: string): string; ro: boolean }) {

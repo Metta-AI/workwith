@@ -130,13 +130,13 @@ export function uncommittedOf(sid: string): Set<string> | null {
   return had.files
 }
 
-// The decision on a whole review the agent asked for (path ''). Approve approves its files too; Reject
-// rejects the review and leaves the verdicts you gave single files.
+// The decision on a whole review the agent asked for (path ''): Approve approves all its files, Reject
+// rejects all of them. Taking the decision back takes back the files' verdicts that followed it.
 export function decide(sid: string, g: { key: string; label: string; files: string[] }, rel: (p: string) => string, verdict: Verdict | null) {
   const had = verdictsOf(sid)(g.key, '').verdict
   setVerdict(sid, g.key, '', g.label, verdict)
-  if (verdict === 'approve') for (const f of g.files) setVerdict(sid, g.key, f, rel(f), 'approve')
-  else if (!verdict && had === 'approve') for (const f of g.files) if (draftsOf(sid).some((d) => d.kind === 'verdict' && d.group === g.key && d.path === f && d.verdict === 'approve')) setVerdict(sid, g.key, f, rel(f), null)
+  if (verdict) for (const f of g.files) setVerdict(sid, g.key, f, rel(f), verdict)
+  else if (had) for (const f of g.files) if (draftsOf(sid).some((d) => d.kind === 'verdict' && d.group === g.key && d.path === f && d.verdict === had)) setVerdict(sid, g.key, f, rel(f), null)
 }
 
 // A verdict on one file of a review: when all its files then have the same verdict, the review has

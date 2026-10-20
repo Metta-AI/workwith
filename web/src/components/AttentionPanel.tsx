@@ -55,7 +55,6 @@ function PanelReview({ item }: { item: TrackedItem }) {
   return (
     <div className={`panel-item consider rv-item st-${item.status}`}>
       <div className="consider-head">
-        <span className="rv-asked">For review</span>
         <button className="link panel-title" onClick={() => revealItem(item.key)} dangerouslySetInnerHTML={{ __html: renderInline(item.label) }} />
       </div>
       <div className="consider-foot"><button className="reply-btn" onClick={() => { state.panelTab = 'files'; changed() }}>Open in Files</button></div>
@@ -66,7 +65,8 @@ function PanelReview({ item }: { item: TrackedItem }) {
 // The number of open items, on a pie of their kinds.
 export function ItemCount({ items }: { items: Item[] }) {
   const critical = items.filter(isCritical).length, asks = items.filter((i) => i.kind === 'ask').length
-  return <span className="count pie" style={{ background: pieOf([['var(--bad)', critical], ['var(--blue)', asks], ['var(--warn)', items.length - critical - asks]]) }}>{items.length}</span>
+  const reviews = items.filter((i) => i.kind === 'review').length
+  return <span className="count pie" style={{ background: pieOf([['var(--bad)', critical], ['var(--blue)', asks], ['var(--hot)', reviews], ['var(--warn)', items.length - critical - asks - reviews]]) }}>{items.length}</span>
 }
 
 // A pie of the open items by kind, in their colours (critical items red, questions blue, other
