@@ -222,6 +222,15 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     const el = root.current, pane = el?.closest('.transcript')
     if (!el || !pane) return
     const min = pane.getBoundingClientRect().left + 4
+    // Rows on lines closer together than a row is high (an item's title and the line under it) would overlap:
+    // each such row moves down (--nudge) until it is 2px below the row above it.
+    let below = -Infinity
+    for (const r of [...el.querySelectorAll<HTMLElement>(':scope > .rail-row')].sort((a, b) => a.offsetTop - b.offsetTop)) {
+      r.style.removeProperty('--nudge')
+      const top = r.offsetTop - r.offsetHeight / 2
+      if (top < below) r.style.setProperty('--nudge', `${below - top}px`)
+      below = Math.max(top, below) + r.offsetHeight + 2
+    }
     for (const r of el.querySelectorAll<HTMLElement>(':scope > .rail-row')) {
       r.style.removeProperty('--pile')
       for (const e of r.querySelectorAll<HTMLElement>('.em, .react-mark, .ack-btn')) { e.style.removeProperty('--y'); e.style.removeProperty('--fan') }

@@ -654,7 +654,7 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 /* The button's box reaches the text, so the pointer never leaves the message on its way over. */
 /* The left rail: per line, a row of reactions running leftward from 6px off the
    text; the reaction button shares the marks' box, so hovering only adds a border. */
-.rail-row { position: absolute; right: calc(100% + 6px); z-index: 3; transform: translateY(-50%); display: flex; flex-direction: row-reverse; gap: 2px; align-items: center; }
+.rail-row { position: absolute; right: calc(100% + 6px); z-index: 3; transform: translateY(calc(-50% + var(--nudge, 0px))); display: flex; flex-direction: row-reverse; gap: 2px; align-items: center; }
 .rail-ack { position: relative; }
 /* Each row is its own layer, so the row with an open popup or picker must rise over the rows below it. */
 .rail-row:has(.ack-pop, .emoji-picker) { z-index: 4; }
