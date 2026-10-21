@@ -431,9 +431,11 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .rv-say > :first-child { margin-top: 0; }
 .rv-say > :last-child { margin-bottom: 0; }
 .rv-group.asked .rv-say { font-size: calc(12.5px * var(--fs, 1)); }
-.rv-decide { display: flex; align-items: flex-end; gap: 8px; padding: 6px 4px 2px; }
+.rv-decide { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 6px 4px 2px; }
+/* The note box is above the buttons, which are at the right under it. */
+.rv-decide > .rv-btns { align-self: flex-end; }
 .rv-group.asked .rv-decide { padding-left: 19px; }
-.rv-decide .rv-text { flex: 1; width: auto; min-width: 0; min-height: 0; }
+.rv-decide .rv-text { min-height: 0; }
 .rv-sent { font-size: calc(11.5px * var(--fs, 1)); }
 .rv-next { font-size: calc(12px * var(--fs, 1)); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rv-hint { padding: 0 0 4px; font-size: calc(11.5px * var(--fs, 1)); }
