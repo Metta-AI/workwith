@@ -1,4 +1,4 @@
-import { Marked } from 'marked'
+import { Marked, type TokenizerAndRendererExtension } from 'marked'
 import { markedHighlight } from 'marked-highlight'
 import { highlight } from './highlight.ts'
 import DOMPurify from 'dompurify'
@@ -15,8 +15,29 @@ export const marked = new Marked(
       image: ({ href, text }) => mediaHtml(href, text),
       link(token) { return sessionLink(token.href, this.parser.parseInline(token.tokens)) },
     },
+    extensions: [highlightMark()],
   },
 )
+
+// ==text== is a highlight, as in Obsidian. A colour emoji right after the opening == gives
+// its colour (==🔴text==); with none it is yellow. "a == b" and "x === y" stay plain text.
+const MARK_COLORS: Record<string, string> = { '🔴': 'red', '🟠': 'orange', '🟡': 'yellow', '🟢': 'green', '🔵': 'blue', '🟣': 'purple' }
+function highlightMark(): TokenizerAndRendererExtension {
+  return {
+    name: 'highlightMark',
+    level: 'inline',
+    start: (src) => { const i = src.indexOf('=='); return i < 0 ? undefined : i },
+    tokenizer(src) {
+      const m = /^==(?=\S)((?:[^\n=]|=(?!=))*?\S)==(?!=)/.exec(src)
+      if (!m) return
+      const c = /^(\p{Extended_Pictographic})\uFE0F?/u.exec(m[1])
+      const color = c && MARK_COLORS[c[1]]
+      const text = color ? m[1].slice(c[0].length) : m[1]
+      return { type: 'highlightMark', raw: m[0], color: color || 'yellow', tokens: this.lexer.inlineTokens(text) }
+    },
+    renderer(token) { return `<mark class="hl hl-${token.color}">${this.parser.parseInline(token.tokens!)}</mark>` },
+  }
+}
 
 // A web URL in inline code is a link too (the hook below opens it in a new tab).
 function urlCode({ text }: { text: string }): string | false {
@@ -94,7 +115,7 @@ export function renderMd(md: string): string {
 const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 const textMarked = new Marked(
   markedHighlight({ emptyLangClass: 'hljs', langPrefix: 'hljs language-', highlight: (code, lang) => linkUrls(highlight(code, lang)) }),
-  { gfm: true, breaks: false, renderer: { html: ({ text }) => escapeHtml(text), codespan: urlCode } },
+  { gfm: true, breaks: false, renderer: { html: ({ text }) => escapeHtml(text), codespan: urlCode }, extensions: [highlightMark()] },
 )
 export function renderText(md: string): string {
   return served(DOMPurify.sanitize(textMarked.parse(md, { async: false }) as string))

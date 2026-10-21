@@ -864,6 +864,7 @@ button.primary.send.critical { background: var(--bad); border-color: var(--bad);
 .ri-edit .md-strong { font-weight: 650; }
 .ri-edit .md-em { font-style: italic; }
 .ri-edit .md-strike { text-decoration: line-through; }
+.ri-edit .md-mark { background: color-mix(in srgb, #f2c200 35%, transparent); border-radius: 3px; }
 .ri-edit .md-code { font-family: var(--mono); font-size: .92em; background: var(--panel); border-radius: 4px; padding: 0 2px; }
 .ri-edit .md-link { color: var(--blue); }
 .ri-edit .md-h { font-weight: 700; } .ri-edit .md-h1 { font-size: 1.2em; } .ri-edit .md-h2 { font-size: 1.1em; }
@@ -956,6 +957,15 @@ h1.rename { cursor: text; border-radius: 5px; } h1.rename:hover { background: rg
 .slash-name { font-family: var(--mono); font-size: calc(12.5px * var(--fs, 1)); white-space: nowrap; flex: none; }
 .slash-desc { color: var(--muted); font-size: calc(12.5px * var(--fs, 1)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .send { height: 32px; padding: 0 16px; white-space: nowrap; }
+.composer-row .stop { height: 32px; padding: 0 12px; display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+
+/* ==text== in markdown (util.ts): a highlight, as in Obsidian, in one of six colours. */
+mark.hl { color: inherit; border-radius: 3px; padding: 0 2px; --hl: #f2c200; background: color-mix(in srgb, var(--hl) 35%, transparent); }
+mark.hl-red { --hl: #e5484d; }
+mark.hl-orange { --hl: #f76b15; }
+mark.hl-green { --hl: #30a46c; }
+mark.hl-blue { --hl: #0090ff; }
+mark.hl-purple { --hl: #8e4ec6; }
 .inbox { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
 .inbox-item { border: 1px solid var(--blue); border-radius: 10px; padding: 8px 10px; background: rgba(76, 141, 255, .06); }
 .inbox-from { font-size: calc(11.5px * var(--fs, 1)); color: var(--blue); font-weight: 600; }
