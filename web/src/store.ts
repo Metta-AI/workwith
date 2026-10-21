@@ -51,9 +51,10 @@ export type Machine = {
 
 // The tabs of the panel beside a session: what its agent showed, its files, its questions and items.
 export type PanelTab = 'preview' | 'files' | 'items'
-// The panel of one session: its tab (null: closed), the tab it opens on again, and whether it
-// takes the conversation's place too. (Its width is in SessionView.tsx.)
-export type Panel = { tab: PanelTab | null; last?: PanelTab; wide: boolean }
+// The panel of one session: its tab (null: closed), the tab it opens on again, whether it
+// takes the conversation's place too, and whether Files shows its list beside a file (false: hidden).
+// (Its width and the list's are in SessionView.tsx and FileBrowser.tsx.)
+export type Panel = { tab: PanelTab | null; last?: PanelTab; wide: boolean; list?: boolean }
 
 type State = {
   // These belong to a machine: the current one (the selected session's), or for
@@ -117,7 +118,7 @@ const saved = <T,>(k: string, d: T): T => { try { return JSON.parse(localStorage
 
 // Until October 2026 one panel was for all sessions; its tab and wide are where new sessions start.
 const oldTab = localStorage.getItem('codinger.panelTab') as PanelTab | 'none' | null
-const panelNew: Panel = saved('codinger.panelNew', { tab: oldTab === 'none' ? null : oldTab ?? 'items', wide: localStorage.getItem('codinger.panelWide') === '1' })
+const panelNew: Panel = saved('codinger.panelNew', { tab: oldTab === 'none' ? null : oldTab ?? 'items', wide: localStorage.getItem('codinger.panelWide') === '1', list: localStorage.getItem('codinger.fileList') !== '0' })
 let panels: Record<string, Panel> = saved('codinger.panels', {})
 // On a phone the panel covers the conversation, so they all start closed there.
 if (matchMedia('(max-width: 720px)').matches) {

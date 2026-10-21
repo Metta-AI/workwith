@@ -7,7 +7,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { SessionMeta } from '../../../shared/types.ts'
 import { filesIn } from '../../../shared/files.ts'
-import { api, changed, LOCAL, localId, machineOf, media, setPanel, state, useStore } from '../store.ts'
+import { api, changed, LOCAL, localId, machineOf, media, panelOf, setPanel, state, useStore } from '../store.ts'
 import { ChevronIcon, FolderIcon } from './Icons.tsx'
 import { Splitter, useWidth } from './Splitter.tsx'
 import { baseName, dirName, FileView, ltr, sepOf, type Edit, type ReviewOf } from './FileView.tsx'
@@ -77,10 +77,10 @@ export function FileBrowser({ m, width }: { m: SessionMeta; width: number }) {
   const [stamp, setStamp] = useState(0)                // a change makes the open file load again
   const [search, setSearch] = useState('')
   const [found, setFound] = useState<string[] | null>(null)
-  const [treeW, setTreeW] = useWidth('filetree', 240)
-  // Beside a file, the list can hide, so the file has the whole width (kept for every session).
-  const [listOn, setListOn] = useState(() => localStorage.getItem('codinger.fileList') !== '0')
-  const toggleList = () => { localStorage.setItem('codinger.fileList', listOn ? '0' : '1'); setListOn(!listOn) }
+  const [treeW, setTreeW] = useWidth(`filetree.${m.id}`, 240, 'filetree')
+  // Beside a file, the list can hide, so the file has the whole width (kept for each session).
+  const listOn = panelOf(m.id).list !== false
+  const toggleList = () => { setPanel(m.id, { list: !listOn }); changed() }
   const want = st.fileOpen[m.id]
 
   // Its own width: the list and the file side by side when there is room.
