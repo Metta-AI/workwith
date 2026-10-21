@@ -6,6 +6,7 @@
 import type { Event } from '../../shared/types.ts'
 import type { Verdict } from '../../shared/review.ts'
 import { reviewsOf } from '../../shared/blocks.ts'
+import { splitPastes } from '../../shared/pastes.ts'
 import { addDraft, changed, draftsOf, localId, machineOf, media, removeDraft, state, uid, type LineDraft, type VerdictDraft } from './store.ts'
 
 // key: for a turn, the seq of the message that started it ('0' before the first one); for a <review>
@@ -19,9 +20,16 @@ const own = (p: string) => /[\\/]\.codinger[\\/]notes[\\/]/.test(p) || (!!state.
 const firstWords = (e: Extract<Event, { t: 'user' }>) => {
   const p = e.parts.find((x) => x.kind === 'text' && x.text.trim()) ?? e.parts.find((x) => x.kind === 'mail')
   if (p?.kind === 'mail') return `Message from ${p.title}`
-  // An image in the message (markdown) is no words for its name.
+  // An image in the message (markdown) is no words for its name. A paste gives its words; the
+  // marks of markdown (fences, headings, emphasis, links, lists, quotes) are not shown.
   const raw = p?.text ?? ''
-  const t = raw.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim()
+  const t = splitPastes(raw).map((c) => 'paste' in c ? c.paste : c.text).join(' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^\s*(`{3,}|~{3,}).*$/gm, ' ')
+    .replace(/^\s{0,3}(#{1,6}|>+|[-*+]|\d+[.)])\s+/gm, '')
+    .replace(/(\*\*|__|\*|_|~~|`)(?=\S)([\s\S]*?\S)\1/g, '$2')
+    .replace(/\s+/g, ' ').trim()
   return t ? (t.length > 60 ? t.slice(0, 60) + '…' : t) : /!\[/.test(raw) ? 'An image' : 'Your replies'
 }
 
@@ -141,9 +149,9 @@ export function decide(sid: string, g: { key: string; label: string; files: stri
   else if (had) for (const f of g.files) if (draftsOf(sid).some((d) => d.kind === 'verdict' && d.group === g.key && d.path === f && d.verdict === had)) setVerdict(sid, g.key, f, rel(f), null)
 }
 
-// A verdict on one file of a review: when all its files then have the same verdict, the review has
-// it too; when they stop having the same, a decision that only followed them goes.
-export function setFileVerdict(sid: string, g: { key: string; label: string; files: string[]; asked?: boolean }, path: string, rel: (p: string) => string, verdict: Verdict | null) {
+// A verdict on one file of a group: when all its files then have the same verdict, the group has it
+// too; when they stop having the same, a decision that only followed them goes.
+export function setFileVerdict(sid: string, g: { key: string; label: string; files: string[] }, path: string, rel: (p: string) => string, verdict: Verdict | null) {
   const own = (of: ReturnType<typeof verdictsOf>) => {
     const vs = g.files.map((f) => of(g.key, f).verdict)
     return vs.length && vs.every((v) => v && v === vs[0]) ? vs[0] : undefined
@@ -151,7 +159,6 @@ export function setFileVerdict(sid: string, g: { key: string; label: string; fil
   const before = own(verdictsOf(sid, true))
   const decision = verdictsOf(sid)(g.key, '').verdict
   setVerdict(sid, g.key, path, rel(path), verdict)
-  if (!g.asked) return
   const after = own(verdictsOf(sid, true))
   if (after && after !== decision) setVerdict(sid, g.key, '', g.label, after)
   else if (!after && decision && decision === before) setVerdict(sid, g.key, '', g.label, null)
