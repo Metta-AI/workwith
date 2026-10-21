@@ -8,7 +8,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ImageRef } from '../../../shared/types.ts'
 import { htmlToMarkdown } from '../htmlmd.ts'
-import { activate, enterKey, fromDom, imageCaret, imgNode, nodeOffset, pasteText, pillText, rangeAt, rangeOffset, render, select, selectionOffsets, snapCaret, wrapKey } from '../mdlive.ts'
+import { activate, enterKey, fromDom, gapKey, imageCaret, imgNode, nodeOffset, pasteText, pillText, rangeAt, rangeOffset, render, select, selectionOffsets, snapCaret, wrapKey } from '../mdlive.ts'
 import { imagesFrom, uploadImage } from '../util.ts'
 import { media, uploadFile } from '../store.ts'
 import { fileToken } from '../../../shared/files.ts'
@@ -289,11 +289,8 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
     if (!sel || !t || composing.current) return
     e.preventDefault()
     const v = fromDom(el)
-    if (isLongPaste(t)) {
-      // The pill stands on its own lines.
-      const before = sel[0] && !v.slice(0, sel[0]).endsWith('\n') ? '\n' : '', after = v.slice(sel[1]).startsWith('\n') ? '' : '\n'
-      t = before + pasteToken(t) + after
-    }
+    // The pill goes in at the caret, in the line, as an image does.
+    if (isLongPaste(t)) t = pasteToken(t)
     edit(v.slice(0, sel[0]) + t + v.slice(sel[1]), sel[0] + t.length)
   }
 
@@ -358,6 +355,7 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
           onCut={(e) => copy(e, true)}
           onKeyDown={(e) => {
             if (onKey?.(e)) { e.preventDefault(); return }
+            gapKey(e.nativeEvent)
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return }
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return }
             if (keyEdit(e)) { e.preventDefault(); return }

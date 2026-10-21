@@ -884,7 +884,8 @@ button.primary.send.critical { background: var(--bad); border-color: var(--bad);
 .ri-edit[data-empty]::before { content: attr(data-placeholder); color: var(--muted); pointer-events: none; position: absolute; }
 .ri-img { height: 24px; max-width: 96px; object-fit: cover; vertical-align: middle; margin: -6px 0 -4px; border-radius: 4px; border: 1px solid var(--line); cursor: zoom-in; }
 .ri-img.loading { opacity: .45; }
-.ri-file { display: inline-flex; align-items: center; gap: 4px; vertical-align: middle; margin: -4px 1px -2px; padding: 1px 4px 1px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); font-size: .9em; line-height: 1.4; cursor: grab; user-select: none; -webkit-user-select: none; white-space: nowrap; max-width: 260px; }
+/* No wider than the field: Chrome breaks the line between a gap (mdlive.ts) and a pill wider than the line, so the pill shows under an empty line. */
+.ri-file { display: inline-flex; align-items: center; gap: 4px; vertical-align: middle; margin: -4px 1px -2px; padding: 1px 4px 1px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); font-size: .9em; line-height: 1.4; cursor: grab; user-select: none; -webkit-user-select: none; white-space: nowrap; max-width: min(260px, calc(100% - 2px)); }
 .ri-file .icon { flex: none; opacity: .6; }
 .ri-file-name { overflow: hidden; text-overflow: ellipsis; }
 .ri-file-x { flex: none; width: 16px; text-align: center; border-radius: 4px; color: var(--muted); cursor: pointer; }
@@ -892,7 +893,6 @@ button.primary.send.critical { background: var(--bad); border-color: var(--bad);
 .ri-paste { cursor: pointer; }
 .ri-paste:hover { border-color: var(--muted); }
 .paste-chip { margin: 0; color: var(--text); font: inherit; font-size: .9em; padding: 2px 8px 2px 6px; }
-.paste-line { margin: 4px 0; }
 .modal.text-modal { max-height: 85vh; }
 /* The body goes to the sides of the dialog, so its scrollbar is at the edge, and its scroll stops at its ends instead of moving the page. */
 .text-modal-body { overflow: auto; overscroll-behavior: contain; min-height: 0; flex: 1; border-top: 1px solid var(--line); margin: 0 -20px; padding: 8px 20px 0; }

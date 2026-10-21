@@ -1,9 +1,9 @@
-// A long paste (shared/pastes.ts) shows as one pill; a click shows its whole text
+// A long paste (shared/pastes.ts) shows as one pill in its line; a click shows its whole text
 // in a dialog. Long comments in the margin open in the same kind of dialog. The
 // dialog goes in document.body: a margin card is moved with a transform, which
 // would put a fixed box inside it relative to the card.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useEscape } from '../escape.ts'
 import { pasteLabel, splitPastes } from '../../../shared/pastes.ts'
@@ -61,9 +61,19 @@ export function PasteChip({ text }: { text: string }) {
   </>
 }
 
-// Markdown with its pastes as pills.
+// Markdown with its pastes as pills, in the line where each was pasted. Each paste
+// becomes a mark in the markdown, then a slot in the HTML that gets its pill.
 export function WithPastes({ text, render }: { text: string; render(md: string): string }) {
-  return <>{splitPastes(text).map((c, i) => 'paste' in c
-    ? <div key={i} className="paste-line"><PasteChip text={c.paste} /></div>
-    : c.text.trim() && <div key={i} className="md" dangerouslySetInnerHTML={{ __html: render(c.text) }} />)}</>
+  const { html, pastes } = useMemo(() => {
+    const pastes: string[] = []
+    const md = splitPastes(text).map((c) => 'paste' in c ? `\uE000${pastes.push(c.paste) - 1}\uE001` : c.text).join('')
+    return { html: render(md).replace(/\uE000(\d+)\uE001/g, '<span class="paste-slot" data-i="$1"></span>'), pastes }
+  }, [text, render])
+  const ref = useRef<HTMLDivElement>(null)
+  const [slots, setSlots] = useState<HTMLElement[]>([])
+  useLayoutEffect(() => { setSlots([...ref.current!.querySelectorAll<HTMLElement>('.paste-slot')]) }, [html])
+  return <>
+    <div ref={ref} className="md" dangerouslySetInnerHTML={{ __html: html }} />
+    {slots.map((el, i) => pastes[Number(el.dataset.i)] != null && createPortal(<PasteChip text={pastes[Number(el.dataset.i)]} />, el, i))}
+  </>
 }

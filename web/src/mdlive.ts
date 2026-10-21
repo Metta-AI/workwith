@@ -60,6 +60,30 @@ export function pasteNode(text: string): HTMLElement {
   return s
 }
 
+// Chrome cannot put the caret before a pill at the start of a line: it puts it at
+// the end of the line above, and typing goes after the pill. A zero-width space
+// before the pill (a gap) gives the caret a place there. A gap is not text.
+const ZW = '\u200b'
+const gaps = new WeakSet<Node>()
+function gapNode(): Text {
+  const t = document.createTextNode(ZW)
+  gaps.add(t)
+  return t
+}
+// The text of a text node, up to a DOM offset.
+function textIn(t: Node, end?: number): string {
+  const s = (t.textContent ?? '').slice(0, end)
+  return gaps.has(t) ? s.replaceAll(ZW, '') : s
+}
+// The DOM offset in a text node for k characters of its text: in a gap, after its zero-width space.
+function domOffset(t: Node, k: number): number {
+  if (!gaps.has(t)) return k
+  const s = t.textContent ?? ''
+  let i = 0
+  for (let c = 0; i < s.length && (c < k || s[i] === ZW); i++) if (s[i] !== ZW) c++
+  return i
+}
+
 // An image, a file pill or a paste pill: one unit of the text.
 const isAtom = (n: Node): n is HTMLElement => n instanceof HTMLImageElement || (n instanceof HTMLElement && (n.dataset.file != null || n.dataset.paste != null))
 
@@ -68,7 +92,7 @@ export const pillText = (n: HTMLElement) => n.dataset.paste != null ? pasteToken
 
 // The text a node stands for.
 function textOf(n: Node, last: boolean): string {
-  if (n.nodeType === Node.TEXT_NODE) return n.textContent ?? ''
+  if (n.nodeType === Node.TEXT_NODE) return textIn(n)
   if (n instanceof HTMLImageElement) return n.dataset.url ? imageToken(n.dataset.url) : ''
   if (n instanceof HTMLElement && (n.dataset.file != null || n.dataset.paste != null)) return pillText(n)
   // The browser keeps a <br> at the very end so a final newline shows; it is not text.
@@ -162,12 +186,17 @@ function line(text: string, list: boolean): { nodes: Node[]; list: boolean } {
 
 export function render(el: HTMLElement, value: string) {
   const nodes: Node[] = []
+  const pill = (n: HTMLElement) => {
+    const prev = nodes.at(-1)
+    if (!prev || isAtom(prev) || (prev.nodeType === Node.TEXT_NODE && prev.textContent!.endsWith('\n'))) nodes.push(gapNode())
+    nodes.push(n)
+  }
   for (const c of splitPastes(value)) {
-    if ('paste' in c) { nodes.push(pasteNode(c.paste)); continue }
+    if ('paste' in c) { pill(pasteNode(c.paste)); continue }
     for (const r of splitImages(c.text)) {
       if ('url' in r) { nodes.push(imgNode(media(r.url), r.url)); continue }
       for (const f of splitFiles(r.text)) {
-        if ('file' in f) { nodes.push(fileNode(f.file)); continue }
+        if ('file' in f) { pill(fileNode(f.file)); continue }
         let list = false
         f.text.split('\n').forEach((l, i) => {
           if (i) nodes.push(document.createTextNode('\n'))
@@ -197,8 +226,8 @@ function offsetOf(el: HTMLElement, node: Node, off: number): number {
       return true
     }
     if (p.nodeType === Node.TEXT_NODE) {
-      if (p === node) { found = n + off; return true }
-      n += p.textContent?.length ?? 0
+      if (p === node) { found = n + textIn(p, off).length; return true }
+      n += textIn(p).length
       return false
     }
     if (p !== el && (isAtom(p) || p.nodeName === 'BR')) { if (p.contains(node)) { found = n; return true } n += textOf(p, false).length; return false }
@@ -227,9 +256,9 @@ function positionAt(el: HTMLElement, target: number): [Node, number] {
   let best: [Node, number] | null = null
   const walk = (p: Node): boolean => {
     if (p.nodeType === Node.TEXT_NODE) {
-      const len = p.textContent?.length ?? 0
+      const len = textIn(p).length
       if (target >= n && target <= n + len) {
-        best = [p, target - n]
+        best = [p, domOffset(p, target - n)]
         // Prefer the start of the next text over the end of this one, unless this is the last.
         if (target < n + len) return true
       }
@@ -314,11 +343,21 @@ export function imageCaret(el: HTMLElement, fake: HTMLElement) {
   for (const a of fake.getAnimations()) a.currentTime = 0
 }
 
+// A caret before the zero-width space of a gap moves after it, so the caret
+// does not stop there twice. The left arrow and Backspace in a gap act from
+// before it, so they go past the zero-width space at once.
+export function gapKey(e: KeyboardEvent) {
+  if (!(e.key === 'Backspace' || (e.key === 'ArrowLeft' && !e.shiftKey))) return
+  const s = getSelection()
+  if (s?.isCollapsed && s.anchorNode && gaps.has(s.anchorNode) && s.anchorOffset === 1 && s.anchorNode.textContent!.startsWith(ZW)) s.collapse(s.anchorNode, 0)
+}
+
 // A caret at the end of a list marker (or its indent) is drawn inside that
 // fixed-width box, short of the text: put it after the box.
 export function snapCaret(el: HTMLElement) {
   const s = getSelection()
   if (!s?.rangeCount || !s.isCollapsed) return
+  if (s.anchorNode && gaps.has(s.anchorNode) && s.anchorOffset === 0 && s.anchorNode.textContent!.startsWith(ZW)) { s.collapse(s.anchorNode, 1); return }
   const n = s.anchorNode
   if (n?.nodeType !== Node.TEXT_NODE || s.anchorOffset !== n.textContent?.length) return
   const box = n.parentElement
