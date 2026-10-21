@@ -11,7 +11,7 @@ import { useState } from 'react'
 import type { SessionMeta } from '../../../shared/types.ts'
 import type { LineVerdict, Verdict } from '../../../shared/review.ts'
 import { changed, removeDraft, state, useStore, type LineDraft } from '../store.ts'
-import { decide, decisionOf, groupsOf, resolve, reviewStatus, setDecisionText, setFileVerdict, setVerdict, uncommittedOf, updateLine, verdictsOf, type Group } from '../review.ts'
+import { decide, decisionOf, groupsOf, resolve, reviewStatus, setDecisionText, setFileVerdict, uncommittedOf, updateLine, verdictsOf, type Group } from '../review.ts'
 import { CheckIcon, ChevronIcon, TrashIcon, XIcon } from './Icons.tsx'
 import { renderInline, renderMd } from '../util.ts'
 import { baseName, dirName, ltr } from './FileView.tsx'
@@ -138,20 +138,16 @@ export function ReviewSection({ m, rel, isOn, onOpen }: Props) {
       <div className="attention-head rv-head">For review<span className="grow" /><Counts n={n} comments={comments} /></div>
       {shown.map((g) => {
         const vs = g.files.map((f) => of(g.key, f))
-        const status = g.asked ? reviewStatus(m.id, g) : undefined
-        const left = status ? (status.done ? 0 : 1) : vs.filter((v) => !v.verdict).length
-        const same = vs.length && vs.every((v) => v.verdict === vs[0].verdict) ? vs[0].verdict : undefined
-        const open = (left > 0) !== flip.has(g.key)
+        // Each group, asked for or not, ends with a note box and Reject and Approve for all its files.
+        const status = reviewStatus(m.id, g)
+        const open = !status.done !== flip.has(g.key)
         const toggle = () => setFlip((s) => { const x = new Set(s); if (x.has(g.key)) x.delete(g.key); else x.add(g.key); return x })
-        const all = (v: Verdict | null) => { for (const f of g.files) setVerdict(m.id, g.key, f, rel(f), v) }
         return (
           <div key={g.key} className={`rv-group${g.asked ? ' asked' : ''}`} data-pid={`review-group-${g.key}`}>
             <div className="rv-ghead" onClick={toggle}>
               <span className={`fb-chev${open ? ' open' : ''}`}><ChevronIcon size={10} /></span>
-              {g.asked && <span className="rv-asked">Asked</span>}
               <span className="rv-label">{g.label}</span>
-              <span className="muted rv-meta">{g.live ? 'working' : status ? status.word : left ? `${left} of ${g.files.length} left` : `${g.files.length} done`}</span>
-              {!g.asked && <VerdictButtons value={same} sent={vs.every((v) => v.sent)} onSet={all} />}
+              {(g.live || status.done) && <span className={`rv-meta ${g.live ? 'muted' : status.verdict === 'approve' ? 'rv-ok' : 'rv-bad'}`}>{g.live ? 'working' : status.word}</span>}
             </div>
             {open && g.asked && <div className="rv-body"><Details text={g.text} /></div>}
             {open && g.files.map((f, i) => (
@@ -162,7 +158,7 @@ export function ReviewSection({ m, rel, isOn, onOpen }: Props) {
                 <VerdictButtons value={vs[i].verdict} sent={vs[i].sent} onSet={(v) => setFileVerdict(m.id, g, f, rel, v)} />
               </div>
             ))}
-            {open && g.asked && <Decision sid={m.id} g={g} rel={rel} ro={false} />}
+            {open && <Decision sid={m.id} g={g} rel={rel} ro={false} />}
           </div>
         )
       })}

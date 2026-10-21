@@ -78,6 +78,9 @@ export function FileBrowser({ m, width }: { m: SessionMeta; width: number }) {
   const [search, setSearch] = useState('')
   const [found, setFound] = useState<string[] | null>(null)
   const [treeW, setTreeW] = useWidth('filetree', 240)
+  // Beside a file, the list can hide, so the file has the whole width (kept for every session).
+  const [listOn, setListOn] = useState(() => localStorage.getItem('codinger.fileList') !== '0')
+  const toggleList = () => { localStorage.setItem('codinger.fileList', listOn ? '0' : '1'); setListOn(!listOn) }
   const want = st.fileOpen[m.id]
 
   // Its own width: the list and the file side by side when there is room.
@@ -241,14 +244,14 @@ export function FileBrowser({ m, width }: { m: SessionMeta; width: number }) {
     <div ref={el} className={`file-browser${split ? ' split' : ''}`}>
       {err && !file && <div className="fb-note error-text">{err}</div>}
       <div className="fb-body">
-        {(split || !file) && list}
-        {split && file && <Splitter width={treeW} setWidth={setTreeW} min={160} max={Math.max(200, w - 280)} initial={240} />}
+        {(split ? !file || listOn : !file) && list}
+        {split && file && listOn && <Splitter width={treeW} setWidth={setTreeW} min={160} max={Math.max(200, w - 280)} initial={240} />}
         {file && <FileView key={file.path} sid={m.id} review={review} path={file.path} size={file.size} line={file.line} at={file.at} stamp={stamp} rel={rel(file.path)}
           changes={file.changes} edits={fileEdits} url={fileUrl}
           tabUrl={media(`${base}/file/${encodeURIComponent(baseName(file.path))}?${q(file.path)}&run=1`, machine)}
           diffUrl={media(`${base}/diff?${q(file.path)}`, machine)}
           canBack={!split} onBack={close} reveal={machine === LOCAL && !st.web ? () => void api('/api/fs/reveal', 'POST', { path: file.path }) : undefined}
-          onLink={(href) => pick(dirName(file.path) + sepOf(file.path) + href)} />}
+          onLink={(href) => pick(dirName(file.path) + sepOf(file.path) + href)} list={split ? { shown: listOn, toggle: toggleList } : undefined} />}
       </div>
     </div>
   )

@@ -348,6 +348,9 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .fb-ln.who-5 { --who: var(--hot); }
 .fb-ln.add[class*="who-"] .fb-c, .fb-ln.del[class*="who-"] .fb-c { box-shadow: inset 3px 0 var(--who); }
 .fb-ln.who .fb-c { font-family: var(--font); font-size: calc(11px * var(--fs, 1)); font-weight: 600; color: var(--who, var(--muted)); padding-top: 3px; }
+/* A session's name links to it. */
+.fb-ln.who[data-session] .fb-c { cursor: pointer; }
+.fb-ln.who[data-session]:hover .fb-c { text-decoration: underline; }
 .fb-ln.who.fold .fb-c { font-weight: 400; font-style: italic; padding: 1px 6px; background: color-mix(in srgb, var(--muted) 8%, var(--panel)); box-shadow: inset 3px 0 var(--who); }
 .fb-md { font-size: calc(13.5px * var(--fs, 1)); }
 .fb-md img { max-width: 100%; }

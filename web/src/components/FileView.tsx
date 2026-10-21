@@ -8,8 +8,8 @@ import { mediaKind } from '../../../shared/media.ts'
 import type { Verdict } from '../../../shared/review.ts'
 import { highlight, langOfPath } from '../highlight.ts'
 import { renderMd } from '../util.ts'
-import { BackIcon, FolderIcon, OpenIcon } from './Icons.tsx'
-import { localId, state, type LineDraft } from '../store.ts'
+import { BackIcon, FolderIcon, OpenIcon, SideListIcon } from './Icons.tsx'
+import { globalId, localId, machineOf, select, state, type LineDraft } from '../store.ts'
 import { attribute, mineOf, othersOf, parseDiff, type Author, type Hunk, type Who } from '../authors.ts'
 import { addLine, linesOf } from '../review.ts'
 import { LineCard, VerdictButtons } from './Review.tsx'
@@ -36,9 +36,10 @@ type Props = {
   sid: string; path: string; size: number; line?: number; at: number; stamp: number; rel: string; changes: boolean; edits: Edit[]
   url(p: string, run?: boolean): string; tabUrl: string; diffUrl: string; review?: ReviewOf
   canBack: boolean; onBack(): void; reveal?(): void; onLink(href: string): void
+  list?: { shown: boolean; toggle(): void }   // beside the list of files: a button that hides or shows it
 }
 
-export function FileView({ sid, path, size, line, at, stamp, rel, changes, edits, url, tabUrl, diffUrl, review, canBack, onBack, reveal, onLink }: Props) {
+export function FileView({ sid, path, size, line, at, stamp, rel, changes, edits, url, tabUrl, diffUrl, review, canBack, onBack, reveal, onLink, list }: Props) {
   const kind = mediaKind(path)
   const ext = langOfPath(path)?.toLowerCase() ?? ''
   const isMd = ext === 'md' || ext === 'markdown'
@@ -105,6 +106,7 @@ export function FileView({ sid, path, size, line, at, stamp, rel, changes, edits
     <div className="fb-view">
       <div className="fb-bar">
         {canBack && <button className="icon-btn" data-tip="Back to the list" onClick={onBack}><BackIcon size={14} /></button>}
+        {list && <button className={`icon-btn${list.shown ? '' : ' on'}`} data-pid="file-list-toggle" data-tip={list.shown ? 'Hide the list of files' : 'Show the list of files'} onClick={list.toggle}><SideListIcon size={14} /></button>}
         <span className="fb-path mono">{ltr(rel)}</span>
         <span className="muted fb-size">{kb(size)}</span>
         {hasChanges && <button className={`fb-toggle${diffOn ? ' on' : ''}`} data-pid="file-changes" onClick={() => setShowDiff(!diffOn)}>Changes</button>}
@@ -127,7 +129,8 @@ export function FileView({ sid, path, size, line, at, stamp, rel, changes, edits
         {codeLike && review && !lines.length && <div className="fb-note muted rv-hint">To comment on lines, click or drag their numbers.</div>}
         {diffOn && gitChanged && !shownHunks.length && <div className="fb-note muted">This session did not change this file. Other sessions did: use All changes to see them.</div>}
         {mdDiff ? <MarkdownChanges chunks={gitChanged ? diffChunks(shownHunks) : editChunks(edits)} edits={!gitChanged} url={url} dir={dirName(path)} onLink={onLink} />
-          : diffOn ? (gitChanged ? <DiffLines hunks={shownHunks} me={me} all={allChanges} names={names} lang={ext} wrap={wrap} notes={notes} /> : <EditLines edits={edits} lang={ext} wrap={wrap} />)
+          : diffOn ? (gitChanged ? <DiffLines hunks={shownHunks} me={me} all={allChanges} names={names} lang={ext} wrap={wrap} notes={notes}
+            link={(id) => id === 'you' || id === me ? undefined : globalId(machineOf(sid), id)} /> : <EditLines edits={edits} lang={ext} wrap={wrap} />)
           : err ? <div className="fb-note error-text">{err}</div>
           : binary ? <div className="fb-note muted">This file is not text. Use the button at the top right to open it in a new tab.</div>
           : kind === 'image' && !source ? <div className="fb-media"><img src={`${url(path)}&t=${stamp}`} alt={rel} /></div>
@@ -167,7 +170,8 @@ const lang = (text: string, l: string) => text.length > HIGHLIGHT_MAX ? undefine
 
 // Rows of code, each with its numbers; HTML strings, so a long file is quick to show. ln: the line
 // a comment names (old: a line the change removed, by its number before); text: its code.
-type Row = { cls?: string; nums: (number | string)[]; html: string; ln?: number; old?: boolean; text?: string }
+// session: a session's name on the row links to that session.
+type Row = { cls?: string; nums: (number | string)[]; html: string; ln?: number; old?: boolean; text?: string; session?: string }
 // Comments on lines: each shows below the last of its lines; pick: you chose lines for a new one.
 type Pick = { line: number; end: number; old?: boolean; code: string }
 type Notes = { list: LineDraft[]; card(d: LineDraft): React.ReactNode; pick(s: Pick): void }
@@ -185,7 +189,7 @@ function Rows({ rows, wrap, mark, at, notes }: { rows: Row[]; wrap: boolean; mar
     rows.forEach((r, i) => { if (r.ln != null && !!r.old === !!d.old && r.ln >= d.line && r.ln <= d.end) { sel.add(i); last = i } })
     after.set(last, [...after.get(last) ?? [], d])
   }
-  const html = rows.map((r, i) => `<div class="fb-ln${r.cls ? ` ${r.cls}` : ''}${mark === i + 1 ? ' mark' : ''}${sel.has(i) ? ' sel' : ''}${notes && r.ln != null ? ' pickable' : ''}" data-i="${i}">${r.nums.map((n) => `<span class="fb-n">${n}</span>`).join('')}<span class="fb-c">${r.html || ' '}</span></div>`)
+  const html = rows.map((r, i) => `<div class="fb-ln${r.cls ? ` ${r.cls}` : ''}${mark === i + 1 ? ' mark' : ''}${sel.has(i) ? ' sel' : ''}${notes && r.ln != null ? ' pickable' : ''}" data-i="${i}"${r.session ? ` data-session="${r.session}"` : ''}>${r.nums.map((n) => `<span class="fb-n">${n}</span>`).join('')}<span class="fb-c">${r.html || ' '}</span></div>`)
   const cuts = [...after.keys()].filter((i) => i >= 0).sort((a, b) => a - b)
   const segs: [number, number][] = []
   let from = 0
@@ -227,7 +231,8 @@ function Rows({ rows, wrap, mark, at, notes }: { rows: Row[]; wrap: boolean; mar
     window.addEventListener('pointerup', up)
   }
   return (
-    <div ref={el} className={`fb-code hljs${wrap ? ' wrap' : ''}${notes ? ' notes' : ''}`} style={{ '--fb-nw': `${width + 1}ch`, '--fb-cols': cols } as React.CSSProperties} onPointerDown={down}>
+    <div ref={el} className={`fb-code hljs${wrap ? ' wrap' : ''}${notes ? ' notes' : ''}`} style={{ '--fb-nw': `${width + 1}ch`, '--fb-cols': cols } as React.CSSProperties} onPointerDown={down}
+      onClick={(e) => { const s = (e.target as HTMLElement).closest<HTMLElement>('[data-session]')?.dataset.session; if (s) select(s) }}>
       {after.get(-1)?.map((d) => notes!.card(d))}
       {segs.map(([a, b]) => (
         <Fragment key={a}>
@@ -250,7 +255,7 @@ function Code({ text, lang: l, line, at, wrap, notes }: { text: string; lang: st
 // Without all, a run of lines that another session changed folds to one line with its name. With all
 // (All changes), each run has the name of its session above it and a line of its colour at its left.
 type Names = Map<string, { title: string; n: number }>
-function DiffLines({ hunks, me, all, names, lang: l, wrap, notes }: { hunks: Hunk[]; me: string; all: boolean; names: Names; lang: string; wrap: boolean; notes?: Notes }) {
+function DiffLines({ hunks, me, all, names, lang: l, wrap, notes, link }: { hunks: Hunk[]; me: string; all: boolean; names: Names; lang: string; wrap: boolean; notes?: Notes; link(id: string): string | undefined }) {
   const rows: Row[] = []
   const size = hunks.reduce((t, h) => t + h.rows.reduce((u, r) => u + r.text.length, 0), 0)
   const hl = (s: string) => htmlLines(highlight(s, size > HIGHLIGHT_MAX ? undefined : l))[0] ?? ''
@@ -263,14 +268,14 @@ function DiffLines({ hunks, me, all, names, lang: l, wrap, notes }: { hunks: Hun
     for (const r of h.rows) {
       if (r.kind === 'ctx') { prev = undefined; folded = null; rows.push({ nums: [r.o, r.n], html: hl(r.text), ln: r.n, text: r.text }); continue }
       if (!all && r.who && r.who !== me) {
-        if (folded?.who !== r.who) { folded = { who: r.who, n: 0, row: { cls: `who fold${tone(r.who)}`, nums: ['', ''], html: '' } }; rows.push(folded.row) }
+        if (folded?.who !== r.who) { folded = { who: r.who, n: 0, row: { cls: `who fold${tone(r.who)}`, nums: ['', ''], html: '', session: link(r.who) } }; rows.push(folded.row) }
         folded.n++
         folded.row.html = escapeHtml(`${folded.n} ${folded.n === 1 ? 'line' : 'lines'} changed by ${r.who === 'you' ? 'you' : label(r.who)}`)
         prev = r.who
         continue
       }
       folded = null
-      if (all && r.who !== prev) rows.push({ cls: `who${tone(r.who)}`, nums: ['', ''], html: escapeHtml(label(r.who)) })
+      if (all && r.who !== prev) rows.push({ cls: `who${tone(r.who)}`, nums: ['', ''], html: escapeHtml(label(r.who)), session: r.who ? link(r.who) : undefined })
       prev = r.who
       const t = all ? tone(r.who) : ''
       if (r.kind === 'add') rows.push({ cls: `add${t}`, nums: ['', r.n], html: hl(r.text), ln: r.n, text: r.text })
