@@ -1,7 +1,7 @@
 // The session's questions and items to consider in one place: the open ones
 // to answer or dismiss from here, and earlier ones for reference.
 
-import { changed, dismissItem, markDone, state, undismissItem } from '../store.ts'
+import { changed, dismissItem, markDone, setPanel, undismissItem } from '../store.ts'
 import { revealItem, useItems, type TrackedItem } from '../items.ts'
 import { AskCard } from './AssistantMessage.tsx'
 import { useState } from 'react'
@@ -36,7 +36,7 @@ export function AttentionPanel({ sid }: { sid: string }) {
             <AskCard c={{ sid, msg: i.msg, items: map, live: false }} ask={i.ask} compact />
           </div>
         )
-        : i.kind === 'review' ? <PanelReview key={i.key} item={i} />
+        : i.kind === 'review' ? <PanelReview key={i.key} sid={sid} item={i} />
         : <PanelConsider key={i.key} sid={sid} item={i} />)}
       {done.length > 0 && (
         <button className={`attention-head attention-done-head${showDone ? ' on' : ''}`} onClick={toggleDone}>
@@ -51,13 +51,13 @@ export function AttentionPanel({ sid }: { sid: string }) {
 const isCritical = (i: Item) => i.kind === 'consider' && i.critical
 
 // A review the agent asked for (<review>, Review.tsx): you decide in its card or in the Files tab.
-function PanelReview({ item }: { item: TrackedItem }) {
+function PanelReview({ sid, item }: { sid: string; item: TrackedItem }) {
   return (
     <div className={`panel-item consider rv-item st-${item.status}`}>
       <div className="consider-head">
         <button className="link panel-title" onClick={() => revealItem(item.key)} dangerouslySetInnerHTML={{ __html: renderInline(item.label) }} />
       </div>
-      <div className="consider-foot"><button className="reply-btn" onClick={() => { state.panelTab = 'files'; changed() }}>Open in Files</button></div>
+      <div className="consider-foot"><button className="reply-btn" onClick={() => { setPanel(sid, { tab: 'files' }); changed() }}>Open in Files</button></div>
     </div>
   )
 }

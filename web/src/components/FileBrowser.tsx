@@ -7,7 +7,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { SessionMeta } from '../../../shared/types.ts'
 import { filesIn } from '../../../shared/files.ts'
-import { api, changed, LOCAL, localId, machineOf, media, state, useStore } from '../store.ts'
+import { api, changed, LOCAL, localId, machineOf, media, setPanel, state, useStore } from '../store.ts'
 import { ChevronIcon, FolderIcon } from './Icons.tsx'
 import { Splitter, useWidth } from './Splitter.tsx'
 import { baseName, dirName, FileView, ltr, sepOf, type Edit, type ReviewOf } from './FileView.tsx'
@@ -48,7 +48,7 @@ function editsOf(sid: string): Map<string, Edit[]> {
 // changes: show what changed in it; group: the group for review it was opened from (Review.tsx).
 export function openFile(sid: string, p: string, changes = false, group?: string) {
   const m = /^(.*?)(?::(\d+))?(?::\d+)?$/.exec(p.trim())!
-  state.panelTab = 'files'
+  setPanel(sid, { tab: 'files' })
   state.fileOpen = { ...state.fileOpen, [sid]: { path: m[1], line: m[2] ? Number(m[2]) : undefined, changes, group, at: Date.now() } }
   changed()
 }

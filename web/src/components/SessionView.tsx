@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Mail, PermissionMode, SessionMeta, SlashCommand } from '../../../shared/types.ts'
 import { MAX_RUN } from '../../../shared/mail.ts'
-import { api, changed, closeSession, composerOf, draftsOf, hasContent, loadEvents, queuedParts, select, sendQueued, setComposer, state, undismissItem, useStore, deselect, globalId, machineOf, localId, quietly, type PanelTab } from '../store.ts'
+import { api, changed, closeSession, composerOf, draftsOf, hasContent, loadEvents, queuedParts, select, sendQueued, setComposer, state, undismissItem, useStore, deselect, globalId, machineOf, localId, quietly, panelOf, setPanel, type PanelTab } from '../store.ts'
 import { fatigue, kTokens } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
 import { RichInput } from './Inputs.tsx'
@@ -530,16 +530,15 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
   const items = useItems(id)
   // The panel beside the session (SidePanel.tsx): the tab you left open, Preview whenever the agent
   // shows something, and Files whenever you click a path in a reply. A tab this session has
-  // nothing for does not show. The tab and wide are in the page's address (url.ts).
+  // nothing for does not show. Each session has its own tab, wide and width; the tab and wide of
+  // the selected one are in the page's address (url.ts).
   const canPreview = hasPreview(id)
   const tabs = (['items', 'preview', 'files'] as const).filter((t) => t === 'files' || (t === 'preview' ? canPreview : items.length > 0))
-  const tab = st.panelTab && tabs.includes(st.panelTab) ? st.panelTab : null
-  const setTab = (t: PanelTab | null) => { if (t) localStorage.setItem('codinger.panelLast', t); state.panelTab = t; changed() }
-  const togglePanel = () => {
-    const last = localStorage.getItem('codinger.panelLast') as PanelTab | null
-    setTab(tab ? null : last && tabs.includes(last) ? last : tabs[0])
-  }
-  const [panelW, setPanelW] = useWidth('panel', 440)
+  const panel = panelOf(id)
+  const tab = panel.tab && tabs.includes(panel.tab) ? panel.tab : null
+  const setTab = (t: PanelTab | null) => { setPanel(id, { tab: t }); changed() }
+  const togglePanel = () => setTab(tab ? null : panel.last && tabs.includes(panel.last) ? panel.last : tabs[0])
+  const [panelW, setPanelW] = useWidth(`panel.${id}`, 440, 'panel')
   // Where the session is too narrow for the conversation beside the panel, the panel takes its place.
   const body = useRef<HTMLDivElement>(null)
   const [bodyW, setBodyW] = useState(0)
@@ -553,7 +552,7 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
   // The panel gets narrower as the session does, down to PANEL_MIN; past that it takes the full width.
   const fit = bodyW > 0 ? Math.min(panelW, bodyW - CONVERSATION_MIN) : panelW
   const auto = fit < PANEL_MIN
-  const wide = !!tab && (st.panelWide || auto)
+  const wide = !!tab && (panel.wide || auto)
   // A tap on the tab that shows: in Files, closes the file on view; else hides the panel.
   const again = (t: PanelTab) => {
     if (t === 'files' && state.fileOpen[id]) {
@@ -562,9 +561,9 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
       changed()
     } else setTab(null)
   }
-  const toggleWide = () => { state.panelWide = !st.panelWide; changed() }
+  const toggleWide = () => { setPanel(id, { wide: !panel.wide }); changed() }
   const shownAt = st.preview[id]?.at
-  useEffect(() => { if (shownAt && Date.now() - shownAt < 5000 && state.panelTab !== 'preview') quietly(() => { state.panelTab = 'preview'; changed() }) }, [shownAt])
+  useEffect(() => { if (shownAt && Date.now() - shownAt < 5000 && panelOf(id).tab !== 'preview') quietly(() => { setPanel(id, { tab: 'preview' }); changed() }) }, [shownAt])
   if (!m) return <div className="empty">No such session.</div>
   const open = items.filter((i) => i.status === 'open')
   return (

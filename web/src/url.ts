@@ -8,7 +8,7 @@
 // So does any change the server makes (a session that is gone, an artifact an agent shows),
 // and on a phone every change does: there the back swipe opens the sessions (main.tsx).
 
-import { changed, onChanged, opened, quiet, state } from './store.ts'
+import { changed, onChanged, opened, panelOf, quiet, setPanel, state } from './store.ts'
 
 // A link can open the New session dialog with its fields filled in, for another app to hand work
 // over (Prolifica's Ask): ?new&cwd=…&title=…&prompt=…. It never starts a session by itself, since
@@ -31,14 +31,15 @@ function encode(): { nav: URLSearchParams; look: URLSearchParams } {
     if (state.artifactV != null) nav.set('v', String(state.artifactV))
   } else {
     const t = state.preview[state.selected]?.target
-    if (state.panelTab === 'preview' && t && 'artifact' in t) {
+    if (panelOf(state.selected).tab === 'preview' && t && 'artifact' in t) {
       nav.set('a', t.artifact)
       if (t.v != null) nav.set('v', String(t.v))
     }
   }
-  if (state.panelWide) nav.set('wide', '1')
+  const panel = panelOf(state.selected)
+  if (panel.wide) nav.set('wide', '1')
   if (state.settingsPage) nav.set('settings', state.settingsPage)
-  look.set('pane', state.panelTab ?? 'off')
+  look.set('pane', panel.tab ?? 'off')
   if (state.sideHidden) look.set('side', 'hidden')
   if (state.sideAll) look.set('rows', 'all')
   if (state.sideTab === 'remote') look.set('tab', 'remote')
@@ -57,11 +58,11 @@ function apply(q: URLSearchParams, look: boolean) {
     const t = state.preview[s]?.target
     if (!t || !('artifact' in t) || t.artifact !== a || t.v !== v) state.preview = { ...state.preview, [s]: { target: { artifact: a, v }, at: 0 } }
   }
-  state.panelWide = q.get('wide') === '1'
+  if (s && panelOf(s).wide !== (q.get('wide') === '1')) setPanel(s, { wide: q.get('wide') === '1' })
   state.settingsPage = q.get('settings')
   if (!look) return
   const pane = q.get('pane')
-  if (!phone.matches && pane) state.panelTab = pane === 'off' ? null : (['preview', 'files', 'items'] as const).find((t) => t === pane) ?? state.panelTab
+  if (!phone.matches && pane && s) setPanel(s, { tab: pane === 'off' ? null : (['preview', 'files', 'items'] as const).find((t) => t === pane) ?? panelOf(s).tab })
   state.sideHidden = q.get('side') === 'hidden'
   state.sideAll = q.get('rows') === 'all'
   state.sideTab = q.get('tab') === 'remote' ? 'remote' : 'local'

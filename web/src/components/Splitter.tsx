@@ -2,9 +2,17 @@
 
 import { useState } from 'react'
 
-export function useWidth(key: string, initial: number): [number, (w: number) => void] {
-  const [w, setW] = useState(() => Number(localStorage.getItem(`codinger.w.${key}`)) || initial)
-  return [w, (n) => { setW(n); localStorage.setItem(`codinger.w.${key}`, String(Math.round(n))) }]
+// The key can change (a width for each session). A key with no width yet has the width of
+// fallback, which is the last width set under any key that has that fallback.
+export function useWidth(key: string, initial: number, fallback?: string): [number, (w: number) => void] {
+  const read = () => Number(localStorage.getItem(`codinger.w.${key}`)) || (fallback && Number(localStorage.getItem(`codinger.w.${fallback}`))) || initial
+  const [s, setS] = useState(() => ({ key, w: read() }))
+  const w = s.key === key ? s.w : read()
+  return [w, (n) => {
+    setS({ key, w: n })
+    localStorage.setItem(`codinger.w.${key}`, String(Math.round(n)))
+    if (fallback) localStorage.setItem(`codinger.w.${fallback}`, String(Math.round(n)))
+  }]
 }
 
 // reverse: the panel is after the handle (on its right), so dragging left widens it.
