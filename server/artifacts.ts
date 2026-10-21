@@ -535,8 +535,14 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
   const out = await post(before?.id).catch((e) => { if (before?.id && e.status === 404) return post(); throw e })
   const ids = Object.values(data).map((d) => d.id)
   const earlier = out.isle.id === before?.id ? before?.history ?? (before ? [{ version: before.version, local: before.local ?? 0, at: before.at }] : []) : []
-  let history = [...earlier.map((h) => ({ ...h, data: h.data ?? (h.version === before?.version ? Object.values(before.data).map((d) => d.id) : undefined) })), { version: out.isle.version, local, at: Date.now(), data: ids }]
-  if (opts.replace && before && out.isle.id === before.id) {
+  // The same page and data as the last version: Prolifica changes that version in place (its
+  // title, description, instructions) and makes no new one, so there is nothing to squash.
+  const inPlace = !!before && out.isle.id === before.id && out.isle.version === before.version
+  let history = [...earlier.map((h) => ({ ...h, data: h.data ?? (h.version === before?.version ? Object.values(before.data).map((d) => d.id) : undefined) })).filter((h) => !inPlace || h.version !== before.version), { version: out.isle.version, local, at: Date.now(), data: ids }]
+  if (inPlace && opts.replace && opts.note) {
+    out.isle = (await call(`/api/isles/${encodeURIComponent(before.id)}/versions/${before.version}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ note: opts.note }) })).isle ?? out.isle
+  }
+  if (opts.replace && before && out.isle.id === before.id && !inPlace) {
     step(`Replacing v${before.version}`, n, of); n += TRIP
     const sq = await call(`/api/isles/${encodeURIComponent(before.id)}/squash`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from: before.version, to: out.isle.version, note: opts.note || null }) })
     out.isle = sq.isle
