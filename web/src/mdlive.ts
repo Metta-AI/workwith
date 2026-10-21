@@ -344,21 +344,34 @@ export function imageCaret(el: HTMLElement, fake: HTMLElement) {
   for (const a of fake.getAnimations()) a.currentTime = 0
 }
 
-// A caret before the zero-width space of a gap moves after it, so the caret
-// does not stop there twice. The left arrow and Backspace in a gap act from
-// before it, so they go past the zero-width space at once.
+// The caret, or the moving end of a selection (Shift with an arrow), before the
+// zero-width space of a gap moves after it, so it does not stop there twice.
+// The left arrow and Backspace in a gap act from before it, so they go past the
+// zero-width space at once.
+const inGap = (n: Node | null): n is Text => !!n && gaps.has(n) && n.textContent!.startsWith(ZW)
 export function gapKey(e: KeyboardEvent) {
-  if (!(e.key === 'Backspace' || (e.key === 'ArrowLeft' && !e.shiftKey))) return
   const s = getSelection()
-  if (s?.isCollapsed && s.anchorNode && gaps.has(s.anchorNode) && s.anchorOffset === 1 && s.anchorNode.textContent!.startsWith(ZW)) s.collapse(s.anchorNode, 0)
+  if (!s || !inGap(s.focusNode) || s.focusOffset !== 1) return
+  if (e.key === 'ArrowLeft' && e.shiftKey) s.extend(s.focusNode, 0)
+  else if ((e.key === 'ArrowLeft' || e.key === 'Backspace') && s.isCollapsed) s.collapse(s.focusNode, 0)
 }
 
 // A caret at the end of a list marker (or its indent) is drawn inside that
 // fixed-width box, short of the text: put it after the box.
 export function snapCaret(el: HTMLElement) {
   const s = getSelection()
-  if (!s?.rangeCount || !s.isCollapsed) return
-  if (s.anchorNode && gaps.has(s.anchorNode) && s.anchorOffset === 0 && s.anchorNode.textContent!.startsWith(ZW)) { s.collapse(s.anchorNode, 1); return }
+  if (!s?.rangeCount) return
+  // Just before a gap (at the end of the text before it, or between nodes) is the same place too.
+  const f = s.focusNode, o = s.focusOffset
+  const gap = inGap(f) && o === 0 ? f
+    : f?.nodeType === Node.TEXT_NODE && o === f.textContent!.length ? f.nextSibling
+    : f && f.nodeType !== Node.TEXT_NODE ? f.childNodes[o] : null
+  if (inGap(gap) && !(f === gap && o === 1)) {
+    if (s.isCollapsed) s.collapse(gap, 1)
+    else s.extend(gap, 1)
+    return
+  }
+  if (!s.isCollapsed) return
   const n = s.anchorNode
   if (n?.nodeType !== Node.TEXT_NODE || s.anchorOffset !== n.textContent?.length) return
   const box = n.parentElement
