@@ -77,7 +77,7 @@ export function FileBrowser({ m, width }: { m: SessionMeta; width: number }) {
   const [stamp, setStamp] = useState(0)                // a change makes the open file load again
   const [search, setSearch] = useState('')
   const [found, setFound] = useState<string[] | null>(null)
-  const [treeW, setTreeW] = useWidth(`filetree.${m.id}`, 240, 'filetree')
+  const [treeW, setTreeW] = useWidth(`filetree.${m.id}`, 240)
   // Beside a file, the list can hide, so the file has the whole width (kept for each session).
   const listOn = panelOf(m.id).list !== false
   const toggleList = () => { setPanel(m.id, { list: !listOn }); changed() }

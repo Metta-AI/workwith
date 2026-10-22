@@ -538,7 +538,7 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
   const tab = panel.tab && tabs.includes(panel.tab) ? panel.tab : null
   const setTab = (t: PanelTab | null) => { setPanel(id, { tab: t }); changed() }
   const togglePanel = () => setTab(tab ? null : panel.last && tabs.includes(panel.last) ? panel.last : tabs[0])
-  const [panelW, setPanelW] = useWidth(`panel.${id}`, 440, 'panel')
+  const [panelW, setPanelW] = useWidth(`panel.${id}`, 440)
   // Where the session is too narrow for the conversation beside the panel, the panel takes its place.
   const body = useRef<HTMLDivElement>(null)
   const [bodyW, setBodyW] = useState(0)

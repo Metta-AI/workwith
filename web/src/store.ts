@@ -91,7 +91,6 @@ type State = {
   artifactV?: number                 // and the version of it on view there (none: the latest)
   settingsPage: string | null        // Settings is open, on this page
   panels: Record<string, Panel>      // by session: the panel beside it (SidePanel.tsx)
-  panelNew: Panel                    // the panel of a session with none yet: the last one you set
   fileOpen: Record<string, { path: string; line?: number; changes?: boolean; group?: string; at: number }>   // by session: the file or folder its Files tab shows, and the group for review it was opened from
   artifacts: Artifact[]
   artifactsPort: number              // where the server that runs artifacts listens
@@ -116,15 +115,12 @@ type State = {
 
 const saved = <T,>(k: string, d: T): T => { try { return JSON.parse(localStorage.getItem(k) ?? '') ?? d } catch { return d } }
 
-// Until October 2026 one panel was for all sessions; its tab and wide are where new sessions start.
-const oldTab = localStorage.getItem('codinger.panelTab') as PanelTab | 'none' | null
-const panelNew: Panel = saved('codinger.panelNew', { tab: oldTab === 'none' ? null : oldTab ?? 'items', wide: localStorage.getItem('codinger.panelWide') === '1', list: localStorage.getItem('codinger.fileList') !== '0' })
-let panels: Record<string, Panel> = saved('codinger.panels', {})
 // On a phone the panel covers the conversation, so they all start closed there.
-if (matchMedia('(max-width: 720px)').matches) {
-  panels = Object.fromEntries(Object.entries(panels).map(([k, p]) => [k, { ...p, tab: null }]))
-  panelNew.tab = null
-}
+const phone = matchMedia('(max-width: 720px)').matches
+// The panel of a session you have not changed it in.
+const panelNew: Panel = { tab: phone ? null : 'items', wide: false }
+let panels: Record<string, Panel> = saved('codinger.panels', {})
+if (phone) panels = Object.fromEntries(Object.entries(panels).map(([k, p]) => [k, { ...p, tab: null }]))
 
 export const state = {
   events: {},
@@ -148,7 +144,6 @@ export const state = {
   artifact: localStorage.getItem('codinger.artifact'),
   settingsPage: null,
   panels,
-  panelNew,
   fileOpen: {},
   artifacts: [],
   artifactsPort: 0,
@@ -234,13 +229,12 @@ export function artifactsBase(port: number): string | null {
   return m && location.hostname.startsWith('web.') ? `${location.origin.replace('//web.', '//artifacts.')}/m/${m}` : null
 }
 
-export const panelOf = (sid: string): Panel => state.panels[sid] ?? state.panelNew
+export const panelOf = (sid: string): Panel => state.panels[sid] ?? panelNew
 // Changes a session's panel (then call changed()). A tab it opens on is the one it opens on again.
 export function setPanel(sid: string, p: Partial<Panel>) {
   const next = { ...panelOf(sid), ...p }
   if (next.tab) next.last = next.tab
   state.panels = { ...state.panels, [sid]: next }
-  state.panelNew = next
 }
 
 let version = 0
@@ -270,7 +264,6 @@ export function changed() {
     localStorage.setItem('codinger.machineOrder', JSON.stringify(state.machineOrder))
     if (state.artifact) localStorage.setItem('codinger.artifact', state.artifact)
     localStorage.setItem('codinger.panels', JSON.stringify(state.panels))
-    localStorage.setItem('codinger.panelNew', JSON.stringify(state.panelNew))
   }, 300)
 }
 // Tell the server which sessions you are writing a reply in, so the lead's
