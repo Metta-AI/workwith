@@ -234,10 +234,36 @@ function SessionMenu({ m, open, setOpen, onPublish }: { m: SessionMeta; open: Me
     worker && m.archived && <button key="reopen" onClick={act(() => api(`/api/sessions/${m.id}`, 'PATCH', { archived: false }))}>Reopen</button>,
     worker && m.archived && <button key="delete" className="danger" title="Remove from Codinger (it stays in Resume)" onClick={act(() => { if (confirm(`Delete "${m.title}" from Codinger? Claude Code's own transcript is kept, so you can still find it under Resume.`)) return api(`/api/sessions/${m.id}`, 'DELETE').then(deselect) })}>Delete</button>,
   ].filter(Boolean)
+  // Press, drag to an item and release to choose it, as in a native menu. A press opens the
+  // menu; a release over an item clicks it, a release away from the menu closes it, and a
+  // release on the button keeps it open, so a plain click works as before.
+  const pressed = useRef(false)
+  const press = (e: React.PointerEvent) => {
+    if (e.pointerType !== 'mouse' || e.button !== 0 || open) return
+    pressed.current = true
+    setOpen('list')
+    window.addEventListener('pointerup', (u) => {
+      const t = u.target as Element
+      if (box.current?.contains(t)) {
+        // On the button, its own click follows and clears pressed.
+        if (t.closest('.icon-tall')) return
+        pressed.current = false
+        const item = t.closest('.menu button')
+        if (item instanceof HTMLButtonElement) item.click()
+        return
+      }
+      pressed.current = false
+      setOpen(null)
+    }, { once: true })
+  }
+  const toggle = () => {
+    if (pressed.current) { pressed.current = false; return }
+    setOpen(open ? null : 'list')
+  }
   if (!items.length) return null
   return (
     <div className="menu-wrap" ref={box}>
-      <button className={`icon-tall${busy ? ' busy' : ''}`} title="More" onClick={() => setOpen(open ? null : 'list')}><MoreIcon size={15} /></button>
+      <button className={`icon-tall${busy ? ' busy' : ''}`} title="More" onPointerDown={press} onClick={toggle}><MoreIcon size={15} /></button>
       {open === 'list' && <div className="menu">{items}</div>}
       {open === 'autopilot' && <AutopilotPanel m={m} onClose={() => setOpen(null)} />}
     </div>
