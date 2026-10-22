@@ -47,10 +47,18 @@ export function inboxLabel(i: InboxItem): string {
 }
 
 // The open items marked critical that parts (a message the user sends) do not answer: an item
-// needs a comment with text (not only a reaction) or Done.
+// needs a comment with text (not only a reaction) or Done, or an answer to a question inside it.
 export function criticalUnanswered(events: Event[], parts: Part[]): OpenItem[] {
   const answered = new Set(parts.flatMap((p) =>
     p.kind === 'note' && p.itemKey && /[\p{L}\p{N}]/u.test(p.text) ? [p.itemKey]
+    : p.kind === 'answer' && (p.choices?.length || p.text.trim() || p.images?.length) ? [p.askKey]
     : p.kind === 'done' ? p.items.map((i) => i.key) : []))
-  return openItemsOf(events).filter((i) => i.kind === 'consider' && i.critical && !answered.has(i.key))
+  const items = openItemsOf(events)
+  // As in the browser (items.ts): a reply inside an item counts for the items around it, innermost first.
+  for (const it of [...items].reverse()) {
+    if (!it.parent || !answered.has(it.key)) continue
+    const msg = it.key.slice(0, it.key.indexOf(':'))
+    answered.add(`${msg}:${it.parent}`)
+  }
+  return items.filter((i) => i.kind === 'consider' && i.critical && !answered.has(i.key))
 }
