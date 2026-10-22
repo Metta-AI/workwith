@@ -63,6 +63,7 @@ type Manifest = {
    *  (only the slots named, if slots is given), so Prolifica makes it public when the page is. */
   sources?: Record<string, SourceMeta>
 }
+const SOURCE_METHODS = ['upload', 'bookmarklet', 'extension', 'userscript', 'agent', 'script', 'api', 'manual', 'other']
 type SourceMeta = { url?: string; method?: string; collected_at?: string | number; notes?: string; description?: string; slots?: string[] }
 function manifest(name: string): Manifest {
   return JSON.parse(fs.readFileSync(path.join(dirOf(name), 'artifact.json'), 'utf8'))
@@ -175,7 +176,7 @@ When the user wants to see something (a chart, a table to explore, a dashboard, 
 - \`index.html\`: one self-contained page. Use \`<script type="module">\` (top-level await works) and libraries from a CDN (https://esm.sh/..., https://cdn.jsdelivr.net/npm/...). There is no build step.
 - \`data/\`: the data, as files (csv, json, md, txt, images). Do not put data in the page. Subfolders are fine (\`data/media/a.jpg\`).
 - \`artifact.json\`: \`{"title": "...", "description": "Two to four short sentences on what it shows.", "slots": {"rows": {"kind": "csv", "description": "One row per ...: the columns the page uses"}}, "bindings": {"rows": "data/rows.csv"}}\`. When the page came from an isle on Prolifica, add \`"parent": "<isle id>"\`: the isle you started from, also when you change that isle itself, and not the parent that isle shows on Prolifica (Codinger does not send a parent equal to the isle it updates). When you pulled an isle down to change it (its page, data and instructions), add \`"isle": "<isle id>"\` too: the first Publish from Codinger then makes that isle's next version, not a new page. Do not publish it yourself; the user publishes when ready.
-- Source data: copy the data you started from (a scraper's export, a download, a file the user gave you) into \`data/\` as it is, even when no slot uses it, and list it in artifact.json: \`"sources": {"data/source.json": {"url": "...", "method": "...", "collected_at": "...", "notes": "..."}}\` (where it came from; each field optional). It is published with the page, and the bound data says it was made from it, so it goes public when the page does. When a source made only some of the slots' data, add \`"slots": ["..."]\` to it.
+- Source data: copy the data you started from (a scraper's export, a download, a file the user gave you) into \`data/\` as it is, even when no slot uses it, and list it in artifact.json: \`"sources": {"data/source.json": {"url": "...", "method": "...", "collected_at": "...", "notes": "..."}}\` (where it came from; each field optional). \`method\` is one of: upload, bookmarklet, extension, userscript, agent, script, api, manual, other; say more in \`notes\`. It is published with the page, and the bound data says it was made from it, so it goes public when the page does. When a source made only some of the slots' data, add \`"slots": ["..."]\` to it.
 - \`instructions.md\`: instructions for agents about this page, so the next agent does not have to learn it from the HTML. Write them for each artifact. Say which data fields drive the wording, what text is fixed in the page, the limits, and what breaks. Write about the page, not about this data. Update them when you learn something about the page. They are published with the page.
 
 The page reads its data by slot name: \`const rows = await prolifica.data('rows')\` (csv: an array of objects, numbers parsed; json: the parsed value; text and markdown: a string; image: a URL). \`prolifica.dataUrl('rows')\` gives the raw URL. The user can publish an artifact to Prolifica (prolifica.app), where other people run the same page over their own data. So keep what is particular to this data (names, units, dates) in the data, not in the page.
@@ -499,7 +500,10 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
     const { id, sent } = await send(file, s.description ?? `The source data of "${m.title ?? name}", as it was collected.`)
     sourceIds[file] = id
     data[file].source = true
-    const prov = { url: s.url, method: s.method, collectedAt: s.collected_at, notes: s.notes }
+    // Prolifica takes only a fixed set of methods: a free-text method goes to the notes, as "other".
+    const known = s.method == null || SOURCE_METHODS.includes(s.method)
+    const notes = known ? s.notes : [s.method, s.notes].filter(Boolean).join(' ')
+    const prov = { url: s.url, method: known ? s.method : 'other', collectedAt: s.collected_at, notes }
     if (!Object.values(prov).some((x) => x != null)) continue
     const said = JSON.stringify({ source: prov })
     if (!sent && before?.data[file]?.said === said) continue
