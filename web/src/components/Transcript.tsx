@@ -683,7 +683,7 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
           } : {})}
         >
           <PartHead p={p} sid={sid} />
-          {p.text.trim() && (e.from === 'codinger' ? <CodingerText text={p.text} /> : <WithPastes text={p.text} render={renderText} />)}
+          {p.text.trim() && (e.from === 'codinger' ? <CodingerText text={p.text} /> : <WithPastes text={p.text} render={renderText} sid={sid} />)}
           <Thumbs images={p.images} />
         </div>
       ))}

@@ -1419,7 +1419,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     const file = p != null ? allowed(s.meta, s.getEvents(), p) : path.resolve(s.meta.cwd, url.searchParams.get('name') ?? '')
     if (!file || (p == null && (!file.startsWith(path.resolve(s.meta.cwd) + path.sep) || isSecret(file))) || !fs.existsSync(file) || !fs.statSync(file).isFile()) throw new HttpError(404, 'No such file')
     const kind = mediaKind(file)
-    const type = kind === 'file' && isText(file) ? 'text/plain; charset=utf-8' : typeOf(file)
+    const type = kind === 'file' ? (isText(file) ? 'text/plain; charset=utf-8' : typeOf(file)) : mediaType(file)
     const csp = kind === 'pdf' ? null : kind === 'page' && url.searchParams.get('run') === '1' ? 'sandbox allow-scripts allow-popups' : 'sandbox'
     return sendFile(req, res, file, fs.statSync(file).size, {
       'content-type': type.startsWith('text/') && !type.includes('charset') ? `${type}; charset=utf-8` : type,

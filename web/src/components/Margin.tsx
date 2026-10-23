@@ -285,7 +285,7 @@ function SentCard({ sid, n }: { sid: string; n: Entry }) {
     ro.observe(inner)
     return () => ro.disconnect()
   }, [open])
-  const text = <><WithPastes text={n.text} render={renderMd} /><Thumbs images={n.images} /></>
+  const text = <><WithPastes text={n.text} render={renderMd} sid={sid} /><Thumbs images={n.images} /></>
   return (
     <div data-id={n.id} className="note-card sent" onMouseEnter={() => focusPassage(sid, n)} onMouseLeave={() => focusPassage(sid, null)}>
       <div ref={body} className={`note-fold${size !== 'short' ? ' long' : ''}${open ? ' open' : ''}`}><div>{text}</div></div>

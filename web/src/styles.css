@@ -897,8 +897,9 @@ button.primary.send.critical { background: var(--bad); border-color: var(--bad);
 .ri-file-name { overflow: hidden; text-overflow: ellipsis; }
 .ri-file-x { flex: none; width: 16px; text-align: center; border-radius: 4px; color: var(--muted); cursor: pointer; }
 .ri-file-x:hover { background: color-mix(in srgb, var(--text) 12%, transparent); color: var(--text); }
-.ri-paste { cursor: pointer; }
-.ri-paste:hover { border-color: var(--muted); }
+.ri-paste, .file-chip:enabled { cursor: pointer; }
+.file-chip:disabled { cursor: default; opacity: 1; }
+.ri-paste:hover, .file-chip:enabled:hover { border-color: var(--muted); }
 .paste-chip { margin: 0; color: var(--text); font: inherit; font-size: .9em; padding: 2px 8px 2px 6px; }
 .modal.text-modal { max-height: 85vh; }
 /* The body goes to the sides of the dialog, so its scrollbar is at the edge, and its scroll stops at its ends instead of moving the page. */
