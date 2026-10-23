@@ -5,11 +5,12 @@
 // finds what you comment on and paints the highlights, and Codinger's page draws the cards
 // over the frame (web/src/components/ArtifactNotes.tsx). They talk over postMessage.
 //
-// A selection of text starts a comment. In comment mode (the pane's Comment button, or a tap
-// on Option alone) a click starts one on what it hits, the nearest mark around it (an element
-// with data-pid, aria-label or data-label) first, and the page does not get the click. Out of
-// it the page gets its clicks, and an Option-click (Alt) starts one comment. On a touch screen
-// a long press on a mark starts one.
+// In comment mode (the pane's Comment button, or a tap on Option alone) a selection of text
+// starts a comment, and a click starts one on what it hits, the nearest mark around it (an
+// element with data-pid, aria-label or data-label) first; the page does not get the click.
+// Out of it the page gets its clicks and selections as usual, and an Option-click (Alt) or a
+// selection made with Option held starts one comment. On a touch screen a long press on a
+// mark starts one.
 
 import type { ArtifactAnchor } from '../../../shared/types.ts'
 import { occurrenceOf, resolveNthQuote } from '../vendor/anchor.ts'
@@ -117,7 +118,7 @@ export function startNotes() {
   // A click waits a moment: a double click selects a word, and that comment wins.
   let wait = 0, downAt = { x: 0, y: 0 }, altAt = 0
   addEventListener('pointerdown', (e) => { downAt = { x: e.clientX, y: e.clientY }; altAt = 0 }, true)
-  addEventListener('mouseup', () => setTimeout(() => { if (startOnText()) clearTimeout(wait) }, 0), true)
+  addEventListener('mouseup', (e) => { const on = commenting(e); setTimeout(() => { if (on && startOnText()) clearTimeout(wait) }, 0) }, true)
   addEventListener('click', (e) => {
     clearTimeout(wait)
     if (!e.isTrusted || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || (touched && !mode) || !commenting(e)) return
@@ -176,7 +177,7 @@ export function startNotes() {
   addEventListener('touchend', () => { clearTimeout(press); from = null; setTimeout(() => { touched = false }, 400) }, { passive: true })
   document.addEventListener('selectionchange', () => {
     clearTimeout(settle)
-    if (touched) settle = window.setTimeout(() => { if (!from) startOnText() }, 600)
+    if (touched && mode) settle = window.setTimeout(() => { if (!from) startOnText() }, 600)
   })
 
   // ---- highlights ----
