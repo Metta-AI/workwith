@@ -43,6 +43,8 @@ export function Mascot({ status, fatigue, size = 28, title, look = {}, body, ale
     >
       {title && <title>{title}</title>}
       {starred && <polygon className="m-star" points={STAR} fill="#ffc83d" stroke="#ffe08a" strokeWidth="0.5" strokeLinejoin="round" shapeRendering="auto" />}
+      {/* A starred critter moves up into the middle of its star and of its box. */}
+      <g transform={starred ? 'translate(0 -3)' : undefined}>
       <g className="m-body">
         {parts.map((p) => rects(p.back, `b${p.slot}`))}
         <rect x="3" y="3" width="10" height="1" fill={BODY} />
@@ -60,6 +62,7 @@ export function Mascot({ status, fatigue, size = 28, title, look = {}, body, ale
       </g>
       {tired && !spent && <rect className="m-sweat" x="14" y="2" width="1" height="2" fill="#7cc4ff" />}
       {spent && status !== 'working' && <text className="m-z" x="14" y="3" fontSize="4" fill="#9aa">z</text>}
+      </g>
       {badge && (
         <g className="m-badge">
           <rect x="13" y="0" width="5" height="5" rx="1" fill={badge.bg} shapeRendering="auto" />

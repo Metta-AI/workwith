@@ -36,6 +36,7 @@ export const GearIcon = (p: P) => <Svg {...p}><circle cx="8" cy="8" r="2" /><pat
 export const CommentIcon = (p: P) => <Svg {...p}><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" /></Svg>
 export const UndoIcon = (p: P) => <Svg {...p}><path d="M5 6.5H10a3 3 0 010 6H7" /><path d="M7 4L4.5 6.5 7 9" /></Svg>
 export const TrashIcon = (p: P) => <Svg {...p}><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" /></Svg>
+export const StarIcon = (p: P) => <Svg {...p}><path d="M8 1.8l1.85 3.95 4.3.55-3.15 2.95.8 4.25L8 11.4l-3.8 2.1.8-4.25L1.85 6.3l4.3-.55z" /></Svg>
 export const PanelIcon = (p: P) => <Svg {...p}><rect x="2" y="3" width="12" height="10" rx="1.5" /><path d="M10 3v10" /></Svg>
 // A box with a column at its left: the list beside the file in the Files tab.
 export const SideListIcon = (p: P) => <Svg {...p}><rect x="2" y="3" width="12" height="10" rx="1.5" /><path d="M6.5 3v10" /></Svg>

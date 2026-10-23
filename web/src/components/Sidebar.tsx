@@ -447,7 +447,9 @@ function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: s
   const workers = shown.filter((s) => match({ cwd: s.cwd, machine, title: s.title }))
   const tier = tiers(workers, (a, b) => byDir ? a.cwd === b.cwd : gid(a) === gid(b))
   const place = (s: SessionMeta) => s.order ?? -1
-  workers.sort((a, b) => tier(a) - tier(b) || place(a) - place(b) || b.createdAt - a.createdAt)
+  // Starred sessions go first in their group, then the tiers.
+  const star = (s: SessionMeta) => s.starred ? 0 : 1
+  workers.sort((a, b) => star(a) - star(b) || tier(a) - tier(b) || place(a) - place(b) || b.createdAt - a.createdAt)
   const loose = workers.filter((s) => gid(s) === NONE)
   // Archived: only the groups with something in them. By folder: one section for each folder,
   // the folder with the newest session first. You cannot drag these or rename them.
@@ -490,8 +492,8 @@ function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: s
     const sg = mine ? sortable(`${machine}|groups`, g.id) : null
     const needs = list.filter((s) => own(s) <= 0)
     const rows = shut ? [] : all ? list : needs
-    // The rest in the order they came, so that a critter keeps its place in the line.
-    const rest = all ? [] : list.filter((s) => own(s) > 0).sort((a, b) => a.createdAt - b.createdAt)
+    // The rest in the order they came, starred ones first, so that a critter keeps its place in the line.
+    const rest = all ? [] : list.filter((s) => own(s) > 0).sort((a, b) => star(a) - star(b) || a.createdAt - b.createdAt)
     // Shown as a tree, a session and those nested under it move as one.
     const ids = new Set(rows.map((x) => x.id))
     const nest = all && !shut

@@ -10,7 +10,7 @@ import { ItemCount } from './AttentionPanel.tsx'
 import { hasPreview } from './Artifacts.tsx'
 import { SidePanel } from './SidePanel.tsx'
 import { revealItem, useItems } from '../items.ts'
-import { CheckIcon, ChevronIcon, ChildrenIcon, ClipIcon, FolderIcon, MailIcon, MoreIcon, PanelIcon, StopIcon, UndoIcon, XIcon } from './Icons.tsx'
+import { CheckIcon, ChevronIcon, ChildrenIcon, ClipIcon, FolderIcon, MailIcon, MoreIcon, PanelIcon, StarIcon, StopIcon, UndoIcon, XIcon } from './Icons.tsx'
 import { inboxLabel } from '../../../shared/inbox.ts'
 import { renderInline } from '../util.ts'
 import { isReaction } from '../emoji.ts'
@@ -618,3 +618,4 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
 // The least widths of the conversation and of the panel beside it.
 const CONVERSATION_MIN = 380
 const PANEL_MIN = 260
+        {m.kind === 'worker' && <button className={`star-toggle icon-tall${m.starred ? ' on' : ''}`} aria-pressed={!!m.starred} data-tip={m.starred ? 'Remove the star' : 'Star this session: it goes to the top of its group'} onClick={() => void api(`/api/sessions/${m.id}`, 'PATCH', { starred: !m.starred })}><StarIcon size={15} /></button>}
