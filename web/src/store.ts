@@ -86,7 +86,7 @@ type State = {
   stale: boolean                     // the server's code on disk is newer than the server
   staleAt?: number
   update?: UpdateStatus              // an update from origin/main that waits, runs or stopped
-  restarting: boolean
+  restarting: string | null         // the machine that restarts (Restart in the banner), until its hello comes
   loaded: boolean                    // the server's hello came: sessions and settings are real
   page: 'artifacts' | null           // a page in place of the selected session
   artifact: string | null            // the artifact chosen on the Artifacts page
@@ -141,7 +141,7 @@ export const state = {
   money: (['usd', 'pct', 'week'] as const).find((x) => x === saved('codinger.money', 'pct')) ?? 'pct',
   runs: {},
   fileTick: {},
-  restarting: false,
+  restarting: null,
   page: null,
   artifact: localStorage.getItem('codinger.artifact'),
   settingsPage: null,
@@ -416,7 +416,8 @@ function onServer(m: ServerMsg, machine: string) {
     case 'hello':
       Object.assign(M, { sessions: own(m.sessions), settings: m.settings, usage: m.usage, loaded: true, platform: m.platform, home: m.home, auth: m.auth ?? { state: 'ok' }, stale: !!m.stale, staleAt: m.staleAt, update: m.update, remote: m.remote, device: m.device })
       if (looks) applyAppearance(m.settings.appearance)
-      if (!machine) { state.restarting = false; onRemote(m.remote) }
+      if (state.restarting === machine) state.restarting = null
+      if (!machine) onRemote(m.remote)
       // A selected session that is gone, or a lead: the latest one instead. No session (after a close) stays so.
       if (state.selected && !state.sessions.some((s) => s.id === state.selected && s.kind === 'worker')) state.selected = fallback()
       if (!state.selected) state.sideOpen = true  // nothing to show: on a phone, the sessions

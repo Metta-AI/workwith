@@ -148,16 +148,16 @@ function Restart() {
   const [hidden, setHidden] = useState('')
   const key = `${currentMachine()} ${st.staleAt ?? ''}`
   // Only for working on Codinger itself (Settings turns it on).
-  if (!st.restarting && !(st.stale && st.settings.selfRestart && hidden !== key)) return null
+  if (st.restarting === null && !(st.stale && st.settings.selfRestart && hidden !== key)) return null
   const busy = st.sessions.filter((s) => s.status === 'working' || s.status === 'permission').length
   return (
     <div className="signin restart">
-      {st.restarting ? <span>Restarting Codinger…</span> : <>
+      {st.restarting !== null ? <span>Restarting Codinger…</span> : <>
         <span>The Codinger server on {st.web || machineOf(st.selected) ? labelOf(currentMachine()) : 'this machine'} has new code on disk (an update, or a change an agent made). Restart that server to use it.{busy ? ` ${busy} ${busy === 1 ? 'session is' : 'sessions are'} working and will keep working.` : ''}</span>
         {/* At the right: Later, then Restart, the main one, last. */}
         <span className="banner-btns">
           <button onClick={() => setHidden(key)}>Later</button>
-          <button className="primary" onClick={() => { state.restarting = true; changed(); void api('/api/restart').catch(() => {}) }}>Restart</button>
+          <button className="primary" onClick={() => { const m = currentMachine(); state.restarting = m; changed(); void api('/api/restart', 'POST', undefined, m).catch(() => {}) }}>Restart</button>
         </span>
       </>}
     </div>
@@ -168,7 +168,7 @@ function Restart() {
 // bottom left corner. A drop shorter than a second shows nothing; a restart has its own banner (Restart, below).
 function Offline() {
   const st = useStore()
-  const down = !st.connected && st.sessions.length > 0 && !st.restarting
+  const down = !st.connected && st.sessions.length > 0 && st.restarting === null
   const [shown, setShown] = useState(false)
   useEffect(() => {
     if (!down) { setShown(false); return }

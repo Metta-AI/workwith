@@ -1498,7 +1498,9 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
   main { padding-top: env(safe-area-inset-top); }
 
   /* Banners and the head leave room for the button that shows the sidebar. */
-  .signin { padding-left: 48px; }
+  /* At least 48px high (and the 1px border): a banner with no buttons, "Restarting Codinger…",
+     then centers its line 24px down, level with that button. */
+  .signin { padding-left: 48px; min-height: 49px; }
   .signin ~ .session .session-head, .signin ~ .artifacts-view .artifacts-head { padding-left: 12px; }
   .session-head.narrow { padding-left: 48px; }
   .transcript-inner, .transcript-inner.gutter { padding: 14px 12px 30px 40px; }
