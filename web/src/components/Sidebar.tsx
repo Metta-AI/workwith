@@ -424,6 +424,20 @@ function saveGroups(machine: string, groups: SessionGroup[]) {
 // A group you are naming: a new one, or one you double-clicked.
 let naming: string | null = null
 function newGroup(machine: string) {
+  const g = { id: Math.random().toString(36).slice(2, 10), name: 'New group' }
+  naming = g.id
+  saveGroups(machine, [...groupsOf(machine), g])
+  return g.id
+}
+// The server moves the sessions it started along with it.
+function moveToGroup(s: SessionMeta, group: string) {
+  const machine = machineOf(s.id), m = state.machines[machine]
+  if (!m) return
+  m.sessions = m.sessions.map((x) => x.id === s.id ? { ...x, group: group || undefined } : x)
+  changed()
+  void api(`/api/sessions/${s.id}`, 'PATCH', { group: group || null }, machine)
+}
+
 // Drag the critter in a session's head onto a group in the sidebar to move the session there.
 // You pick the critter up: it leaves the head, and a copy that tilts and wiggles follows the
 // pointer. The group under it shows the drop outline.
@@ -482,20 +496,6 @@ export function dragToGroup(e: React.PointerEvent, s: SessionMeta) {
   window.addEventListener('pointermove', move)
   window.addEventListener('pointerup', up)
   window.addEventListener('pointercancel', end)
-}
-
-  const g = { id: Math.random().toString(36).slice(2, 10), name: 'New group' }
-  naming = g.id
-  saveGroups(machine, [...groupsOf(machine), g])
-  return g.id
-}
-// The server moves the sessions it started along with it.
-function moveToGroup(s: SessionMeta, group: string) {
-  const machine = machineOf(s.id), m = state.machines[machine]
-  if (!m) return
-  m.sessions = m.sessions.map((x) => x.id === s.id ? { ...x, group: group || undefined } : x)
-  changed()
-  void api(`/api/sessions/${s.id}`, 'PATCH', { group: group || null }, machine)
 }
 
 // One machine's sessions, by the groups you made. In a group, the sessions that need
