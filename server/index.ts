@@ -1349,6 +1349,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       }
       move(s.meta)
     }
+    if (typeof body.starred === 'boolean' && s.meta.kind === 'worker') s.meta.starred = body.starred || undefined
     if (typeof body.archived === 'boolean' && s.meta.kind === 'worker') { s.meta.archived = body.archived; if (body.archived) s.stop() }
     if (MODES.includes(body.permissionMode)) {
       s.setPermissionMode(body.permissionMode)
@@ -1368,7 +1369,6 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   if (b === 'events' && method === 'GET') return send(res, 200, s.getEvents())
   // Its transcript, published read-only (server/share.ts): what would go, and taking it down.
   if (b === 'share' && method === 'GET') {
-    if (typeof body.starred === 'boolean' && s.meta.kind === 'worker') s.meta.starred = body.starred || undefined
     const { paths, ...preview } = buildShare(s.meta, s.getEvents(), settings, shareOpts(Object.fromEntries(url.searchParams)))
     return send(res, 200, preview)
   }

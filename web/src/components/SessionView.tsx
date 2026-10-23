@@ -597,6 +597,7 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
     <div className="session">
       <SessionHeader m={m} extra={<>
         {extra}
+        {m.kind === 'worker' && <button className={`star-toggle icon-tall${m.starred ? ' on' : ''}`} aria-pressed={!!m.starred} data-tip={m.starred ? 'Remove the star' : 'Star this session: it goes to the top of its group'} onClick={() => void api(`/api/sessions/${m.id}`, 'PATCH', { starred: !m.starred })}><StarIcon size={15} /></button>}
         <button className={`panel-toggle icon-tall${tab ? ' on' : ''}`} data-tip={tab ? 'Hide the panel' : 'Show the panel: issues, artifacts, files'} onClick={togglePanel}><PanelIcon size={15} />{open.length > 0 && <ItemCount items={open} />}</button>
       </>} />
       <div ref={body} className={`session-body${wide ? ' panel-wide' : ''}`}>
@@ -618,4 +619,3 @@ export function SessionView({ id, extra }: { id: string; extra?: React.ReactNode
 // The least widths of the conversation and of the panel beside it.
 const CONVERSATION_MIN = 380
 const PANEL_MIN = 260
-        {m.kind === 'worker' && <button className={`star-toggle icon-tall${m.starred ? ' on' : ''}`} aria-pressed={!!m.starred} data-tip={m.starred ? 'Remove the star' : 'Star this session: it goes to the top of its group'} onClick={() => void api(`/api/sessions/${m.id}`, 'PATCH', { starred: !m.starred })}><StarIcon size={15} /></button>}
