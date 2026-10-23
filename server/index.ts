@@ -34,6 +34,7 @@ import { DEFAULT_CACHE_GUARD, cacheLeft, knownTtl } from '../shared/cache.ts'
 import { AGENTS_FILE, agentsPrompt, readAgentsMd, writeAgentsMd } from './agentsmd.ts'
 import { handleMcp, type Tool } from './mcp.ts'
 import { spendSince, spendText } from './spend.ts'
+import { backfillSubagentSpend } from './subspend.ts'
 import { ESTIMATE_TOOLS, estimateTools, estimatesPrompt, estimatesReply } from './estimates.ts'
 import { MAIL_TOOLS, flushMail, mailTools, release, startMail, stepped, takeMail, turnEnded, userWrote } from './mail.ts'
 import { AUTOPILOT_MODES, amount, nudge, startAutopilot, usedOf, verdict } from './autopilot.ts'
@@ -322,6 +323,8 @@ if (leadRenamed) {
   saveSettings(settings)
   metaChanged()
 }
+// Costs saved before October 22, 2026 left out the subagents' calls: add them, once.
+backfillSubagentSpend([...sessions.values()].map((s) => s.meta), metaChanged).catch((e) => console.error('subagent spend:', e))
 // Auto mode became the default: move sessions still on the old defaults over, once.
 if (!settings.autoModeMigrated) {
   for (const s of sessions.values()) if (s.meta.permissionMode === 'default' || (s.meta.kind === 'lead' && s.meta.permissionMode === 'acceptEdits')) s.meta.permissionMode = 'auto'
