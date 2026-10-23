@@ -136,7 +136,7 @@ const INLINE: [RegExp, string, number, number][] = [
   [/\*\*[^*\n]+?\*\*/y, 'md-strong', 2, 2],
   [/__[^_\n]+?__/y, 'md-strong', 2, 2],
   [/~~[^~\n]+?~~/y, 'md-strike', 2, 2],
-  [/==(?=\S)[^=\n]*?\S==(?!=)/y, 'md-mark', 2, 2],
+  [/==(?=\S)[^=\n]*?\S==(?!=)/y, 'md-hl', 2, 2],
   [/\*[^*\s][^*\n]*?\*(?!\*)/y, 'md-em', 1, 1],
   [/_[^_\s][^_\n]*?_(?![\w])/y, 'md-em', 1, 1],
   [/\[[^\]\n]+\]\([^)\s]*\)/y, 'md-link', 1, 0],
@@ -425,24 +425,22 @@ export function activate(el: HTMLElement) {
 
 // ---- markdown keys ----------------------------------------------------------------
 
-// Cmd+B, I, E, Shift+X and K wrap the selection, or unwrap it (markers inside
+// Cmd+B, I, E and Shift+X wrap the selection, or unwrap it (markers inside
 // or just outside it count); with nothing selected, the caret lands inside.
-const WRAP: Record<string, [string, string]> = { b: ['**', '**'], i: ['_', '_'], e: ['`', '`'], x: ['~~', '~~'], k: ['[', ']()'] }
+// Cmd+K is not here: it opens the palette (Palette.tsx).
+const WRAP: Record<string, [string, string]> = { b: ['**', '**'], i: ['_', '_'], e: ['`', '`'], x: ['~~', '~~'] }
 export function wrapKey(e: { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }, value: string, s: number, t: number): { value: string; start: number; end: number } | null {
   if (!(e.metaKey || e.ctrlKey) || e.altKey) return null
   const k = e.key.toLowerCase()
   if (!WRAP[k] || (k === 'x') !== e.shiftKey) return null
   const [a, b] = WRAP[k]
-  if (k !== 'k') {
-    if (value.slice(s - a.length, s) === a && value.slice(t, t + b.length) === b)
-      return { value: value.slice(0, s - a.length) + value.slice(s, t) + value.slice(t + b.length), start: s - a.length, end: t - a.length }
-    const sel = value.slice(s, t)
-    if (sel.length >= a.length + b.length && sel.startsWith(a) && sel.endsWith(b))
-      return { value: value.slice(0, s) + sel.slice(a.length, sel.length - b.length) + value.slice(t), start: s, end: t - a.length - b.length }
-  }
+  if (value.slice(s - a.length, s) === a && value.slice(t, t + b.length) === b)
+    return { value: value.slice(0, s - a.length) + value.slice(s, t) + value.slice(t + b.length), start: s - a.length, end: t - a.length }
+  const sel = value.slice(s, t)
+  if (sel.length >= a.length + b.length && sel.startsWith(a) && sel.endsWith(b))
+    return { value: value.slice(0, s) + sel.slice(a.length, sel.length - b.length) + value.slice(t), start: s, end: t - a.length - b.length }
   const v = value.slice(0, s) + a + value.slice(s, t) + b + value.slice(t)
-  // A link puts the caret where the URL goes.
-  return k === 'k' ? { value: v, start: t + a.length + b.length - 1, end: t + a.length + b.length - 1 } : { value: v, start: s + a.length, end: t + a.length }
+  return { value: v, start: s + a.length, end: t + a.length }
 }
 
 // Enter, done here so the browser adds no extra line: in a list item it starts

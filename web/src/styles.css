@@ -883,7 +883,7 @@ button.primary.send.critical { background: var(--bad); border-color: var(--bad);
 .ri-edit .md-strong { font-weight: 650; }
 .ri-edit .md-em { font-style: italic; }
 .ri-edit .md-strike { text-decoration: line-through; }
-.ri-edit .md-mark { background: color-mix(in srgb, #f2c200 35%, transparent); border-radius: 3px; }
+.ri-edit .md-hl { background: color-mix(in srgb, #f2c200 35%, transparent); border-radius: 3px; }
 .ri-edit .md-code { font-family: var(--mono); font-size: .92em; background: var(--panel); border-radius: 4px; padding: 0 2px; }
 .ri-edit .md-link { color: var(--blue); }
 .ri-edit .md-h { font-weight: 700; } .ri-edit .md-h1 { font-size: 1.2em; } .ri-edit .md-h2 { font-size: 1.1em; }
@@ -1560,7 +1560,8 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
 }
 
 /* The command palette (Palette.tsx, ⌘K): a search field, the tabs, and a row of one column for each
-   tab, each as wide as the palette. The row slides sideways to the current tab. */
+   tab, each as wide as the palette. The row slides sideways to the current tab. The order button,
+   which shows with a query, is taller than the field: its negative margin keeps the bar's height. */
 /* In the middle of the screen, over the page blurred a little. */
 .modal-back.pal-back { -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
 .modal.palette { width: min(640px, 94vw); height: min(560px, 76vh); padding: 0; gap: 0; overflow: hidden; }
@@ -1569,7 +1570,7 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
 .palette.in-list .pal-search input { caret-color: transparent; }
 .pal-search input { flex: 1; min-width: 0; border: none; outline: none; background: none; color: var(--text); font: inherit; font-size: 15px; padding: 0; }
 .pal-close { display: none; flex: none; padding: 9px; margin: -9px -9px -9px -3px; }
-.pal-sort { flex: none; border: none; border-radius: 5px; background: var(--panel); color: var(--muted); font: inherit; font-size: 12px; padding: 3px 8px; cursor: pointer; white-space: nowrap; }
+.pal-sort { flex: none; margin: -4px 0; border: none; border-radius: 5px; background: var(--panel); color: var(--muted); font: inherit; font-size: 12px; padding: 3px 8px; cursor: pointer; white-space: nowrap; }
 .pal-sort:hover { color: var(--text); }
 .pal-kbd { flex: none; font: 11px var(--mono); color: var(--muted); background: var(--panel); border-radius: 4px; padding: 2px 6px; }
 /* The bar scrolls only sideways: its rule is a shadow inside it, and the line of the current tab covers it, not a margin that sticks out below. */
