@@ -6,10 +6,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Artifact, ArtifactTouch, PreviewTarget, Visibility } from '../../../shared/artifacts.ts'
 import type { Block, Event } from '../../../shared/types.ts'
-import { api, artifactsBase, changed, revealEvent, state, useStore } from '../store.ts'
+import { api, artifactsBase, changed, revealEvent, setPanel, state, useStore } from '../store.ts'
 import { timeAgo } from '../util.ts'
 import { BackIcon, ChevronIcon, MoreIcon, OpenIcon, XIcon } from './Icons.tsx'
 import { Splitter, useWidth } from './Splitter.tsx'
+import { ArtifactNotes } from './ArtifactNotes.tsx'
 
 const Svg = ({ size = 14, children }: { size?: number; children: React.ReactNode }) => (
   <svg className="icon" width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>{children}</svg>
@@ -34,15 +35,23 @@ function srcOf(target: PreviewTarget, a: Artifact | undefined, port: number, at:
 
 const showIn = (sid: string, target: PreviewTarget) => { state.preview = { ...state.preview, [sid]: { target, at: Date.now() } }; changed() }
 
+// Show an artifact in a session's preview pane (a click on a comment on it); one already on view stays as it is.
+export function showArtifactIn(sid: string, artifact: string, v?: number) {
+  const cur = state.preview[sid]?.target
+  if (!cur || !('artifact' in cur) || cur.artifact !== artifact || cur.v !== v) showIn(sid, { artifact, v })
+  setPanel(sid, { tab: 'preview' })
+  changed()
+}
+
 // No title attribute: the browser shows it as a tooltip over the whole page.
-export function ArtifactFrame({ target, at = 0, hidden }: { target: PreviewTarget; at?: number; hidden?: boolean }) {
+export function ArtifactFrame({ target, at = 0, hidden, frameRef }: { target: PreviewTarget; at?: number; hidden?: boolean; frameRef?: React.Ref<HTMLIFrameElement> }) {
   const st = useStore()
   const a = 'artifact' in target ? st.artifacts.find((x) => x.name === target.artifact) : undefined
   if ('artifact' in target && !st.artifactsPort) return null
   if ('artifact' in target && !a) return <div className="artifact-missing muted">There is no artifact “{target.artifact}” now.</div>
   const src = srcOf(target, a, st.artifactsPort, at)
   if (!src) return hidden ? null : <div className="artifact-missing muted">Artifacts show through web.codinger.app only. Open this page there.</div>
-  return <iframe className={hidden ? 'artifact-check' : 'artifact-frame'} aria-label={a?.title ?? 'Preview'} sandbox={SANDBOX} src={src} aria-hidden={hidden} tabIndex={hidden ? -1 : undefined} />
+  return <iframe ref={frameRef} className={hidden ? 'artifact-check' : 'artifact-frame'} aria-label={a?.title ?? 'Preview'} sandbox={SANDBOX} src={src} aria-hidden={hidden} tabIndex={hidden ? -1 : undefined} />
 }
 
 // When an agent shows an artifact, a hidden copy loads it once, so show_artifact can
@@ -249,6 +258,7 @@ export function ArtifactPane({ sid }: { sid: string }) {
   const v = target && 'artifact' in target ? target.v : undefined
   const key = target ? ('url' in target ? target.url : `${target.artifact}@${v ?? ''}`) : ''
   const tab = target && srcOf(target, a, st.artifactsPort, 0)
+  const frame = useRef<HTMLIFrameElement>(null)
   return (
     <div className="artifact-pane">
       <div className="artifact-top">
@@ -267,7 +277,13 @@ export function ArtifactPane({ sid }: { sid: string }) {
         </>}
       </div>
       {a && v != null && <VersionBar a={a} v={v} onLatest={() => showIn(sid, { artifact: a.name })} />}
-      {target ? <ArtifactFrame key={key} target={target} at={Math.max(shown?.at ?? 0, reload)} /> : <div className="artifact-missing muted">Nothing to show yet.</div>}
+      {target
+        ? <div className="artifact-stage">
+          <ArtifactFrame key={key} target={target} at={Math.max(shown?.at ?? 0, reload)} frameRef={frame} />
+          {/* Comments on what the page shows (ArtifactNotes.tsx). */}
+          {a && <ArtifactNotes key={`notes:${key}`} sid={sid} artifact={a.name} v={v != null && v !== a.latest ? v : undefined} frame={frame} />}
+        </div>
+        : <div className="artifact-missing muted">Nothing to show yet.</div>}
     </div>
   )
 }

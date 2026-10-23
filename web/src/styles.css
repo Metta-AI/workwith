@@ -733,6 +733,11 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .user-part + .user-part { border-top: 1px dashed var(--line); margin-top: 6px; padding-top: 6px; }
 .user-part.note { cursor: pointer; border-left: 3px solid var(--hl-draft); padding-left: 8px; margin-left: -11px; }
 .user-part.note:hover { border-left-color: var(--hl-focus); }
+.user-part.artifact { cursor: pointer; border-left: 3px solid var(--hl-draft); padding-left: 8px; margin-left: -11px; }
+.user-part.artifact:hover { border-left-color: var(--hl-focus); }
+.user-part.artifact:hover .sent-quote { color: var(--text); }
+.art-where { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--muted); font-size: calc(12px * var(--fs, 1)); }
+.art-where code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .sent-dismiss { color: var(--muted); font-size: calc(12.5px * var(--fs, 1)); display: flex; gap: 5px; align-items: baseline; }
 .sent-quote { color: var(--muted); font-size: calc(12.5px * var(--fs, 1)); white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 2px; }
 .user-part.note:hover .sent-quote { color: var(--text); }
@@ -1381,6 +1386,9 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .artifact-top .grow { flex: 1; }
 .artifact-url { font-family: var(--mono); font-size: calc(12px * var(--fs, 1)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .artifact-frame { flex: 1; min-height: 0; width: 100%; border: none; background: var(--bg); }
+/* The frame, and the comment cards over it (ArtifactNotes.tsx). */
+.artifact-stage { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+.artifact-notes { position: absolute; inset: 0; pointer-events: none; }
 .artifact-check { position: fixed; left: -10000px; top: 0; width: 1280px; height: 800px; border: none; visibility: hidden; }
 .artifact-missing { padding: 24px; text-align: center; }
 .publish { position: relative; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }

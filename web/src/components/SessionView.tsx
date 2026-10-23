@@ -422,8 +422,8 @@ export function Composer({ m, attachRef }: { m: SessionMeta; attachRef?: React.R
   useStore()
   const c = composerOf(m.id)
   const drafts = draftsOf(m.id).filter(hasContent)
-  const reactions = drafts.filter((d) => d.kind === 'note' && isReaction(d.text) && !d.images.length).length
-  const notes = drafts.filter((d) => d.kind === 'note' || d.kind === 'line').length - reactions
+  const reactions = drafts.filter((d) => (d.kind === 'note' || d.kind === 'artifact') && isReaction(d.text) && !d.images.length).length
+  const notes = drafts.filter((d) => d.kind === 'note' || d.kind === 'artifact' || d.kind === 'line').length - reactions
   const verdicts = drafts.filter((d) => d.kind === 'verdict').length
   const answers = drafts.filter((d) => d.kind === 'answer').length
   const dismissed = drafts.filter((d) => d.kind === 'dismiss').length

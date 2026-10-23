@@ -10,14 +10,14 @@ import { focusField, RichInput, Thumbs } from './Inputs.tsx'
 import { foldItems, revealItem, trackItems, type TrackedItem } from '../items.ts'
 import { itemsOf } from '../../../shared/blocks.ts'
 import { isReaction } from '../emoji.ts'
-import { splitQuote } from '../../../shared/asks.ts'
+import { ARTIFACT_QUOTE_WORDS, splitQuote } from '../../../shared/asks.ts'
 import { highlight, langOfPath } from '../highlight.ts'
 import { CARD_W, GUTTER_GAP, Margin, focusPassage, rangesOfNote } from './Margin.tsx'
 import { StateMark, TasksDialog, lastDraw, stateLabel } from './TasksDialog.tsx'
 import { minutes } from '../cache.ts'
 import { AgentsIcon, MailIcon, BlockIcon, CheckIcon, ChevronIcon, DashIcon, XIcon, FileIcon, GlobeIcon, ListIcon, PencilIcon, SearchIcon, OpenIcon, TerminalIcon, TimerIcon, ToolIcon, TrashIcon } from './Icons.tsx'
 import { shortPath } from './DirPicker.tsx'
-import { ArtifactLine, SHOW_ARTIFACT } from './Artifacts.tsx'
+import { ArtifactIcon, ArtifactLine, SHOW_ARTIFACT, showArtifactIn } from './Artifacts.tsx'
 import { MediaLine, SHOW_FILE } from './MediaLine.tsx'
 import { WithPastes } from './Paste.tsx'
 import { openFile } from './FileBrowser.tsx'
@@ -671,6 +671,7 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
         <div
           key={i}
           className={`user-part ${p.kind}`}
+          {...(p.kind === 'artifact' && sid ? { onClick: () => showArtifactIn(sid, p.anchor.artifact, p.anchor.v) } : {})}
           {...(p.kind === 'note' ? {
             onMouseEnter: () => focusPassage(sid, p),
             onMouseLeave: () => focusPassage(sid, null),
@@ -701,9 +702,9 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
 }
 
 function repliesSummary(parts: Part[]): string {
-  const reactions = parts.flatMap((p) => p.kind === 'note' && isReaction(p.text) && !p.images?.length ? [p.text.trim()] : [])
+  const reactions = parts.flatMap((p) => (p.kind === 'note' || p.kind === 'artifact') && isReaction(p.text) && !p.images?.length ? [p.text.trim()] : [])
   const n = (k: Part['kind']) => parts.filter((p) => p.kind === k).length
-  const comments = n('note') - reactions.length
+  const comments = n('note') + n('artifact') - reactions.length
   const done = parts.reduce((s, p) => s + (p.kind === 'done' ? p.items.length : 0), 0)
   const dismissed = parts.reduce((s, p) => s + (p.kind === 'dismiss' ? p.items.length : 0), 0)
   const verdicts = parts.reduce((s, p) => s + (p.kind === 'review' ? p.files.length : 0), 0)
@@ -725,9 +726,10 @@ const withMedia = (text: string) => text.split(QUOTED).map((s, i) => {
 })
 
 // Claude gets only the first words of a long quote; the "…" shows the rest, dimmed.
-function SentQuote({ quote }: { quote: string }) {
+// words: how many words of it go (formatArtifactNote sends more of a quote from an artifact).
+function SentQuote({ quote, words }: { quote: string; words?: number }) {
   const [open, setOpen] = useState(false)
-  const { head, rest } = splitQuote(quote)
+  const { head, rest } = splitQuote(quote, words)
   return (
     <div className={`sent-quote${open ? ' open' : ''}`}>
       {withMedia(head)}
@@ -757,6 +759,8 @@ function PartHead({ p, sid }: { p: Part; sid?: string }) {
   return <>
     {p.kind === 'mail' && <MailHead p={p} />}
     {p.kind === 'note' && p.quote.trim() && <SentQuote quote={p.quote} />}
+    {p.kind === 'artifact' && <div className="art-where"><ArtifactIcon size={12} /> <b>{p.anchor.artifact}</b>{p.anchor.v != null && ` v${p.anchor.v}`}{(p.anchor.pid || p.anchor.path) && <code>{p.anchor.pid ?? p.anchor.path}</code>}</div>}
+    {p.kind === 'artifact' && p.quote.trim() && <SentQuote quote={p.quote} words={ARTIFACT_QUOTE_WORDS} />}
     {p.kind === 'dismiss' && <div className="sent-dismiss"><XIcon size={11} /> {p.items.map((i) => i.label).join(' · ')}</div>}
     {p.kind === 'review' && <SentReview p={p} sid={sid} />}
     {p.kind === 'done' && <div className="sent-dismiss sent-done"><CheckIcon size={11} /> {p.items.map((i) => i.text ? `${i.label} (${i.text})` : i.label).join(' · ')}</div>}

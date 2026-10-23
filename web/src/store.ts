@@ -2,7 +2,7 @@
 // Components re-render on any change; at this scale that's plenty.
 
 import { useSyncExternalStore } from 'react'
-import type { Anchor, AuthState, Event, ImageRef, InboxItem, Part, RemoteStatus, ServerMsg, SessionMeta, Settings, Task, Usage } from '../../shared/types.ts'
+import type { Anchor, ArtifactAnchor, AuthState, Event, ImageRef, InboxItem, Part, RemoteStatus, ServerMsg, SessionMeta, Settings, Task, Usage } from '../../shared/types.ts'
 import type { RemoteMachine } from '../../shared/remote.ts'
 import type { UpdateStatus } from '../../shared/update.ts'
 import { inboxParts } from '../../shared/inbox.ts'
@@ -26,7 +26,9 @@ export type Run = { sid: string; card: string; command: string; item?: { key: st
 // verdict: none on a note on a whole review (path '') before you decide.
 export type VerdictDraft = { id: string; kind: 'verdict'; group: string; path: string; rel: string; verdict?: Verdict; text?: string; createdAt: number }
 export type LineDraft = { id: string; kind: 'line'; createdAt: number } & LineComment
-export type Draft = NoteDraft | AnswerDraft | DismissDraft | DoneDraft | VerdictDraft | LineDraft
+// A comment on an artifact in the preview pane (ArtifactNotes.tsx); reaction: an emoji alone.
+export type ArtDraft = { id: string; kind: 'artifact'; anchor: ArtifactAnchor; quote: string; text: string; images: ImageRef[]; createdAt: number; reaction?: boolean }
+export type Draft = NoteDraft | ArtDraft | AnswerDraft | DismissDraft | DoneDraft | VerdictDraft | LineDraft
 export type Composer = { text: string; images: ImageRef[] }
 
 // One Codinger server: this page's own (LOCAL), or another machine through
@@ -467,7 +469,8 @@ function onServer(m: ServerMsg, machine: string) {
       state.streaming[sid] = ''
       // Comments and answers on messages that are gone go with them.
       const gone = (msg: string) => Number(msg.split(/[.:]/)[0]) >= m.seq
-      state.drafts[sid] = draftsOf(sid).filter((d) => !gone(d.kind === 'note' ? d.anchor.msg : d.kind === 'answer' ? d.askKey : d.kind === 'verdict' || d.kind === 'line' ? d.group ?? '' : d.key))
+      // Comments on artifacts stay: they are on no message.
+      state.drafts[sid] = draftsOf(sid).filter((d) => d.kind === 'artifact' || !gone(d.kind === 'note' ? d.anchor.msg : d.kind === 'answer' ? d.askKey : d.kind === 'verdict' || d.kind === 'line' ? d.group ?? '' : d.key))
       break
     }
   }
@@ -557,7 +560,7 @@ export function addDraft(sid: string, d: Draft) {
   state.focus = d.id
   changed()
 }
-export function updateDraft(sid: string, id: string, patch: Partial<NoteDraft> | Partial<AnswerDraft>) {
+export function updateDraft(sid: string, id: string, patch: Partial<NoteDraft> | Partial<ArtDraft> | Partial<AnswerDraft>) {
   state.drafts[sid] = draftsOf(sid).map((d) => d.id === id ? { ...d, ...patch } as Draft : d)
   // A written reply to a set-aside item takes the dismissal back (a reaction does not).
   const d = draftsOf(sid).find((x) => x.id === id)
@@ -664,6 +667,8 @@ export function queuedParts(sid: string, alsoDismiss: { key: string; label: stri
   for (const i of lead) if ((i.kind === 'answer' || i.kind === 'reply') && i.key) keyed.push({ p: inboxParts([i])[0], k: [...order(i.key.split(':')[0]), 9999], t: i.ts })
   keyed.sort((a, b) => cmp(a.k, b.k) || a.t - b.t)
   const parts: Part[] = keyed.map((x) => x.p)
+  // Comments on artifacts, in the order you wrote them.
+  for (const d of mine) if (d.kind === 'artifact' && hasContent(d)) parts.push({ kind: 'artifact', text: d.text, quote: d.quote, anchor: d.anchor, images: d.images })
   const files = mine.flatMap((d) => d.kind === 'verdict' ? [{ group: d.group, path: d.path, rel: d.rel, verdict: d.verdict, ...(d.text?.trim() ? { text: d.text.trim() } : {}) }] : [])
   const comments = mine.flatMap((d): LineComment[] => {
     if (d.kind !== 'line' || !d.text.trim()) return []

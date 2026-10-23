@@ -19,6 +19,7 @@ import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
+import { stripTypeScriptTypes } from 'node:module'
 import { DATA } from './store.ts'
 import { ORIGIN, bytes as bytesThere, call, prolificaState } from './prolifica.ts'
 import type { Artifact, ArtifactPublished, ArtifactPublishing, ArtifactTouch, Visibility } from '../shared/artifacts.ts'
@@ -263,6 +264,18 @@ function inject(html: string, tags: string): string {
   return tags + html
 }
 
+// Comments on the page from the preview pane (web/src/frame/notes.ts), after the text anchoring
+// it uses, as one script: their types stripped, their imports and exports left out.
+const WEB = path.join(import.meta.dirname, '..', 'web', 'src')
+let notesJs: { at: number; js: string } | null = null
+function notesScript(app: string): string {
+  const files = ['vendor/anchor.ts', 'frame/notes.ts'].map((f) => path.join(WEB, f))
+  const at = Math.max(...files.map((f) => fs.statSync(f).mtimeMs))
+  if (notesJs?.at !== at) notesJs = { at, js: files.map((f) => stripTypeScriptTypes(fs.readFileSync(f, 'utf8'))).join('\n').replace(/^import .*$/gm, '').replace(/^export /gm, '') }
+  // Only in a frame: a page opened in a tab of its own has no pane to show the cards.
+  return `<script>if(parent!==window)(()=>{const CODINGER_APP=${esc(app)};\n${notesJs.js.replace(/<\/script/gi, '<\\/script')}\nstartNotes()})()</script>`
+}
+
 // base: the path the pages are under, through web.codinger.app ("/m/<machine>"), else "".
 function page(src: Source, app: string, base: string): string {
   const m = src.manifest()
@@ -280,7 +293,8 @@ function page(src: Source, app: string, base: string): string {
   // Only the page as it is now reports its errors (to show_artifact); an old version is for looking at.
   // A circle drawn with a finger in the frame opens Codinger's command palette (shared/circle.ts).
   const circle = app ? `<script>(${onCircle.toString()})(()=>parent.postMessage({codinger:'palette'},${esc(app)}))</script>` : ''
-  return inject(src.read('index.html')?.toString('utf8') ?? '', `${src.v == null ? reporter(src.name, base) : ''}${circle}<script>window.__PROLIFICA__=${esc(config)}</script><script src="${base}/bridge.js"></script>`)
+  const notes = app ? notesScript(app) : ''
+  return inject(src.read('index.html')?.toString('utf8') ?? '', `${src.v == null ? reporter(src.name, base) : ''}${circle}${notes}<script>window.__PROLIFICA__=${esc(config)}</script><script src="${base}/bridge.js"></script>`)
 }
 
 export function startHost(port: number, uiOrigins: () => string[]): Promise<number> {

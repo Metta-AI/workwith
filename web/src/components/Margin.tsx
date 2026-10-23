@@ -8,7 +8,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { rangesFor, setHighlights } from '../anchoring.ts'
-import { addDraft, draftsOf, removeDraft, state, uid, updateDraft, useStore, type NoteDraft } from '../store.ts'
+import { addDraft, draftsOf, removeDraft, state, uid, updateDraft, useStore, type ArtDraft, type NoteDraft } from '../store.ts'
 import type { Anchor, Event, ImageRef } from '../../../shared/types.ts'
 import { isReaction, topEmoji, usedEmoji } from '../emoji.ts'
 import { holdKeyboard, renderMd, visibleBox } from '../util.ts'
@@ -21,7 +21,7 @@ export const CARD_W = 272
 export const GUTTER_GAP = 20
 const GAP = 10
 
-const isEmpty = (d: NoteDraft) => !d.text.trim() && !d.images.length
+const isEmpty = (d: NoteDraft | ArtDraft) => !d.text.trim() && !d.images.length
 
 const msgEl = (sid: string, msg: string) => document.querySelector<HTMLElement>(`[data-sid="${sid}"][data-msg="${msg}"]`)
 export const rangesOfNote = (sid: string, d: { anchor: NoteDraft['anchor'] }) => {
@@ -297,7 +297,9 @@ function SentCard({ sid, n }: { sid: string; n: Entry }) {
   )
 }
 
-function NoteCard({ sid, note, onOpen, onFocus, onBlur }: { sid: string; note: NoteDraft; onOpen(): void; onFocus(): void; onBlur(): void }) {
+// Also the card of a comment on an artifact (ArtifactNotes.tsx).
+// onHover: the pointer comes onto the card or leaves it (for a comment on a message, its passage darkens).
+export function NoteCard({ sid, note, onOpen, onFocus, onBlur, onHover = (on) => note.kind === 'note' && focusPassage(sid, on ? note : null) }: { sid: string; note: NoteDraft | ArtDraft; onOpen(): void; onFocus(): void; onBlur(): void; onHover?(on: boolean): void }) {
   const [focus] = useState(() => state.focus === note.id)
   const card = useRef<HTMLDivElement>(null)
   // A new card stays open even if the focus misses it, as a phone allows a focus only in a touch
@@ -309,7 +311,7 @@ function NoteCard({ sid, note, onOpen, onFocus, onBlur }: { sid: string; note: N
     const away = (e: PointerEvent) => {
       if (card.current?.contains(e.target as Node) || card.current?.contains(document.activeElement)) return
       document.removeEventListener('pointerdown', away)
-      const d = draftsOf(sid).find((x) => x.id === note.id) as NoteDraft | undefined
+      const d = draftsOf(sid).find((x) => x.id === note.id) as NoteDraft | ArtDraft | undefined
       if (d && isEmpty(d)) removeDraft(sid, note.id)
     }
     document.addEventListener('pointerdown', away)
@@ -342,7 +344,8 @@ function NoteCard({ sid, note, onOpen, onFocus, onBlur }: { sid: string; note: N
   const [picking, setPicking] = useState(false)
   // The passage's reactions (not sent yet), which the emoji row shows first, on.
   const k = JSON.stringify(note.anchor)
-  const reactions = draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note' && !!d.reaction && !!d.whole === !!note.whole && JSON.stringify(d.anchor) === k)
+  const whole = (d: NoteDraft | ArtDraft) => d.kind === 'note' && !!d.whole
+  const reactions = draftsOf(sid).filter((d): d is NoteDraft | ArtDraft => d.kind === note.kind && !!d.reaction && whole(d) === whole(note) && JSON.stringify(d.anchor) === k)
   const on = [...new Set(reactions.map((d) => d.text.trim()))]
   // An emoji from the row is a reaction, never text in the comment: a click on one that is on takes it
   // off, any other adds it. The card stays, with the caret in it, so you can add words; left empty, it
@@ -363,19 +366,19 @@ function NoteCard({ sid, note, onOpen, onFocus, onBlur }: { sid: string; note: N
       data-id={note.id}
       ref={card}
       onFocus={onFocus}
-      onMouseEnter={() => focusPassage(sid, note)}
-      onMouseLeave={() => { if (!card.current?.contains(document.activeElement)) focusPassage(sid, null) }}
+      onMouseEnter={() => onHover(true)}
+      onMouseLeave={() => { if (!card.current?.contains(document.activeElement)) onHover(false) }}
       onBlur={() => {
         onBlur()
         // Clicked away from an empty comment: it leaves no trace. (Not while a
         // file dialog has the focus, or while focus just moved within the card.)
         setTimeout(() => {
-          const d = draftsOf(sid).find((x) => x.id === note.id) as NoteDraft | undefined
+          const d = draftsOf(sid).find((x) => x.id === note.id) as NoteDraft | ArtDraft | undefined
           if (d && isEmpty(d) && document.hasFocus() && !card.current?.contains(document.activeElement)) removeDraft(sid, note.id)
         }, 200)
       }}
     >
-      <button className="card-x" title="Discard" onMouseDown={(e) => e.preventDefault()} onClick={() => { focusPassage(sid, null); removeDraft(sid, note.id) }}><XIcon size={12} /></button>
+      <button className="card-x" title="Discard" onMouseDown={(e) => e.preventDefault()} onClick={() => { onHover(false); removeDraft(sid, note.id) }}><XIcon size={12} /></button>
       <RichInput
         value={note.text}
         onChange={(text) => updateDraft(sid, note.id, { text })}

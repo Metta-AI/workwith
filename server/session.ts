@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
-import { formatAnswer, formatNote } from '../shared/asks.ts'
+import { formatAnswer, formatArtifactNote, formatNote } from '../shared/asks.ts'
 import { formatDismissed, formatDone, itemsOf } from '../shared/blocks.ts'
 import { formatReview } from '../shared/review.ts'
 import { formatMail } from '../shared/mail.ts'
@@ -675,6 +675,7 @@ export class Session {
 // The text Claude receives for one part of a message.
 function partText(p: Part): string {
   return p.kind === 'note' ? formatNote(p.quote, p.text)
+    : p.kind === 'artifact' ? formatArtifactNote(p.anchor, p.quote, p.text)
     : p.kind === 'answer' ? formatAnswer(p.askKey.split(':').pop()!, p.question, p.choices, p.text, p.draft)
     : p.kind === 'dismiss' ? formatDismissed(p.items)
     : p.kind === 'done' ? formatDone(p.items)

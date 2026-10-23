@@ -135,12 +135,20 @@ export type ImageRef = { url: string; mediaType: string }
 // Marginer quote pieces (text runs + their occurrence numbers) in that block.
 export type AnchorPiece = { block: number; quotes: string[]; nths: number[] }
 export type Anchor = { msg: string; pieces: AnchorPiece[] }
+// A place in an artifact's page (web/src/frame/notes.ts): an element, or text inside one.
+// pid: the data-pid of the element, or of the nearest one around it; path: a CSS path from there
+// (or from <body>) when the element has no data-pid of its own; tag: "svg rect", "div"...;
+// label: what the element says (aria-label, data-label, or its text); text: selected text, and
+// which occurrence of it in the element it is. v: an old version of the artifact.
+export type ArtifactAnchor = { artifact: string; v?: number; pid?: string; path?: string; tag?: string; label?: string; text?: { quote: string; nth: number } }
 
 export type Part =
   | { kind: 'text'; text: string; images?: ImageRef[] }
   // itemKey: the <consider> item this comment replies to ("<msg>:<id>").
   // whole: a reaction to a whole paragraph or list item.
   | { kind: 'note'; text: string; quote: string; anchor: Anchor; images?: ImageRef[]; itemKey?: string; whole?: boolean }
+  // A comment on an element or text of an artifact in the preview pane.
+  | { kind: 'artifact'; text: string; quote: string; anchor: ArtifactAnchor; images?: ImageRef[] }
   // draft: the answer to a <draft>, sent back as Claude wrote it or edited.
   | { kind: 'answer'; text: string; askKey: string; question: string; choices?: string[]; images?: ImageRef[]; draft?: 'same' | 'edited' }
   // Questions and items the user saw and set aside.
