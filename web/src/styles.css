@@ -497,6 +497,7 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .panel-done.st-dismissed .panel-done-label, .panel-done.st-skipped .panel-done-label { color: var(--muted); }
 .panel-done-reply { color: var(--muted); font-size: calc(12px * var(--fs, 1)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-head { display: flex; align-items: center; gap: 14px; padding: 12px 20px; border-bottom: 1px solid var(--line); }
+.head-critter { display: flex; flex: none; cursor: grab; }
 .head-main { flex: 1; min-width: min(16em, 45%); }
 .head-main h1 { font-size: calc(17px * var(--fs, 1)); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: text; }
 .title-edit { font-size: calc(16px * var(--fs, 1)); font-weight: 600; width: 100%; }

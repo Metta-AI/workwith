@@ -4,6 +4,7 @@ import { MAX_RUN } from '../../../shared/mail.ts'
 import { api, changed, closeSession, composerOf, draftsOf, hasContent, loadEvents, queuedParts, select, sendQueued, setComposer, state, undismissItem, useStore, deselect, globalId, machineOf, localId, quietly, panelOf, setPanel, type PanelTab } from '../store.ts'
 import { fatigue, kTokens } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
+import { dragToGroup } from './Sidebar.tsx'
 import { RichInput } from './Inputs.tsx'
 import { Transcript } from './Transcript.tsx'
 import { ItemCount } from './AttentionPanel.tsx'
@@ -117,7 +118,10 @@ export function SessionHeader({ m, extra }: { m: SessionMeta; extra?: React.Reac
   }, [])
   return (
     <header ref={head} className={`session-head${narrow ? ' narrow' : ''}${more ? ' head-open' : ''}`}>
-      <Mascot status={m.status} look={m.look} fatigue={fatigue(m.context.used, m.context.window)} size={44} title={STATUS_LABEL[m.status]} child={!!m.parentId} review={!!m.pendingReviews} starred={m.starred} />
+      {/* Drag it onto a group in the sidebar to move the session there. */}
+      <span className="head-critter" onPointerDown={(e) => dragToGroup(e, m)}>
+        <Mascot status={m.status} look={m.look} fatigue={fatigue(m.context.used, m.context.window)} size={44} title={STATUS_LABEL[m.status]} child={!!m.parentId} review={!!m.pendingReviews} starred={m.starred} />
+      </span>
       <div className="head-main">
         {editing
           ? <input className="title-edit" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} onBlur={save} onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setTitle(m.title); setEditing(false) } }} />

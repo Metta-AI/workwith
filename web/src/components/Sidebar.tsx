@@ -83,6 +83,10 @@ function useDragSort(onDrop: (key: string, ids: string[]) => void, onMove?: (id:
     if (!nav) return
     const scope = (e.currentTarget as HTMLElement).closest('.groups')
     const x0 = e.clientX, y0 = e.clientY
+    // The list can scroll while you drag (a wheel, a trackpad): the dragged one stays under the pointer.
+    const top0 = nav.scrollTop
+    let last = { x: x0, y: y0 }
+    const lift = (y: number) => y - y0 + nav.scrollTop - top0
     moved.current = false
     // Where everything was when the drag began: the slots stay put while things slide.
     const els = [...nav.querySelectorAll<HTMLElement>('[data-sort-key]')].filter((el) => el.dataset.sortKey === key)
@@ -113,9 +117,10 @@ function useDragSort(onDrop: (key: string, ids: string[]) => void, onMove?: (id:
     }, 400)
     // Once it holds, the finger moves the row, not the list.
     const noScroll = (ev: TouchEvent) => { if (held) ev.preventDefault() }
-    const move = (ev: PointerEvent) => {
-      const dx = ev.clientX - x0, dy = ev.clientY - y0
-      if (!held) { if (Math.hypot(dx, dy) > 8) end(); return }
+    const move = (ev: { clientX: number; clientY: number }) => {
+      last = { x: ev.clientX, y: ev.clientY }
+      const dx = ev.clientX - x0, dy = lift(ev.clientY)
+      if (!held) { if (Math.hypot(dx, ev.clientY - y0) > 8) end(); return }
       if (!moved.current && Math.hypot(free ? dx : 0, dy) < 5) return
       if (!moved.current) { moved.current = true; document.body.classList.add('sorting') }
       const over = groupAt(ev.clientX, ev.clientY)
@@ -132,6 +137,7 @@ function useDragSort(onDrop: (key: string, ids: string[]) => void, onMove?: (id:
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', cancel)
       window.removeEventListener('touchmove', noScroll)
+      nav.removeEventListener('scroll', scrolled)
       document.body.classList.remove('sorting')
       setDrag(null)
     }
@@ -145,13 +151,15 @@ function useDragSort(onDrop: (key: string, ids: string[]) => void, onMove?: (id:
       if (over != null) return onMove?.(id, over)
       if (free) return
       const order = [...others]
-      order.splice(slot(ev.clientY - y0), 0, id)
+      order.splice(slot(lift(ev.clientY)), 0, id)
       if (order.some((x, k) => x !== ids[k])) onDrop(key, order)
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
     window.addEventListener('pointercancel', cancel)
     window.addEventListener('touchmove', noScroll, { passive: false })
+    const scrolled = () => { if (moved.current) move({ clientX: last.x, clientY: last.y }) }
+    nav.addEventListener('scroll', scrolled)
   }
   // Props for one sortable element.
   const sortable = (key: string, id: string) => {
@@ -416,6 +424,60 @@ function saveGroups(machine: string, groups: SessionGroup[]) {
 // A group you are naming: a new one, or one you double-clicked.
 let naming: string | null = null
 function newGroup(machine: string) {
+// Drag the critter in a session's head onto a group in the sidebar to move the session there.
+// A copy of the critter follows the pointer; the group under it shows the drop outline.
+let headOver: { machine: string; group: string } | null = null
+export function dragToGroup(e: React.PointerEvent, s: SessionMeta) {
+  if (e.button !== 0 || e.pointerType === 'touch' || s.kind !== 'worker') return
+  const src = e.currentTarget as HTMLElement
+  const machine = machineOf(s.id)
+  const x0 = e.clientX, y0 = e.clientY
+  const r = src.getBoundingClientRect()
+  let ghost: HTMLElement | null = null
+  const groupAt = (x: number, y: number) => {
+    const scope = document.querySelector<HTMLElement>(`.groups[data-machine="${CSS.escape(machine)}"]`)
+    const g = scope && [...scope.querySelectorAll<HTMLElement>('[data-group]')].find((el) => {
+      const b = el.getBoundingClientRect()
+      return x >= b.left && x <= b.right && y >= b.top && y < b.bottom
+    })?.dataset.group
+    const known = new Set(groupsOf(machine).map((x) => x.id))
+    const now = s.group && known.has(s.group) ? s.group : NONE
+    return g == null || g === now ? null : g
+  }
+  const show = (g: string | null) => {
+    if ((headOver?.group ?? null) === g) return
+    headOver = g == null ? null : { machine, group: g }
+    changed()
+  }
+  const move = (ev: PointerEvent) => {
+    if (!ghost) {
+      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return
+      ghost = src.cloneNode(true) as HTMLElement
+      Object.assign(ghost.style, { position: 'fixed', left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`, margin: '0', zIndex: '1000', pointerEvents: 'none', opacity: '0.85' })
+      document.body.append(ghost)
+      document.body.classList.add('sorting')
+    }
+    ghost.style.transform = `translate(${ev.clientX - x0}px, ${ev.clientY - y0}px)`
+    show(groupAt(ev.clientX, ev.clientY))
+  }
+  const end = () => {
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', up)
+    window.removeEventListener('pointercancel', end)
+    ghost?.remove()
+    document.body.classList.remove('sorting')
+    show(null)
+  }
+  const up = (ev: PointerEvent) => {
+    const g = ghost ? groupAt(ev.clientX, ev.clientY) : null
+    end()
+    if (g != null) moveToGroup(s, g === '+' ? newGroup(machine) : g)
+  }
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', up)
+  window.addEventListener('pointercancel', end)
+}
+
   const g = { id: Math.random().toString(36).slice(2, 10), name: 'New group' }
   naming = g.id
   saveGroups(machine, [...groupsOf(machine), g])
@@ -484,7 +546,8 @@ function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: s
     { label: 'Delete group', run: () => saveGroups(machine, groups.filter((x) => x.id !== g.id)) },
   ])
   if (!sections.length) return q && (m?.sessions ?? []).some((s) => s.kind === 'worker' && s.archived) ? <div className="muted pad">No folder or session matches “{st.archiveQuery.trim()}”.</div> : null
-  return <div className="groups">{sections.map(({ g, list }) => {
+  const dropOn = (g: string) => over === g || (headOver?.machine === machine && headOver.group === g)
+  return <div className="groups" data-machine={machine}>{sections.map(({ g, list }) => {
     const shutKey = `group:${machine}:${g.id}`
     const shut = st.collapsed.includes(shutKey)
     // A group you made: you can drag it, rename it, and drag sessions into it.
@@ -512,7 +575,7 @@ function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: s
     // A new session in a group starts in the folder of its latest one.
     const folder = [...list].sort((a, b) => b.createdAt - a.createdAt)[0]?.cwd ?? ''
     return (
-      <div key={g.id || '-'} {...sg} data-group={byDir ? undefined : g.id} className={`group${shut ? ' shut' : ''}${over === g.id ? ' drop' : ''}${sg?.className ?? ''}`}>
+      <div key={g.id || '-'} {...sg} data-group={byDir ? undefined : g.id} className={`group${shut ? ' shut' : ''}${dropOn(g.id) ? ' drop' : ''}${sg?.className ?? ''}`}>
         <div className={`group-head${mine ? '' : ' fixed'}${byDir ? ' dir' : ''}`} onPointerDown={mine ? (e) => start(e, `${machine}|groups`, g.id) : undefined} onClick={toggle} onContextMenu={mine ? groupMenu(g) : undefined}>
           <ChevronIcon size={11} className="group-chevron" />
           {naming === g.id
@@ -546,7 +609,7 @@ function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: s
       </div>
     )
   })}
-    {!st.showArchived && <div data-group="+" className={`new-group${over === '+' ? ' drop' : ''}`} role="button" onClick={() => newGroup(machine)}>+ New group</div>}
+    {!st.showArchived && <div data-group="+" className={`new-group${dropOn('+') ? ' drop' : ''}`} role="button" onClick={() => newGroup(machine)}>+ New group</div>}
   </div>
 }
 
