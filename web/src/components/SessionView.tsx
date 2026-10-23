@@ -335,27 +335,44 @@ function Inbox({ m }: { m: SessionMeta }) {
 }
 
 // Messages from other sessions that wait: for the end of this turn, or, past the limit, for your OK.
+// Each is a pill in the queue row; a click opens the message above it.
 function Mailbox({ m }: { m: SessionMeta }) {
   const { sessions } = useStore()
+  const [open, setOpen] = useState<string | null>(null)
+  const ref = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const out = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(null) }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(null) }
+    document.addEventListener('mousedown', out)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', out); document.removeEventListener('keydown', esc) }
+  }, [open])
   if (!m.mail?.length) return null
   const name = (x: Mail) => sessions.find((s) => s.id === globalId(machineOf(m.id), x.from))?.title ?? x.title
-  const act = (id: string, send: boolean) => api(`/api/sessions/${m.id}/mail/${id}`, 'POST', { send })
+  const act = (id: string, send: boolean) => { setOpen(null); void api(`/api/sessions/${m.id}/mail/${id}`, 'POST', { send }) }
+  const x = m.mail.find((y) => y.id === open)
   return (
-    <div className="inbox">
-      {m.mail.map((x) => (
-        <div key={x.id} className={`inbox-item mail-item${x.held ? ' held' : ''}`}>
+    <span className="mail-pills" ref={ref}>
+      {m.mail.map((y) => (
+        <button key={y.id} className={`chip mail-pill${y.held ? ' held' : ''}${y.id === open ? ' on' : ''}`} onClick={() => setOpen(y.id === open ? null : y.id)}>
+          <MailIcon size={12} /><span className="mail-pill-name">{y.idle ? `${name(y)} is idle` : name(y)}</span>
+        </button>
+      ))}
+      {x && (
+        <div className={`mail-pop${x.held ? ' held' : ''}`}>
           <div className="inbox-head">
             <span className="inbox-from"><MailIcon size={12} /> {x.idle ? `${name(x)} is idle` : x.replyTo ? `Reply from ${name(x)}` : `From ${name(x)}`}</span>
-            <span className="inbox-on" title={x.held ? `${name(x)} sent ${MAX_RUN} messages in a row here, and you wrote in neither session since.` : undefined}>
-              {x.held ? 'Waits for your OK' : x.step ? `Goes in when ${name(x)} goes on or ends its turn` : 'Goes in when this turn ends'}
+            <span className="inbox-on">
+              {x.held ? `Waits for your OK: ${name(x)} sent ${MAX_RUN} messages in a row here, and you wrote in neither session since.` : x.step ? `Goes in when ${name(x)} goes on or ends its turn` : 'Goes in when this turn ends'}
             </span>
-            {x.held && <button className="link" onClick={() => void act(x.id, true)}>Send</button>}
-            <button className="icon-btn" title="Discard the message" onClick={() => void act(x.id, false)}><XIcon size={13} /></button>
+            {x.held && <button className="link" onClick={() => act(x.id, true)}>Send</button>}
+            <button className="icon-btn" title="Discard the message" onClick={() => act(x.id, false)}><XIcon size={13} /></button>
           </div>
           {x.text && <div className="mail-text">{x.text}</div>}
         </div>
-      ))}
-    </div>
+      )}
+    </span>
   )
 }
 
@@ -468,9 +485,9 @@ export function Composer({ m, attachRef }: { m: SessionMeta; attachRef?: React.R
     <div className="composer">
       <RunningTasks sid={m.id} />
       <Inbox m={m} />
-      <Mailbox m={m} />
-      {(notes > 0 || verdicts > 0 || reactions > 0 || answers > 0 || dismissed > 0 || done > 0 || open.length > 0) && (
+      {(!!m.mail?.length || notes > 0 || verdicts > 0 || reactions > 0 || answers > 0 || dismissed > 0 || done > 0 || open.length > 0) && (
         <div className="queue">
+          <Mailbox m={m} />
           {verdicts > 0 && <span className="chip static">{verdicts} {verdicts === 1 ? 'verdict' : 'verdicts'}</span>}
           {notes > 0 && <span className="chip static">{notes} {notes === 1 ? 'comment' : 'comments'}</span>}
           {reactions > 0 && <span className="chip static">{reactions} {reactions === 1 ? 'reaction' : 'reactions'}</span>}
