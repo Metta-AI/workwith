@@ -498,6 +498,9 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .panel-done-reply { color: var(--muted); font-size: calc(12px * var(--fs, 1)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-head { display: flex; align-items: center; gap: 14px; padding: 12px 20px; border-bottom: 1px solid var(--line); }
 .head-critter { display: flex; flex: none; cursor: grab; }
+.critter-lift { transform-origin: 50% 80%; filter: drop-shadow(0 6px 5px rgba(0, 0, 0, .25)); animation: critter-wiggle .32s ease-in-out infinite alternate; }
+@keyframes critter-wiggle { from { transform: rotate(-12deg) scale(1.08); } to { transform: rotate(-4deg) scale(1.08); } }
+@media (prefers-reduced-motion: reduce) { .critter-lift { animation: none; transform: rotate(-8deg) scale(1.08); } }
 .head-main { flex: 1; min-width: min(16em, 45%); }
 .head-main h1 { font-size: calc(17px * var(--fs, 1)); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: text; }
 .title-edit { font-size: calc(16px * var(--fs, 1)); font-weight: 600; width: 100%; }

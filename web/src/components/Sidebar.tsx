@@ -425,7 +425,8 @@ function saveGroups(machine: string, groups: SessionGroup[]) {
 let naming: string | null = null
 function newGroup(machine: string) {
 // Drag the critter in a session's head onto a group in the sidebar to move the session there.
-// A copy of the critter follows the pointer; the group under it shows the drop outline.
+// You pick the critter up: it leaves the head, and a copy that tilts and wiggles follows the
+// pointer. The group under it shows the drop outline.
 let headOver: { machine: string; group: string } | null = null
 export function dragToGroup(e: React.PointerEvent, s: SessionMeta) {
   if (e.button !== 0 || e.pointerType === 'touch' || s.kind !== 'worker') return
@@ -452,9 +453,13 @@ export function dragToGroup(e: React.PointerEvent, s: SessionMeta) {
   const move = (ev: PointerEvent) => {
     if (!ghost) {
       if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return
-      ghost = src.cloneNode(true) as HTMLElement
-      Object.assign(ghost.style, { position: 'fixed', left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`, margin: '0', zIndex: '1000', pointerEvents: 'none', opacity: '0.85' })
+      ghost = document.createElement('div')
+      Object.assign(ghost.style, { position: 'fixed', left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`, zIndex: '1000', pointerEvents: 'none' })
+      const copy = src.cloneNode(true) as HTMLElement
+      copy.classList.add('critter-lift')
+      ghost.append(copy)
       document.body.append(ghost)
+      src.style.visibility = 'hidden'
       document.body.classList.add('sorting')
     }
     ghost.style.transform = `translate(${ev.clientX - x0}px, ${ev.clientY - y0}px)`
@@ -465,6 +470,7 @@ export function dragToGroup(e: React.PointerEvent, s: SessionMeta) {
     window.removeEventListener('pointerup', up)
     window.removeEventListener('pointercancel', end)
     ghost?.remove()
+    src.style.visibility = ''
     document.body.classList.remove('sorting')
     show(null)
   }
