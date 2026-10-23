@@ -370,20 +370,30 @@ type Group = { kind: 'one'; item: Item } | { kind: 'activity'; items: Item[] }
 
 // Claude's text between tool calls is a step on the way. Once the turn is over,
 // all but its last text fold into the activity rows, unless they hold questions,
-// items to consider or comments.
+// items to consider or comments. Tool calls that only keep the session's own records
+// (its notes, its memory, its name) do not end a step: an answer the agent wrote before
+// it updated its notes is still part of its last text.
 function interim(events: Event[], f: Folded, drafted: Set<string>): Set<string> {
   const out = new Set<string>()
-  let texts: { key: string; text: string }[] = []
+  let texts: { key: string; text: string; work: boolean }[] = []
   for (const e of events) {
     if (e.t === 'user') texts = []
-    else if (e.t === 'assistant' && !e.synthetic) e.blocks.forEach((b, i) => { if (b.type === 'text') texts.push({ key: `${e.seq}.${i}`, text: b.text }) })
+    else if (e.t === 'assistant' && !e.synthetic) e.blocks.forEach((b, i) => {
+      if (b.type === 'text') texts.push({ key: `${e.seq}.${i}`, text: b.text, work: false })
+      else if (b.type === 'tool_use' && !upkeep(b)) for (const t of texts) t.work = true
+    })
     else if (e.t === 'result') {
-      for (const t of texts.slice(0, -1)) if (!f.sent.has(t.key) && !f.reacts.has(t.key) && !drafted.has(t.key) && !itemsOf(t.text).length) out.add(t.key)
+      for (const t of texts.slice(0, -1)) if (t.work && !f.sent.has(t.key) && !f.reacts.has(t.key) && !drafted.has(t.key) && !itemsOf(t.text).length) out.add(t.key)
       texts = []
     }
   }
   return out
 }
+
+const UPKEEP_TOOL = new Set(['mcp__codinger__set_title', 'mcp__codinger__set_look', 'mcp__codinger__save_estimate', 'mcp__codinger__save_actual', 'mcp__codinger__claim_changes', 'ToolSearch', 'TodoWrite'])
+const upkeep = (b: Extract<Block, { type: 'tool_use' }>) =>
+  UPKEEP_TOOL.has(b.name)
+  || (/^(Read|Edit|Write|MultiEdit)$/.test(b.name) && /\/\.codinger\/notes\/|\/\.claude\/projects\/[^/]+\/memory\//.test(String(b.input?.file_path ?? '')))
 
 function items(events: Event[], f: Folded, steps: Set<string>): Item[] {
   const out: Item[] = []

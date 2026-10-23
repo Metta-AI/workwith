@@ -184,6 +184,7 @@ export const workerNotesPrompt = (file: string) => `
 Keep notes on this session in \`${file}\` (under your working directory; Codinger keeps it out of git). A new session can start from them, so write them as you work:
 
 - Update them when you make or change a decision, start or finish a piece of work, find a problem, or learn how the user wants the work done. Not after each small step.
+- At the end of a turn, update them before you write your final message, not after it. Codinger can fold text that comes before a tool call into the work, out of view.
 - Change only the part that changed, with Edit. Do not rewrite the whole file. Create it with Write if it does not exist.
 - When the user asks you to remind them of something at a point in the work ("before we push", "when we are done"), add it to Reminders with that point. When the work reaches that point, remind them in your reply, then remove it.
 - Read the file again after a compaction.
