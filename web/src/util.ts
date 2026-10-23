@@ -39,9 +39,11 @@ function highlightMark(): TokenizerAndRendererExtension {
   }
 }
 
-// A web URL in inline code is a link too (the hook below opens it in a new tab).
+// A web URL in inline code is a link too (the hook below opens it in a new tab). In a path,
+// a line can break after each "/" (a <wbr>), so a long path in a table cell wraps there.
 function urlCode({ text }: { text: string }): string | false {
-  return /^https?:\/\/\S+$/i.test(text) && `<a href="${escapeHtml(text).replace(/"/g, '&quot;')}"><code>${escapeHtml(text)}</code></a>`
+  if (/^https?:\/\/\S+$/i.test(text)) return `<a href="${escapeHtml(text).replace(/"/g, '&quot;')}"><code>${escapeHtml(text)}</code></a>`
+  return text.includes('/') && `<code>${escapeHtml(text).replace(/\/(?=.)/g, '/<wbr>')}</code>`
 }
 
 // [title](session:<id>) names another session; a click shows it (main.tsx). DOMPurify

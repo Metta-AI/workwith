@@ -575,6 +575,8 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .md h1, .md h2 { padding-bottom: .25em; border-bottom: 1px solid var(--line); }
 .md table { margin: .8em 0; } .md th { background: var(--panel); text-align: left; }
 .assistant-text { margin: 6px 0; }
+/* A table is no wider than its message: the cells wrap first, a path in inline code breaks after a "/" (util.ts adds a <wbr>), and only a table that still does not fit scrolls sideways. */
+.md table { display: block; max-width: 100%; width: max-content; overflow-x: auto; }
 .assistant-text.streaming { opacity: .85; }
 .more { margin: .8em 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
 .more > summary { cursor: pointer; padding: 5px 10px; color: var(--muted); font-size: calc(13px * var(--fs, 1)); list-style: none; display: flex; gap: 6px; align-items: center; }
