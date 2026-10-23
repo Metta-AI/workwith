@@ -216,6 +216,8 @@ body.resizing-v .splitter-v::after { background: var(--accent); }
 /* The sidebar's own colour, so a session row under it does not show through. */
 .reset-order { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 2; white-space: nowrap; font-size: calc(12px * var(--fs, 1)); padding: 1px 8px; border: none; border-radius: 6px; background: var(--panel); box-shadow: none; color: var(--muted); }
 .reset-order:hover { color: var(--text); text-decoration: underline; background: var(--panel); }
+/* Room at the end of the list, so "Reset order" does not cover the last items there. */
+.sidebar:has(.reset-order) .tree { padding-bottom: 30px; }
 .settings-check { display: flex; gap: 8px; align-items: center; font-size: calc(13px * var(--fs, 1)); margin: 0 0 12px; }
 .settings-file { display: flex; gap: 10px; align-items: baseline; font-size: calc(13px * var(--fs, 1)); }
 .settings-file .mono { font-size: calc(12px * var(--fs, 1)); }
