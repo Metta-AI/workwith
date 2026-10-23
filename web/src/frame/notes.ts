@@ -5,10 +5,11 @@
 // finds what you comment on and paints the highlights, and Codinger's page draws the cards
 // over the frame (web/src/components/ArtifactNotes.tsx). They talk over postMessage.
 //
-// A selection of text, or a click on a mark (an element with data-pid, aria-label or
-// data-label, an SVG shape, an image or a canvas), starts a comment. An Option-click (Alt)
-// starts one on anything, buttons and links too. On a touch screen a long press does what
-// a click does.
+// A selection of text starts a comment. In comment mode (the pane's Comment button, or a tap
+// on Option alone) a click starts one on what it hits, the nearest mark around it (an element
+// with data-pid, aria-label or data-label) first, and the page does not get the click. Out of
+// it the page gets its clicks, and an Option-click (Alt) starts one comment. On a touch screen
+// a long press on a mark starts one.
 
 import type { ArtifactAnchor } from '../../../shared/types.ts'
 import { occurrenceOf, resolveNthQuote } from '../vendor/anchor.ts'
@@ -110,22 +111,56 @@ export function startNotes() {
     return true
   }
 
+  // Comment mode. Codinger keeps it (it shows on the pane's button) and says when it changes.
+  let mode = false
+  const commenting = (e: MouseEvent | KeyboardEvent) => mode || e.altKey
   // A click waits a moment: a double click selects a word, and that comment wins.
-  let wait = 0, downAt = { x: 0, y: 0 }
-  addEventListener('pointerdown', (e) => { downAt = { x: e.clientX, y: e.clientY } }, true)
-  addEventListener('mouseup', () => setTimeout(() => { if (startOnText()) clearTimeout(wait) }, 0))
+  let wait = 0, downAt = { x: 0, y: 0 }, altAt = 0
+  addEventListener('pointerdown', (e) => { downAt = { x: e.clientX, y: e.clientY }; altAt = 0 }, true)
+  addEventListener('mouseup', () => setTimeout(() => { if (startOnText()) clearTimeout(wait) }, 0), true)
   addEventListener('click', (e) => {
     clearTimeout(wait)
-    if (!e.isTrusted || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || touched) return
+    if (!e.isTrusted || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || (touched && !mode) || !commenting(e)) return
     if (Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 4) return
-    const el = markAt(e.target as Element, e.altKey)
+    const el = markAt(e.target as Element, true)
     const hit = markHit(e.clientX, e.clientY, el)
     if (hit) { handBack(); send({ t: 'open', id: hit }); return }
     if (!el) return
-    if (e.altKey) { e.preventDefault(); e.stopPropagation() }
-    wait = window.setTimeout(() => { if (!textTarget()) startOn(el) }, e.altKey ? 0 : 250)
+    wait = window.setTimeout(() => { if (!textTarget()) startOn(el) }, 250)
   }, true)
   addEventListener('dblclick', () => clearTimeout(wait), true)
+  // In it the page gets no presses or clicks: these listeners come after this script's own and before the page's.
+  for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'dblclick', 'auxclick', 'contextmenu'] as const) {
+    addEventListener(t, (e) => { if (commenting(e) && !isOurs(e.target) && e.isTrusted) { e.stopImmediatePropagation(); if (t === 'click' || t === 'auxclick') e.preventDefault() } }, true)
+  }
+
+  // A tap on Option alone turns comment mode on or off; Escape turns it off.
+  addEventListener('keydown', (e) => {
+    if (e.key === 'Alt' && !e.repeat) altAt = performance.now()
+    else altAt = 0
+    if (e.key === 'Escape' && mode) send({ t: 'mode', on: false })
+  }, true)
+  addEventListener('keyup', (e) => { if (e.key === 'Alt' && altAt && performance.now() - altAt < 400) send({ t: 'mode', on: !mode }); altAt = 0 }, true)
+
+  // While you comment, the mark under the pointer has an outline and says what a comment on it quotes.
+  let pick: HTMLElement | null = null
+  const showPick = (el: Element | null) => {
+    if (!el) { if (pick) pick.style.display = 'none'; return }
+    if (!pick?.isConnected) { pick = document.createElement('div'); pick.className = 'cd-pick'; ensureLayer().appendChild(pick); pick.appendChild(document.createElement('span')) }
+    const r = el.getBoundingClientRect(), tag = pick.firstElementChild as HTMLElement
+    Object.assign(pick.style, { display: 'block', left: `${r.left - 2}px`, top: `${r.top - 2}px`, width: `${r.width + 4}px`, height: `${r.height + 4}px` })
+    tag.textContent = clip(labelOf(el) || el.localName, 80)
+    tag.style.top = r.top > 26 ? '-24px' : `${r.height + 8}px`
+    // Inside the window: at the left of the mark, moved left as far as it must go.
+    tag.style.left = `${Math.min(0, innerWidth - r.left - tag.offsetWidth - 4)}px`
+  }
+  addEventListener('mousemove', (e) => showPick(commenting(e) && !isOurs(e.target) ? markAt(e.target as Element, true) : null), { capture: true, passive: true })
+  addEventListener('keyup', (e) => { if (e.key === 'Alt' && !mode) showPick(null) }, true)
+  const setMode = (on: boolean) => {
+    mode = on
+    document.documentElement.toggleAttribute('data-codinger-commenting', on)
+    if (!on) showPick(null)
+  }
 
   // Touch: a long press on a mark starts a comment on it; a selection starts one when it stops changing.
   let touched = false, press = 0, from: { x: number; y: number } | null = null, settle = 0
@@ -133,7 +168,7 @@ export function startNotes() {
     touched = true
     clearTimeout(press)
     if (e.touches.length !== 1) return
-    const t = e.touches[0], el = markAt(e.target as Element, false)
+    const t = e.touches[0], el = mode ? null : markAt(e.target as Element, false)
     from = { x: t.clientX, y: t.clientY }
     if (el) press = window.setTimeout(() => { if (from && !textTarget()) { from = null; startOn(el) } }, 500)
   }, { passive: true })
@@ -158,7 +193,10 @@ export function startNotes() {
       ::highlight(cd-draft){background-color:rgba(255,196,0,.38)} ::highlight(cd-sent){background-color:rgba(255,196,0,.16)} ::highlight(cd-focus){background-color:rgba(255,170,0,.62)}
       [${UI}] .cd-box{position:fixed;border-radius:4px;box-shadow:0 0 0 3px rgba(255,196,0,.75);background:rgba(255,196,0,.14)}
       [${UI}] .cd-box.sent{box-shadow:0 0 0 2px rgba(255,196,0,.4);background:none}
-      [${UI}] .cd-box.focus{box-shadow:0 0 0 3px rgba(255,150,0,.95);background:rgba(255,170,0,.22)}`
+      [${UI}] .cd-box.focus{box-shadow:0 0 0 3px rgba(255,150,0,.95);background:rgba(255,170,0,.22)}
+      [${UI}] .cd-pick{position:fixed;display:none;border-radius:4px;outline:2px dashed rgba(240,160,0,.95);outline-offset:0}
+      [${UI}] .cd-pick span{position:absolute;left:0;max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:12px/1.5 system-ui,sans-serif;color:#1d1d1f;background:#ffe9a8;border-radius:4px;padding:1px 6px;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+      html[data-codinger-commenting], html[data-codinger-commenting] *{cursor:crosshair!important}`
     layer.appendChild(css)
     document.documentElement.appendChild(layer)
     return layer
@@ -216,7 +254,8 @@ export function startNotes() {
     cancelAnimationFrame(moveRaf)
     moveRaf = requestAnimationFrame(() => {
       let id: string | null = null
-      for (const f of found) if (rectsOf(f).some((r) => e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom)) { id = f.m.id; if (f.m.kind === 'draft') break }
+      // The gap under a highlight, down to its card, counts as on it.
+      for (const f of found) if (rectsOf(f).some((r) => e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom + 8)) { id = f.m.id; if (f.m.kind === 'draft') break }
       if (id !== hovered) { hovered = id; send({ t: 'hover', id }) }
     })
   }, { passive: true })
@@ -226,6 +265,7 @@ export function startNotes() {
     if (e.source !== parent || e.origin !== CODINGER_APP || e.data?.codinger !== 'notes') return
     const m = e.data
     if (m.t === 'marks') { marks = m.items ?? []; focus = m.focus ?? null; resolve(); paint() }
+    else if (m.t === 'mode') setMode(!!m.on)
     else if (m.t === 'reveal') {
       const f = found.find((x) => x.m.id === m.id)
       const el = f?.el ?? (f?.range ? at(f.range.startContainer) : null)

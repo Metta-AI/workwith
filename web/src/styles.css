@@ -1389,6 +1389,7 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 /* The frame, and the comment cards over it (ArtifactNotes.tsx). */
 .artifact-stage { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
 .artifact-notes { position: absolute; inset: 0; pointer-events: none; }
+.artifact-top .icon-btn.on { color: var(--accent); background: var(--accent-soft); }
 .artifact-check { position: fixed; left: -10000px; top: 0; width: 1280px; height: 800px; border: none; visibility: hidden; }
 .artifact-missing { padding: 24px; text-align: center; }
 .publish { position: relative; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }

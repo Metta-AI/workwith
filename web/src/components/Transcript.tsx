@@ -18,6 +18,7 @@ import { minutes } from '../cache.ts'
 import { AgentsIcon, MailIcon, BlockIcon, CheckIcon, ChevronIcon, DashIcon, XIcon, FileIcon, GlobeIcon, ListIcon, PencilIcon, SearchIcon, OpenIcon, TerminalIcon, TimerIcon, ToolIcon, TrashIcon } from './Icons.tsx'
 import { shortPath } from './DirPicker.tsx'
 import { ArtifactIcon, ArtifactLine, SHOW_ARTIFACT, showArtifactIn } from './Artifacts.tsx'
+import { revealArtifactNote } from './ArtifactNotes.tsx'
 import { MediaLine, SHOW_FILE } from './MediaLine.tsx'
 import { WithPastes } from './Paste.tsx'
 import { openFile } from './FileBrowser.tsx'
@@ -671,7 +672,7 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
         <div
           key={i}
           className={`user-part ${p.kind}`}
-          {...(p.kind === 'artifact' && sid ? { onClick: () => showArtifactIn(sid, p.anchor.artifact, p.anchor.v) } : {})}
+          {...(p.kind === 'artifact' && sid ? { onClick: () => { showArtifactIn(sid, p.anchor.artifact, p.anchor.v); revealArtifactNote(sid, `s${e.seq}.${e.parts.indexOf(p)}`) } } : {})}
           {...(p.kind === 'note' ? {
             onMouseEnter: () => focusPassage(sid, p),
             onMouseLeave: () => focusPassage(sid, null),

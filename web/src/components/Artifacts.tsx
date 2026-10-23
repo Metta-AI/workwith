@@ -8,7 +8,7 @@ import type { Artifact, ArtifactTouch, PreviewTarget, Visibility } from '../../.
 import type { Block, Event } from '../../../shared/types.ts'
 import { api, artifactsBase, changed, revealEvent, setPanel, state, useStore } from '../store.ts'
 import { timeAgo } from '../util.ts'
-import { BackIcon, ChevronIcon, MoreIcon, OpenIcon, XIcon } from './Icons.tsx'
+import { BackIcon, ChevronIcon, CommentIcon, MoreIcon, OpenIcon, XIcon } from './Icons.tsx'
 import { Splitter, useWidth } from './Splitter.tsx'
 import { ArtifactNotes } from './ArtifactNotes.tsx'
 
@@ -259,6 +259,8 @@ export function ArtifactPane({ sid }: { sid: string }) {
   const key = target ? ('url' in target ? target.url : `${target.artifact}@${v ?? ''}`) : ''
   const tab = target && srcOf(target, a, st.artifactsPort, 0)
   const frame = useRef<HTMLIFrameElement>(null)
+  // Comment mode: a click in the page starts a comment (ArtifactNotes.tsx).
+  const [commenting, setCommenting] = useState(false)
   return (
     <div className="artifact-pane">
       <div className="artifact-top">
@@ -268,6 +270,7 @@ export function ArtifactPane({ sid }: { sid: string }) {
             choices={(a && !mine.includes(a) ? [a, ...mine] : mine).map((x) => ({ value: x.name, label: x.title, sub: timeAgo(x.mtime) }))} />}
         <span className="grow" />
         {/* The title at the left; the view's buttons, then the version and Publish together, at the right. */}
+        {a && <button className={`icon-btn${commenting ? ' on' : ''}`} aria-pressed={commenting} data-tip={commenting ? 'Stop commenting (tap Option)' : 'Comment on what you click (tap Option)'} onClick={() => setCommenting(!commenting)}><CommentIcon size={14} /></button>}
         <button className="icon-btn" data-tip="Load again" onClick={() => setReload(Date.now())}><RefreshIcon size={14} /></button>
         {tab && <a className="icon-btn" data-tip="Open in a new tab" href={tab} target="_blank" rel="noreferrer"><OpenIcon size={14} /></a>}
         {a && <>
@@ -281,7 +284,7 @@ export function ArtifactPane({ sid }: { sid: string }) {
         ? <div className="artifact-stage">
           <ArtifactFrame key={key} target={target} at={Math.max(shown?.at ?? 0, reload)} frameRef={frame} />
           {/* Comments on what the page shows (ArtifactNotes.tsx). */}
-          {a && <ArtifactNotes key={`notes:${key}`} sid={sid} artifact={a.name} v={v != null && v !== a.latest ? v : undefined} frame={frame} />}
+          {a && <ArtifactNotes key={`notes:${key}`} sid={sid} artifact={a.name} v={v != null && v !== a.latest ? v : undefined} mtime={a.mtime} frame={frame} mode={commenting} setMode={setCommenting} />}
         </div>
         : <div className="artifact-missing muted">Nothing to show yet.</div>}
     </div>

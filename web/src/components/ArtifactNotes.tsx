@@ -4,12 +4,16 @@
 // comments on messages when there is no gutter: a card shows under its highlight while you
 // write in it, after you click the highlight, or while the pointer is on the highlight. The
 // comments go with your next message, as comments on messages do (store.ts queuedParts).
+// Sent comments keep a faint highlight, and their card shows while the pointer is on it,
+// until the artifact changes. Comment mode (the pane's Comment button, or a tap on Option)
+// makes a click in the page start a comment instead of doing what the page does with it.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { addDraft, draftsOf, removeDraft, state, uid, useStore, type ArtDraft } from '../store.ts'
+import type { ArtifactAnchor, ImageRef } from '../../../shared/types.ts'
 import { isReaction } from '../emoji.ts'
 import { focusField } from './Inputs.tsx'
-import { CARD_W, NoteCard } from './Margin.tsx'
+import { CARD_W, NoteCard, SentCard } from './Margin.tsx'
 
 type Box = { left: number; top: number; right: number; bottom: number; last: { left: number; right: number; bottom: number } }
 type FromFrame =
@@ -18,13 +22,29 @@ type FromFrame =
   | { t: 'boxes'; boxes: Record<string, Box | null> }
   | { t: 'hover'; id: string | null }
   | { t: 'open'; id: string }
+  | { t: 'mode'; on: boolean }
 
 const isEmpty = (d: { text: string; images: unknown[] }) => !d.text.trim() && !d.images.length
 
-export function ArtifactNotes({ sid, artifact, v, frame }: { sid: string; artifact: string; v?: number; frame: React.RefObject<HTMLIFrameElement | null> }) {
-  useStore()
-  const all = draftsOf(sid).filter((d): d is ArtDraft => d.kind === 'artifact' && d.anchor.artifact === artifact && d.anchor.v === v)
+// A click on a sent comment in the conversation shows its place in the page (Transcript.tsx).
+const REVEAL = 'codinger:reveal-artifact-note'
+export const revealArtifactNote = (sid: string, id: string) => dispatchEvent(new CustomEvent(REVEAL, { detail: { sid, id } }))
+
+type Sent = { id: string; anchor: ArtifactAnchor; text: string; images?: ImageRef[] }
+
+// mtime: when the artifact last changed (none for an old version, which does not change).
+// mode: comment mode, which the pane's button shows.
+export function ArtifactNotes({ sid, artifact, v, mtime, frame, mode, setMode }: { sid: string; artifact: string; v?: number; mtime?: number; frame: React.RefObject<HTMLIFrameElement | null>; mode: boolean; setMode(on: boolean): void }) {
+  const st = useStore()
+  const here = (a: ArtifactAnchor) => a.artifact === artifact && a.v === v
+  const all = draftsOf(sid).filter((d): d is ArtDraft => d.kind === 'artifact' && here(d.anchor))
   const cards = all.filter((d) => !d.reaction)
+  // Sent comments on the page as it is now: on this version, or made since the artifact last changed.
+  const sent: Sent[] = []
+  for (const e of st.events[sid] ?? []) if (e.t === 'user') e.parts.forEach((p, i) => {
+    if (p.kind === 'artifact' && here(p.anchor) && (v != null || p.anchor.at === mtime)) sent.push({ id: `s${e.seq}.${i}`, anchor: p.anchor, text: p.text, images: p.images })
+  })
+  const sentCards = sent.filter((n) => !isReaction(n.text) || n.images?.length)
   const layer = useRef<HTMLDivElement>(null)
   const [boxes, setBoxes] = useState<Record<string, Box | null>>({})
   // The card showing (after a click on its highlight, or while you write in it), and the one under the pointer.
@@ -39,28 +59,67 @@ export function ArtifactNotes({ sid, artifact, v, frame }: { sid: string; artifa
     if (!f?.contentWindow || !f.src) return
     f.contentWindow.postMessage({ codinger: 'notes', ...m }, new URL(f.src).origin)
   }
-  const marks = JSON.stringify(all.map((d) => ({ id: d.id, kind: 'draft', anchor: d.anchor })))
+  const marks = JSON.stringify([...sent.map((n) => ({ id: n.id, kind: 'sent', anchor: n.anchor })), ...all.map((d) => ({ id: d.id, kind: 'draft', anchor: d.anchor }))])
   const focus = lit ?? focused
   const sendMarks = () => post({ t: 'marks', items: JSON.parse(marks), focus })
   const sendRef = useRef(sendMarks)
   sendRef.current = sendMarks
   useEffect(sendMarks, [marks, focus])
+  const modeRef = useRef(mode)
+  modeRef.current = mode
+  useEffect(() => post({ t: 'mode', on: mode }), [mode])
+  // A tap on Option alone, here as in the page, turns comment mode on or off.
+  useEffect(() => {
+    let at = 0
+    const down = (e: KeyboardEvent) => { at = e.key === 'Alt' && !e.repeat ? performance.now() : 0 }
+    const up = (e: KeyboardEvent) => { if (e.key === 'Alt' && at && performance.now() - at < 400) setMode(!modeRef.current); at = 0 }
+    const press = () => { at = 0 }
+    addEventListener('keydown', down, true); addEventListener('keyup', up, true); addEventListener('pointerdown', press, true)
+    return () => { removeEventListener('keydown', down, true); removeEventListener('keyup', up, true); removeEventListener('pointerdown', press, true) }
+  }, [])
+  // A place to show once the page is ready.
+  const reveal = useRef<string | null>(null)
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ sid: string; id: string }>).detail
+      if (d.sid !== sid) return
+      reveal.current = d.id
+      post({ t: 'reveal', id: d.id })
+      setPeek(d.id)
+    }
+    addEventListener(REVEAL, on)
+    return () => removeEventListener(REVEAL, on)
+  }, [sid])
 
   const openCard = (id: string) => {
     setOpen(id)
     requestAnimationFrame(() => focusField(layer.current?.querySelector<HTMLElement>(`.note-card[data-id="${id}"] .ri-edit`)))
   }
   const peekTimer = useRef(0)
+  const onCard = useRef<string | null>(null)
+  const hoverCard = (id: string, on: boolean) => {
+    clearTimeout(peekTimer.current)
+    onCard.current = on ? id : null
+    setPeek(on ? id : null)
+    setLit(on ? id : null)
+  }
   useEffect(() => {
     const on = (e: MessageEvent) => {
       const f = frame.current
       if (!f || e.source !== f.contentWindow || e.data?.codinger !== 'notes') return
       const m = e.data as FromFrame
-      if (m.t === 'ready') sendRef.current()
+      if (m.t === 'ready') {
+        sendRef.current()
+        post({ t: 'mode', on: modeRef.current })
+        if (reveal.current) post({ t: 'reveal', id: reveal.current })
+      }
+      else if (m.t === 'mode') setMode(m.on)
       else if (m.t === 'boxes') setBoxes(m.boxes)
       else if (m.t === 'hover') {
         clearTimeout(peekTimer.current)
         // It goes one frame after the pointer leaves the highlight.
+        // The pointer went from the highlight onto its card: the card keeps itself open.
+        if (onCard.current) return
         if (m.id) setPeek(m.id); else peekTimer.current = window.setTimeout(() => setPeek(null), 16)
         setLit(m.id)
       } else if (m.t === 'open') openCard(m.id)
@@ -68,7 +127,7 @@ export function ArtifactNotes({ sid, artifact, v, frame }: { sid: string; artifa
         // One empty comment at a time: a new one drops the untouched last one.
         for (const d of draftsOf(sid)) if ((d.kind === 'note' || d.kind === 'artifact') && !d.reaction && isEmpty(d)) removeDraft(sid, d.id)
         const id = uid()
-        const anchor = { ...m.anchor, artifact, ...(v != null ? { v } : {}) }
+        const anchor = { ...m.anchor, artifact, ...(v != null ? { v } : { at: mtime }) }
         if (m.box) setBoxes((b) => ({ ...b, [id]: m.box }))
         addDraft(sid, { id, kind: 'artifact', anchor, quote: String(m.quote ?? '').slice(0, 1000), text: '', images: [], createdAt: Date.now() })
         setOpen(id)
@@ -76,7 +135,7 @@ export function ArtifactNotes({ sid, artifact, v, frame }: { sid: string; artifa
     }
     addEventListener('message', on)
     return () => removeEventListener('message', on)
-  }, [sid, artifact, v])
+  }, [sid, artifact, v, mtime])
 
   // Place each card under the last line of its highlight, centred on it, inside the pane.
   // A highlight out of view hides its card, unless you write in it.
@@ -104,17 +163,23 @@ export function ArtifactNotes({ sid, artifact, v, frame }: { sid: string; artifa
   })
 
   // Reactions show as one badge for each place, at the right of its highlight; a click takes one off.
-  const badges = new Map<string, ArtDraft[]>()
-  for (const d of all) if (d.reaction && isReaction(d.text)) { const k = JSON.stringify(d.anchor); badges.set(k, [...(badges.get(k) ?? []), d]) }
+  // Sent reactions show too, in a badge of their own.
+  const group = <T extends { id: string; anchor: ArtifactAnchor; text: string }>(list: T[]) => {
+    const m = new Map<string, T[]>()
+    for (const d of list) { const k = JSON.stringify({ ...d.anchor, at: 0 }); m.set(k, [...(m.get(k) ?? []), d]) }
+    return [...m.values()]
+  }
+  const badges = group(all.filter((d) => d.reaction && isReaction(d.text)))
+  const sentBadges = group(sent.filter((n) => isReaction(n.text) && !n.images?.length))
   // A badge is placed by the first comment on its place that the page reported.
-  const boxFor = (ds: ArtDraft[]) => ds.find((d) => boxes[d.id])?.id ?? ds[0].id
+  const boxFor = (ds: { id: string }[]) => ds.find((d) => boxes[d.id])?.id ?? ds[0].id
 
   return (
     <div className="artifact-notes" ref={layer}>
       {cards.map((d) => (
         <NoteCard
           key={d.id} sid={sid} note={d} onOpen={() => setOpen(d.id)}
-          onHover={(on) => setLit(on ? d.id : null)}
+          onHover={(on) => hoverCard(d.id, on)}
           onFocus={() => { if (state.focus === d.id) state.focus = null; setFocused(d.id); setOpen(d.id) }}
           onBlur={() => {
             setFocused((f) => f === d.id ? null : f)
@@ -122,7 +187,11 @@ export function ArtifactNotes({ sid, artifact, v, frame }: { sid: string; artifa
           }}
         />
       ))}
-      {[...badges.values()].map((ds) => (
+      {sentCards.map((n) => <SentCard key={n.id} sid={sid} n={n} onHover={(on) => hoverCard(n.id, on)} />)}
+      {sentBadges.map((ds) => (
+        <span key={ds[0].id} data-id={boxFor(ds)} className="react-badge" onMouseEnter={() => setLit(boxFor(ds))} onMouseLeave={() => setLit(null)}>{ds.map((d) => d.text.trim()).join('')}</span>
+      ))}
+      {badges.map((ds) => (
         <button key={ds[0].id} data-id={boxFor(ds)} className="react-badge draft" onMouseEnter={() => setLit(boxFor(ds))} onMouseLeave={() => setLit(null)}
           onClick={() => { setLit(null); removeDraft(sid, ds[ds.length - 1].id) }}>{ds.map((d) => d.text.trim()).join('')}</button>
       ))}

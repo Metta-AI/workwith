@@ -269,7 +269,8 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
 
 // A long comment folds to its first lines. "Show more" opens it in place or, when it is
 // very long, in a dialog: in place it would push the cards under it far down.
-function SentCard({ sid, n }: { sid: string; n: Entry }) {
+// Also the card of a sent comment on an artifact (ArtifactNotes.tsx), with onHover.
+export function SentCard({ sid, n, onHover = (on) => 'anchor' in n && focusPassage(sid, on ? n as Entry : null) }: { sid: string; n: { id: string; text: string; images?: ImageRef[] } | Entry; onHover?(on: boolean): void }) {
   const body = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState<'short' | 'long' | 'huge'>('short')
   const [open, setOpen] = useState(false)
@@ -287,7 +288,7 @@ function SentCard({ sid, n }: { sid: string; n: Entry }) {
   }, [open])
   const text = <><WithPastes text={n.text} render={renderMd} sid={sid} /><Thumbs images={n.images} /></>
   return (
-    <div data-id={n.id} className="note-card sent" onMouseEnter={() => focusPassage(sid, n)} onMouseLeave={() => focusPassage(sid, null)}>
+    <div data-id={n.id} className="note-card sent" onMouseEnter={() => onHover(true)} onMouseLeave={() => onHover(false)}>
       <div ref={body} className={`note-fold${size !== 'short' ? ' long' : ''}${open ? ' open' : ''}`}><div>{text}</div></div>
       {size !== 'short' && (
         <button className="link note-more" onClick={() => size === 'huge' ? setDialog(true) : setOpen(!open)}>{open ? 'Show less' : size === 'huge' ? 'Show all' : 'Show more'}</button>

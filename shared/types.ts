@@ -139,8 +139,9 @@ export type Anchor = { msg: string; pieces: AnchorPiece[] }
 // pid: the data-pid of the element, or of the nearest one around it; path: a CSS path from there
 // (or from <body>) when the element has no data-pid of its own; tag: "svg rect", "div"...;
 // label: what the element says (aria-label, data-label, or its text); text: selected text, and
-// which occurrence of it in the element it is. v: an old version of the artifact.
-export type ArtifactAnchor = { artifact: string; v?: number; pid?: string; path?: string; tag?: string; label?: string; text?: { quote: string; nth: number } }
+// which occurrence of it in the element it is. v: an old version of the artifact; at: the time of
+// the artifact's last change when the comment began (its highlight shows until the next change).
+export type ArtifactAnchor = { artifact: string; v?: number; at?: number; pid?: string; path?: string; tag?: string; label?: string; text?: { quote: string; nth: number } }
 
 export type Part =
   | { kind: 'text'; text: string; images?: ImageRef[] }
