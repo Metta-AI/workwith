@@ -5,8 +5,9 @@
 // row sideways. Each tab shows the most recent first, also for a query; a button changes a query's
 // order to the best matches first. Down goes from the field into the results, and up from the
 // first result goes back to the field. In the results, left and right change the tab; in the field
-// they move the caret. Tab changes the tab anywhere, and Enter opens the result marked (from the
-// field, the first). On a phone, a fast circle drawn with one finger opens the palette.
+// they move the caret, but with the field empty they change the tab and go into the results. Tab
+// changes the tab anywhere, and Enter opens the result marked (from the field, the first). On a
+// phone, a fast circle drawn with one finger opens the palette.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useEscape } from '../escape.ts'
@@ -248,8 +249,9 @@ function PaletteDialog({ onClose, onTask, onFolder }: { onClose(): void; onTask(
       e.preventDefault()
       if (active <= 0) { setInList(false); setActive(-1) }
       else setActive(active - 1)
-    } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && inList && !e.shiftKey) {
+    } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && (inList || !q) && !e.shiftKey) {
       e.preventDefault(); move(e.key === 'ArrowRight' ? 1 : -1)
+      if (!inList) { setInList(true); setActive(0) }
     } else if (e.key === 'Tab') {
       e.preventDefault(); move(e.shiftKey ? -1 : 1)
     } else if (e.key === 'Enter') {
@@ -383,7 +385,7 @@ function PaletteDialog({ onClose, onTask, onFolder }: { onClose(): void; onTask(
     switch (r.kind) {
       case 'sessions': return (
         <button {...props}>
-          <Mascot status={r.s.status} look={r.s.look} fatigue={fatigue(r.s.context.used, r.s.context.window)} size={20} child={!!r.s.parentId} />
+          <Mascot status={r.s.status} look={r.s.look} fatigue={fatigue(r.s.context.used, r.s.context.window)} size={20} child={!!r.s.parentId} starred={r.s.starred} />
           <span className="pal-main"><span className="pal-title">{r.s.title}</span>{sub(r, ltr(home(r.s.cwd)))}</span>
           <span className="pal-meta">{r.s.archived && <span className="pal-tag">Archived</span>}{timeAgo(r.s.lastActivity)}</span>
         </button>

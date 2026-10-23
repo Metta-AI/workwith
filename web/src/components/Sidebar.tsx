@@ -530,7 +530,7 @@ function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: s
                 <button key={s.id} {...d} className={`face${st.selected === s.id ? ' active' : ''}${alertOf(s) ? ' alert' : ''}${d.className}`}
                   data-tip={`${s.title}${parent ? ` (from ${parent.title})` : ''} · ${s.compacting ? 'compacting' : STATUS_LABEL[s.status]}`} data-tip-at="right" data-tip-touch
                   onClick={() => select(s.id)} onPointerDown={(e) => start(e, `${machine}|dock`, s.id, g.id, true)} onContextMenu={(e) => onMenu(e, rowItems(s))}>
-                  <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={22} child={!!s.parentId} review={!!s.pendingReviews} />
+                  <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={22} child={!!s.parentId} review={!!s.pendingReviews} starred={s.starred} />
                   {/* The open one can be archived from here, as a row can. */}
                   {st.selected === s.id && !s.archived && (
                     <span className="face-close" role="button" aria-label="Archive session" onClick={(e) => { e.stopPropagation(); void closeSession(s.id) }}><XIcon size={9} /></span>
@@ -562,7 +562,7 @@ function Row({ s, depth = 0, active, label, onPointerDown, onMenu }: { s: Sessio
   const parent = useStore().sessions.find((x) => x.id === s.parentId)
   return (
     <button className={`row${active ? ' active' : ''}${s.unread ? ' unread' : ''}${alertOf(s) ? ' alert' : ''}${s.status === 'error' ? ' error' : ''}`} style={{ paddingLeft: 10 + depth * 16 }} onClick={() => select(s.id)} onPointerDown={onPointerDown} onContextMenu={onMenu && ((e) => onMenu(e, rowItems(s)))}>
-      <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={26} title={STATUS_LABEL[s.status]} child={!!s.parentId} review={!!s.pendingReviews} />
+      <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={26} title={STATUS_LABEL[s.status]} child={!!s.parentId} review={!!s.pendingReviews} starred={s.starred} />
       <span className="row-main">
         <span className="row-title">{machineOf(s.id) !== LOCAL && <GlobeIcon size={11} className="row-remote" title={`On ${machineOf(s.id)}`} />}{label ?? s.title}{parent && <span className="row-from"> (from {parent.title})</span>}</span>
         <span className="row-sub">{s.compacting ? 'compacting' : STATUS_LABEL[s.status]} · {timeAgo(s.lastActivity)}<SpendHint s={s} /><CacheHint s={s} /></span>
@@ -587,7 +587,8 @@ function rowItems(s: SessionMeta): MenuItem[] {
     : { label: 'Mark as unread', run: () => api(`/api/sessions/${s.id}/unread`) }
   if (s.kind !== 'worker') return [read]
   const groups = groupsOf(machine).filter((g) => g.id !== s.group)
-  return [read, 'line', { head: 'Move to' },
+  const star: MenuItem = { label: s.starred ? 'Remove star' : 'Star', run: () => api(`/api/sessions/${s.id}`, 'PATCH', { starred: !s.starred }) }
+  return [read, star, 'line', { head: 'Move to' },
     ...groups.map((g) => ({ label: g.name, run: () => moveToGroup(s, g.id) })),
     { label: 'New group', run: () => moveToGroup(s, newGroup(machine)) },
     ...(s.group && groupsOf(machine).some((g) => g.id === s.group) ? [{ label: 'No group', run: () => moveToGroup(s, NONE) }] : []),

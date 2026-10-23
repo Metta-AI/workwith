@@ -53,6 +53,7 @@ export type SessionMeta = {
   lastText: string        // the tail of the last thing Claude said, for overviews
   error: string | null
   archived: boolean
+  starred?: boolean       // you starred it: its critter shows a star behind it
   inbox: InboxItem[]      // replies the lead agent drafted for this session
   drafting?: boolean      // you have a reply in progress here (the browser says so), so the lead's wait
   look?: Look             // what its critter wears; Claude picks it (shared/looks.ts)

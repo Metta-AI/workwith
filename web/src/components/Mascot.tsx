@@ -1,7 +1,8 @@
 // A pixel critter per session. Its pose is the session's status; how worn out
 // it looks is how full the context is (droopy eyes, sweat, then sleep). What it
 // wears is its look, which each Claude picks for itself (shared/looks.ts). A session
-// another session started (a child) wears red shoes, which Codinger gives it.
+// another session started (a child) wears red shoes, which Codinger gives it. A session you
+// starred has a yellow star behind its critter.
 
 import type { Status } from '../../../shared/types.ts'
 import type { Look } from '../../../shared/looks.ts'
@@ -11,14 +12,20 @@ import { inkOn } from '../../../shared/appearance.ts'
 
 // body: a colour of your own, in place of the look's; alert: whose badge to show, if not its own;
 // review: an open item is a review the agent asked for, so its "?" is orange.
-type Props = { status: Status; fatigue: number; size?: number; title?: string; look?: Look; body?: string; alert?: Status; child?: boolean; review?: boolean }
+type Props = { status: Status; fatigue: number; size?: number; title?: string; look?: Look; body?: string; alert?: Status; child?: boolean; review?: boolean; starred?: boolean }
 
 // Drawn back to front.
 const LAYERS = ['face', 'hair', 'neck', 'eyewear', 'hat', 'held'] as const
 
 const SHOE = '#ff2a2a'
 
-export function Mascot({ status, fatigue, size = 28, title, look = {}, body, alert, child, review }: Props) {
+// The star behind a starred critter: five points round the middle of its body.
+const STAR = Array.from({ length: 10 }, (_, i) => {
+  const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 4 : 9.5
+  return `${(8 + r * Math.cos(a)).toFixed(2)},${(4.5 + r * Math.sin(a)).toFixed(2)}`
+}).join(' ')
+
+export function Mascot({ status, fatigue, size = 28, title, look = {}, body, alert, child, review, starred }: Props) {
   // Looks saved before 'teal' became the default may still say 'classic'.
   const BODY = body ?? BODY_COLORS[look.color ?? 'teal'] ?? BODY_COLORS.teal
   const ink = (body ? inkOn(body) === '#ffffff' : look.color === 'midnight') ? '#e8ecff' : '#2a1f1a'
@@ -35,6 +42,7 @@ export function Mascot({ status, fatigue, size = 28, title, look = {}, body, ale
       role="img" aria-label={title ?? status}
     >
       {title && <title>{title}</title>}
+      {starred && <polygon className="m-star" points={STAR} fill="#ffc83d" stroke="#ffe08a" strokeWidth="0.5" strokeLinejoin="round" shapeRendering="auto" />}
       <g className="m-body">
         {parts.map((p) => rects(p.back, `b${p.slot}`))}
         <rect x="3" y="3" width="10" height="1" fill={BODY} />
