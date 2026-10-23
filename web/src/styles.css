@@ -656,6 +656,9 @@ button.done-mark:hover { background: color-mix(in srgb, var(--ok) 12%, transpare
 .md .hl-focus { box-shadow: 0 0 0 3px var(--hl-focus); }
 
 .user-turn { margin: 18px 0 14px auto; max-width: 88%; background: var(--accent-soft); border-radius: 12px; padding: 8px 14px; overflow-wrap: anywhere; }
+/* Only your own messages have the accent fill: Codinger, autopilot and the lead are gray, and mail from other sessions is a faint purple. */
+.user-turn.other { background: color-mix(in srgb, var(--text) 7%, transparent); }
+.user-turn.mail { background: color-mix(in srgb, var(--codinger) 12%, transparent); }
 /* A long message shows its first lines, fading out, until "Show more". */
 .user-body:not(.open) { max-height: 18em; overflow: hidden; }
 .user-body.long:not(.open) { mask-image: linear-gradient(to bottom, #000 calc(100% - 3em), transparent); }

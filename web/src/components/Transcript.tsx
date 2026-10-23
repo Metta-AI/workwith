@@ -652,7 +652,7 @@ function UserTurn({ sid, e }: { sid: string; e: Extract<Event, { t: 'user' }> })
   const shown = open ? e.parts : e.parts.filter(plain)
   return (
     <div className="user-wrap" onMouseLeave={() => setConfirm(false)}>
-    <div className="user-turn">
+    <div className={`user-turn${e.from ? ` other${e.from === 'mail' ? ' mail' : ''}` : ''}`}>
       {e.from && e.from !== 'mail' && <div className="from" title={e.from === 'codinger' ? viaCodinger(e, tasks) : undefined}>via {e.from === 'master' ? 'lead' : e.from}</div>}
       {e.from !== 'codinger' && !!e.tasks?.length && (
         <div className="task-results">
