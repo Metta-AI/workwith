@@ -8,7 +8,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ImageRef } from '../../../shared/types.ts'
 import { htmlToMarkdown } from '../htmlmd.ts'
-import { activate, enterKey, fromDom, gapKey, imageCaret, imgNode, nodeOffset, pasteText, pillText, rangeAt, rangeOffset, render, select, selectionOffsets, snapCaret, wrapKey } from '../mdlive.ts'
+import { activate, enterKey, fromDom, gapKey, imageCaret, imgNode, nodeOffset, pasteText, pillText, rangeAt, rangeOffset, render, select, selectionOffsets, snapCaret, uploadNode, wrapKey } from '../mdlive.ts'
 import { imagesFrom, uploadImage } from '../util.ts'
 import { media, uploadFile } from '../store.ts'
 import { fileToken } from '../../../shared/files.ts'
@@ -51,6 +51,42 @@ function caretAt(x: number, y: number): Range | null {
 
 type Snap = { v: string; s: number; e: number; t: number }
 
+// Draw the text again, and keep the pills of files still on their way where they were.
+function draw(el: HTMLElement, v: string) {
+  const keep = [...el.querySelectorAll<HTMLElement>('[data-uploading]')].map((p) => [p, nodeOffset(el, p)] as const)
+  render(el, v)
+  for (const [p, at] of keep) rangeAt(el, Math.min(at, v.length)).insertNode(p)
+}
+
+// Cmd+Left and Cmd+Right go to the start and the end of the line as drawn. With a pill in the
+// field, Chrome goes to the start or the end of the whole field. Returns true when it moved.
+function lineKey(el: HTMLElement, e: React.KeyboardEvent): boolean {
+  if (!e.metaKey || e.ctrlKey || e.altKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return false
+  const s = getSelection()
+  if (!s?.rangeCount || !el.contains(s.focusNode) || !el.querySelector('[contenteditable="false"], img')) return false
+  const n = s.focusNode!, o = s.focusOffset
+  const r = document.createRange()
+  r.setStart(n, o)
+  let box: DOMRect | undefined = r.getClientRects()[0]
+  if (!box?.height) {
+    const side = n.nodeType === Node.TEXT_NODE ? (o ? null : n.previousSibling) ?? n.nextSibling : n.childNodes[o - 1] ?? n.childNodes[o]
+    box = side instanceof Element ? side.getBoundingClientRect() : undefined
+  }
+  if (!box?.height) return false
+  const f = el.getBoundingClientRect(), cs = getComputedStyle(el)
+  const left = f.left + el.clientLeft + parseFloat(cs.paddingLeft)
+  const right = f.left + el.clientLeft + el.clientWidth - parseFloat(cs.paddingRight) - 1
+  const at = caretAt(e.key === 'ArrowLeft' ? left : right, box.top + box.height / 2)
+  if (!at || !el.contains(at.startContainer)) return false
+  let node: Node = at.startContainer, off = at.startOffset
+  // A point on a pill is before or after it.
+  const pill = (node instanceof Element ? node : node.parentElement)?.closest('[contenteditable="false"]')
+  if (pill && el.contains(pill)) { node = pill.parentNode!; off = [...node.childNodes].indexOf(pill) + (e.key === 'ArrowLeft' ? 0 : 1) }
+  if (e.shiftKey) s.extend(node, off)
+  else s.collapse(node, off)
+  return true
+}
+
 // Give a field the focus with the caret at its end, so that on iOS it takes the typing (a
 // contenteditable with the focus but no caret there takes none). What worked there, step by step:
 // - focus without a scroll of the page (iOS scrolled the passage away), the caret at the end;
@@ -89,7 +125,6 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
   const future = useRef<Snap[]>([])
   const change = useRef(onChange)
   change.current = onChange
-  const [uploading, setUploading] = useState<string[]>([])  // names of files on their way
   const [noDir, setNoDir] = useState(false)
   const [shown, setShown] = useState<HTMLElement | null>(null)  // the paste pill whose text shows
 
@@ -112,7 +147,7 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
   }
   const apply = (snap: Snap) => {
     const el = ed.current!
-    render(el, snap.v)
+    draw(el, snap.v)
     select(el, snap.s, snap.e)
     activate(el)
     reveal(el, snap.e === snap.v.length)
@@ -128,7 +163,7 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
     const v = fromDom(el)
     // An image still uploading is not in the text yet; drawing again would drop it.
     if (!composing.current && !el.querySelector('img.loading')) {
-      render(el, v)
+      draw(el, v)
       if (sel && document.activeElement === el) select(el, sel[0], sel[1])
     }
     activate(el)
@@ -141,7 +176,7 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
     const el = ed.current!
     if (value === last.current) return
     last.current = value
-    render(el, value)
+    draw(el, value)
     el.toggleAttribute('data-empty', !value)
     past.current = [{ v: value, s: value.length, e: value.length, t: 0 }]
     future.current = []
@@ -196,8 +231,8 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
     }
   }
 
-  // Images go in the text as images; other files into uploadDir, named in the text where they
-  // were dropped once each is there.
+  // Images go in the text as images; other files into uploadDir. Each file shows at once as a
+  // pill with a spinner where it was dropped, and goes in the text there once it is uploaded.
   function attach(files: File[], at: Range | null) {
     const imgs = files.filter((f) => f.type.startsWith('image/'))
     const rest = uploadDir == null ? [] : files.filter((f) => !f.type.startsWith('image/'))
@@ -206,18 +241,31 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
     if (!uploadDir?.trim()) { setNoDir(true); return }
     setNoDir(false)
     const el = ed.current!
-    let pos = at && el.contains(at.startContainer) ? rangeOffset(el, at) : caret.current?.[1] ?? fromDom(el).length
+    const r = at && el.contains(at.startContainer) ? at : rangeAt(el, caret.current?.[1] ?? fromDom(el).length)
+    r.collapse(true)
+    const pills = rest.map((f) => {
+      const p = uploadNode(f.name)
+      r.insertNode(p)
+      r.setStartAfter(p)
+      return p
+    })
+    el.removeAttribute('data-empty')
     void (async () => {
-      for (const f of rest) {
-        setUploading((u) => [...u, f.name])
+      for (const [i, f] of rest.entries()) {
+        const pill = pills[i]
         try {
           const name = await uploadFile(f, uploadDir, machine)
+          // Its × stops it: the file is in the directory, but the text does not name it.
+          if (!el.contains(pill)) continue
+          const pos = nodeOffset(el, pill)
+          const sel = selectionOffsets(el)
+          pill.remove()
           const v = fromDom(el)
           const t = (pos && !/\s/.test(v[pos - 1]) ? ' ' : '') + fileToken(name) + (/^\S/.test(v.slice(pos)) ? ' ' : '')
-          edit(v.slice(0, pos) + t + v.slice(pos), pos + t.length)
-          pos += t.length
-        } catch { /* the store shows the error */ }
-        setUploading((u) => { const i = u.indexOf(f.name); return u.filter((_, j) => j !== i) })
+          // The caret stays where it was in the text around the new name.
+          const move = (o: number) => o >= pos ? o + t.length : o
+          edit(v.slice(0, pos) + t + v.slice(pos), sel ? move(sel[0]) : pos + t.length, sel ? move(sel[1]) : pos + t.length)
+        } catch { pill.remove() /* the store shows the error */ }
       }
     })()
   }
@@ -335,7 +383,11 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
           onScroll={() => imageCaret(ed.current!, fake.current!)}
           onMouseDown={(e) => {
             const x = (e.target as Element).closest('.ri-file-x')
-            if (x) { e.preventDefault(); removePill(x.closest<HTMLElement>('.ri-file')!) }
+            const pill = x?.closest<HTMLElement>('.ri-file')
+            if (!pill) return
+            e.preventDefault()
+            if (pill.dataset.uploading != null) pill.remove()
+            else removePill(pill)
           }}
           onClick={(e) => {
             const p = (e.target as Element).closest<HTMLElement>('.ri-paste')
@@ -355,6 +407,7 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
           onCut={(e) => copy(e, true)}
           onKeyDown={(e) => {
             if (onKey?.(e)) { e.preventDefault(); return }
+            if (lineKey(ed.current!, e)) { e.preventDefault(); return }
             gapKey(e.nativeEvent)
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return }
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return }
@@ -370,9 +423,7 @@ export function RichInput({ value, onChange, images, onImages, placeholder, auto
         </label>
       </div>
       {shown && <PasteDialog text={pasteText.get(shown) ?? ''} onClose={() => setShown(null)} onUnfold={() => { unfold(shown); setShown(null) }} />}
-      {(uploading.length > 0 || noDir) && (
-        <div className="ri-uploads muted">{noDir ? 'Choose a directory first: attached files go there.' : `Uploading ${uploading.join(', ')}…`}</div>
-      )}
+      {noDir && <div className="ri-uploads muted">Choose a directory first: attached files go there.</div>}
     </div>
   )
 }

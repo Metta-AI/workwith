@@ -44,6 +44,18 @@ export function fileNode(name: string): HTMLElement {
   return s
 }
 
+// A file on its way: a pill with a spinner and no text, until the upload is done (Inputs.tsx).
+export function uploadNode(name: string): HTMLElement {
+  const s = fileNode(name)
+  delete s.dataset.file
+  s.draggable = false
+  s.classList.add('loading')
+  s.dataset.uploading = name
+  s.firstElementChild!.outerHTML = '<span class="ri-spin" aria-hidden="true"></span>'
+  s.querySelector('.ri-file-x')!.setAttribute('aria-label', `Stop the upload of ${name}`)
+  return s
+}
+
 const PASTE = '<svg class="icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h5l3 3v9H4z" /><path d="M9 2v3h3M6 8.5h4M6 11h4" /></svg>'
 
 // The text of each paste pill.
@@ -84,17 +96,18 @@ function domOffset(t: Node, k: number): number {
   return i
 }
 
-// An image, a file pill or a paste pill: one unit of the text.
-const isAtom = (n: Node): n is HTMLElement => n instanceof HTMLImageElement || (n instanceof HTMLElement && (n.dataset.file != null || n.dataset.paste != null))
+// An image, a file pill, an upload pill or a paste pill: one unit of the text.
+const isPill = (n: Node): n is HTMLElement => n instanceof HTMLElement && (n.dataset.file != null || n.dataset.paste != null || n.dataset.uploading != null)
+const isAtom = (n: Node): n is HTMLElement => n instanceof HTMLImageElement || isPill(n)
 
-// The text a pill stands for.
-export const pillText = (n: HTMLElement) => n.dataset.paste != null ? pasteToken(pasteText.get(n) ?? '') : fileToken(n.dataset.file!)
+// The text a pill stands for. An upload pill stands for no text yet.
+export const pillText = (n: HTMLElement) => n.dataset.paste != null ? pasteToken(pasteText.get(n) ?? '') : n.dataset.file != null ? fileToken(n.dataset.file) : ''
 
 // The text a node stands for.
 function textOf(n: Node, last: boolean): string {
   if (n.nodeType === Node.TEXT_NODE) return textIn(n)
   if (n instanceof HTMLImageElement) return n.dataset.url ? imageToken(n.dataset.url) : ''
-  if (n instanceof HTMLElement && (n.dataset.file != null || n.dataset.paste != null)) return pillText(n)
+  if (isPill(n)) return pillText(n)
   // The browser keeps a <br> at the very end so a final newline shows; it is not text.
   if (n.nodeName === 'BR') return last ? '' : '\n'
   let out = ''

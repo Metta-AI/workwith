@@ -896,6 +896,10 @@ button.primary.send.critical { background: var(--bad); border-color: var(--bad);
 .ri-file .icon { flex: none; opacity: .6; }
 .ri-file-name { overflow: hidden; text-overflow: ellipsis; }
 .ri-file-x { flex: none; width: 16px; text-align: center; border-radius: 4px; color: var(--muted); cursor: pointer; }
+.ri-file.loading { cursor: default; }
+.ri-file.loading .ri-file-name { color: var(--muted); }
+.ri-spin { flex: none; width: 10px; height: 10px; border: 1.5px solid color-mix(in srgb, currentColor 25%, transparent); border-top-color: currentColor; border-radius: 50%; opacity: .7; animation: ri-spin .8s linear infinite; }
+@keyframes ri-spin { to { transform: rotate(360deg); } }
 .ri-file-x:hover { background: color-mix(in srgb, var(--text) 12%, transparent); color: var(--text); }
 .ri-paste, .file-chip:enabled { cursor: pointer; }
 .file-chip:disabled { cursor: default; opacity: 1; }
