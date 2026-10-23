@@ -17,6 +17,7 @@ import { DurableObject } from 'cloudflare:workers'
 import { EmailMessage } from 'cloudflare:email'
 import { PING, PONG, REQ_HEADERS, RES_HEADERS, type HubMsg, type MachineMsg, type RemoteMachine } from '../../shared/remote.ts'
 import { mediaKind, mediaType } from '../../shared/media.ts'
+import { newVapid, sendPush, type Subscription, type Vapid } from './push.ts'
 
 type Env = {
   HUB: DurableObjectNamespace<Hub>
@@ -96,6 +97,32 @@ export class Hub extends DurableObject<Env> {
         }
         case 'GET /_remote/connect': return await this.attach(req)
         case 'GET /_remote/artifacts': return await this.artTicket(req, url)
+        // Push notifications: a browser on this site subscribes itself; a page on a machine's own
+        // address subscribes through that machine (with its token). Only a machine sends.
+        case 'GET /_remote/push/key': {
+          if (!await this.allowed(req)) return json({ error: 'Not signed in' }, 401)
+          return json({ key: (await this.vapid()).pub })
+        }
+        case 'POST /_remote/push/subscribe':
+        case 'POST /_remote/push/unsubscribe': {
+          if (!await this.machineOf(req) && (!await this.session(req) || !sameOrigin(req, url))) return json({ error: 'Not signed in' }, 401)
+          const body = await req.json<{ sub?: Subscription; endpoint?: string }>()
+          const endpoint = body.sub?.endpoint ?? body.endpoint
+          if (!endpoint?.startsWith('https://')) return json({ error: 'No subscription' }, 400)
+          const k = `push:sub:${await hash(endpoint)}`
+          if (p.endsWith('/unsubscribe')) await this.ctx.storage.delete(k)
+          else if (body.sub?.keys?.p256dh && body.sub.keys.auth) await this.ctx.storage.put(k, { endpoint, keys: { p256dh: body.sub.keys.p256dh, auth: body.sub.keys.auth } } satisfies Subscription)
+          else return json({ error: 'No subscription' }, 400)
+          return json({ ok: true })
+        }
+        case 'POST /_remote/push/send': {
+          const m = await this.machineOf(req)
+          if (!m) return json({ error: 'Not allowed' }, 403)
+          const body = await req.json<{ title?: string; body?: string; session?: string }>()
+          const payload = JSON.stringify({ title: String(body.title ?? 'Codinger').slice(0, 200), body: String(body.body ?? '').slice(0, 500), machine: m.name, session: String(body.session ?? '') })
+          this.ctx.waitUntil(this.push(payload))
+          return json({ ok: true })
+        }
       }
       // A machine's display name, or its name: from the web, or from one of your machines.
       const change = /^\/_remote\/machines\/([a-z0-9-]{1,40})\/(label|rename)$/.exec(p)
@@ -186,6 +213,25 @@ export class Hub extends DurableObject<Env> {
     if (!t) return null
     const name = await this.ctx.storage.get<string>(`token:${await hash(t)}`)
     return name ? (await this.ctx.storage.get<Machine>(`machine:${name}`)) ?? null : null
+  }
+
+  // The hub's VAPID key pair, made the first time a browser asks for it.
+  private async vapid(): Promise<Vapid> {
+    const v = await this.ctx.storage.get<Vapid>('push:vapid')
+    if (v) return v
+    const n = await newVapid()
+    await this.ctx.storage.put('push:vapid', n)
+    return n
+  }
+
+  // To each browser that subscribed. A subscription the push service no longer knows goes.
+  private async push(payload: string) {
+    const vapid = await this.vapid()
+    const subs = await this.ctx.storage.list<Subscription>({ prefix: 'push:sub:' })
+    await Promise.all([...subs].map(async ([k, sub]) => {
+      const status = await sendPush(sub, payload, vapid, `mailto:${this.env.MAIL_FROM}`).catch(() => 0)
+      if (status === 404 || status === 410) await this.ctx.storage.delete(k)
+    }))
   }
 
   // Signed in, or one of your machines.

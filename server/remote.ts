@@ -322,10 +322,12 @@ class Chan {
 
 // ---- reaching your other machines -----------------------------------------------
 
-// /api/remote/machines[/<name>/label|rename], and /api/remote/m/<name>/…: on to the hub, with this machine's token.
+// /api/remote/machines[/<name>/label|rename], /api/remote/push/(key|subscribe|unsubscribe), and
+// /api/remote/m/<name>/…: on to the hub, with this machine's token.
 export async function remoteProxy(req: http.IncomingMessage, res: http.ServerResponse, url: URL) {
   if (!saved.token) { res.writeHead(409, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'This machine is not connected to web.codinger.app' })); return }
-  const target = url.pathname.startsWith('/api/remote/machines') ? url.pathname.replace(/^\/api\/remote/, '/_remote') : url.pathname.replace(/^\/api\/remote/, '')
+  const own = url.pathname.startsWith('/api/remote/machines') || url.pathname.startsWith('/api/remote/push/')
+  const target = own ? url.pathname.replace(/^\/api\/remote/, '/_remote') : url.pathname.replace(/^\/api\/remote/, '')
   const body = req.method === 'GET' || req.method === 'HEAD' ? undefined : await new Promise<Buffer>((resolve) => { const b: Buffer[] = []; req.on('data', (d) => b.push(d)); req.on('end', () => resolve(Buffer.concat(b))) })
   const r = await fetch(hubUrl() + target + url.search, {
     method: req.method,
@@ -339,6 +341,16 @@ export async function remoteProxy(req: http.IncomingMessage, res: http.ServerRes
   // A big file comes in parts: on as it comes.
   if (r.body) Readable.fromWeb(r.body as import('node:stream/web').ReadableStream).pipe(res)
   else res.end()
+}
+
+// A push notification to each browser that subscribed (remote/src/push.ts), if this machine is connected.
+export function remoteNotify(n: { title: string; body: string; session: string }) {
+  if (!saved.token || !saved.on) return
+  void fetch(hubUrl() + '/_remote/push/send', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${saved.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify(n),
+  }).catch(() => { /* no hub, no notification */ })
 }
 
 // A WebSocket to /api/remote/m/<name>/…: one to the hub, joined to it.

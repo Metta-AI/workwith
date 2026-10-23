@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useEscape } from '../escape.ts'
 import type { ImageRef, PermissionMode, SessionMeta } from '../../../shared/types.ts'
 import { api, currentMachine, globalId, localId, LOCAL, machineList, machineOf, select, setComposer, state } from '../store.ts'
 import { DirPicker } from './DirPicker.tsx'
 import { FlagPicker } from './FlagPicker.tsx'
-import { RichInput } from './Inputs.tsx'
+import { focusField, RichInput } from './Inputs.tsx'
 
 // machine: where it runs; the current session's by default.
 // title and prompt: filled in already (a link from another app, url.ts).
@@ -23,6 +23,7 @@ export function NewSession({ cwd: initial, machine: start = currentMachine(), gr
   const [busy, setBusy] = useState(false)
   // Whether the typed directory exists; if it doesn't, Create makes it first.
   const [missing, setMissing] = useState(false)
+  const first = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!cwd.trim()) { setMissing(false); return }
@@ -62,7 +63,7 @@ export function NewSession({ cwd: initial, machine: start = currentMachine(), gr
         )}
         {/* With a folder given (the + on a project), start in the first message: focus on the folder would open its menu. */}
         <div className="field">Directory
-          <DirPicker value={cwd} onChange={setCwd} autoFocus={!initial} machine={machine} />
+          <DirPicker value={cwd} onChange={setCwd} onPick={() => focusField(first.current?.querySelector<HTMLElement>('[contenteditable]'))} autoFocus={!initial} machine={machine} />
         </div>
         <label>Title <input value={title} placeholder="Defaults to the folder name" onChange={(e) => setTitle(e.target.value)} /></label>
         <div className="two">
@@ -86,7 +87,7 @@ export function NewSession({ cwd: initial, machine: start = currentMachine(), gr
             {state.sessions.filter((s) => s.kind === 'worker' && !s.archived && machineOf(s.id) === machine).map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
           </select>
         </label>
-        <div className="field">First message (optional)
+        <div className="field" ref={first}>First message (optional)
           <RichInput value={prompt} onChange={setPrompt} images={images} onImages={setImages} onSubmit={() => void create()} minRows={4} machine={machine} autoFocus={!!initial} uploadDir={cwd} />
         </div>
         {err && <div className="notice error">{err}</div>}

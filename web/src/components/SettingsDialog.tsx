@@ -18,6 +18,7 @@ import { CostPanel } from './CostPanel.tsx'
 import { RemotePanel } from './RemotePanel.tsx'
 import { DEFAULT_CACHE_GUARD } from '../../../shared/cache.ts'
 import { KEEP_WARM } from '../../../shared/notes.ts'
+import { disablePush, enablePush, pushSubscribed, pushSupported } from '../push.ts'
 
 const GUARDS = [0, 20_000, 50_000, 100_000, 250_000, 500_000]
 const WARM_HOURS = [0, 1, 2, 4, 6, 8, 12]
@@ -106,6 +107,7 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
             {PAGES.map(([p, label]) => <button key={p} className={page === p ? 'on' : ''} onClick={() => go(p)}>{label}</button>)}
           </nav>
           {page === 'general' && <section className="settings-page">
+            <PushSetting />
             <label className="settings-check">
               <input type="checkbox" checked={st.showSteps} onChange={(e) => { state.showSteps = e.target.checked; changed() }} />
               Show Claude's in-between messages
@@ -215,6 +217,30 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
       </div>
     </div>
   )
+}
+
+// Push notifications, for this browser only: the hub sends them, so a machine's own page
+// needs the machine connected to web.codinger.app.
+function PushSetting() {
+  const st = useStore()
+  const [on, setOn] = useState<boolean | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  useEffect(() => { void pushSubscribed().then(setOn) }, [])
+  if (!pushSupported()) return null
+  const reachable = st.web || !!st.self
+  const toggle = async (want: boolean) => {
+    setBusy(true); setErr(null)
+    try { if (want) await enablePush(); else await disablePush(); setOn(want) } catch (e) { setErr(e instanceof Error ? e.message : String(e)) } finally { setBusy(false) }
+  }
+  return <>
+    <label className="settings-check">
+      <input type="checkbox" checked={!!on} disabled={busy || on === null || (!on && !reachable)} onChange={(e) => void toggle(e.target.checked)} />
+      Notify me in this browser when a session finishes, asks something, or needs a permission
+    </label>
+    {!reachable && !on && <div className="muted">Connect this machine to web.codinger.app in Remote access first: it sends the notifications.</div>}
+    {err && <div className="notice error">{err}</div>}
+  </>
 }
 
 function Who({ by, open }: { by: By; open(by: By): void }) {

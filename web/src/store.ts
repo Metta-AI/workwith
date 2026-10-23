@@ -454,7 +454,9 @@ function onServer(m: ServerMsg, machine: string) {
       const sid = g(m.sessionId)
       const list = state.events[sid]
       if (list && (!list.length || list[list.length - 1].seq < m.event.seq)) state.events[sid] = [...list, m.event]
-      if (sid === state.selected && document.visibilityState === 'visible' && m.event.t === 'result') void api(`/api/sessions/${sid}/seen`).catch(() => {})
+      // Seen only in a window that has the focus: in another tab, app or screen, the turn stays
+      // unread, so a push notification comes (server/index.ts, notifyOnChange).
+      if (sid === state.selected && document.visibilityState === 'visible' && document.hasFocus() && m.event.t === 'result') void api(`/api/sessions/${sid}/seen`).catch(() => {})
       break
     }
     case 'delta': {
@@ -512,6 +514,10 @@ export function opened(id: string) {
   if (s?.unread) void api(`/api/sessions/${id}/seen`).catch(() => {})
 }
 
+// Back in this window: the session it shows is seen now.
+window.addEventListener('focus', () => {
+  if (state.sessions.find((x) => x.id === state.selected)?.unread) void api(`/api/sessions/${state.selected}/seen`).catch(() => {})
+})
 // Open a session at one of its events (a message, or the tool call in an activity row).
 export function revealEvent(sid: string, seq: number) {
   select(sid)

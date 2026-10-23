@@ -18,7 +18,8 @@ export const shortPath = (p: string, machine?: string) => {
 }
 
 // machine: whose folders; the current session's by default.
-export function DirPicker({ value, onChange, autoFocus, machine = currentMachine() }: { value: string; onChange(v: string): void; autoFocus?: boolean; machine?: string }) {
+// onPick: called after you choose a directory from the menu or the browser, not as you type.
+export function DirPicker({ value, onChange, onPick, autoFocus, machine = currentMachine() }: { value: string; onChange(v: string): void; onPick?(p: string): void; autoFocus?: boolean; machine?: string }) {
   const [recent, setRecent] = useState<RecentDir[]>([])
   const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState<string | null>(null) // null until you type
@@ -31,7 +32,7 @@ export function DirPicker({ value, onChange, autoFocus, machine = currentMachine
 
   const q = (filter ?? '').toLowerCase().replace(/^~/, '')
   const shown = recent.filter((d) => !q || d.path.toLowerCase().includes(q)).slice(0, 30)
-  const choose = (p: string) => { onChange(p); setFilter(null); setOpen(false); setBrowsing(false) }
+  const choose = (p: string) => { onChange(p); setFilter(null); setOpen(false); setBrowsing(false); onPick?.(p) }
 
   const finder = async () => {
     setPicking(true)
@@ -54,7 +55,7 @@ export function DirPicker({ value, onChange, autoFocus, machine = currentMachine
             if (!open || !shown.length) return
             if (e.key === 'ArrowDown') { e.preventDefault(); setIndex((i) => Math.min(i + 1, shown.length - 1)) }
             else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex((i) => Math.max(i - 1, 0)) }
-            else if (e.key === 'Enter' && filter !== null && shown[index]) { e.preventDefault(); choose(shown[index].path) }
+            else if (e.key === 'Enter' && shown[index]) { e.preventDefault(); choose(shown[index].path) }
             else if (e.key === 'Escape') { e.stopPropagation(); setOpen(false) }
           }}
         />

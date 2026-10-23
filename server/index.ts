@@ -41,7 +41,7 @@ import { blame, initFileHistory, moveHistory, noteEdit, record as recordVersion,
 import { claim, refresh, toolEnded, toolStarted, whoChanged } from './changes.ts'
 import { CLAUDE, authState, cancelLogin, childEnv, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
 import { deviceType, findDevice } from './device.ts'
-import { remoteCancelLink, remoteForget, remoteHub, remoteLink, remoteName, remoteOn, remoteProxy, remoteStatus, remoteUpgrade, startRemote } from './remote.ts'
+import { remoteCancelLink, remoteForget, remoteHub, remoteLink, remoteName, remoteOn, remoteNotify, remoteProxy, remoteStatus, remoteUpgrade, startRemote } from './remote.ts'
 import { startUpdates, updateModeChanged, updateNow, updatePrompt, updateStatus } from './update.ts'
 import {
   DATA, LEAD_DIR, LEAD_NOTES, OLD_LEAD_NOTES, appendEvent, deleteEvents, readEvents, expandHome, imageFile, knownWindow, leadRenamed, resolveModel, loadSessions, promptFile, loadSettings, saveImage, saveSessions, saveSettings,
@@ -196,8 +196,27 @@ function metaChanged() {
   metaTimer = setTimeout(() => { metaTimer = null; broadcast({ type: 'sessions', sessions: metas() }) }, 40)
 }
 
+// A push notification when a worker's turn ends and it waits on you: it finished and you did not
+// see it, it asks you something, or it needs a permission. A page that shows the session marks it
+// seen at once, so the status must hold for a moment first.
+const NOTIFY: Record<string, string> = { waiting: 'Finished', asking: 'Has questions for you', permission: 'Needs your permission' }
+const lastStatus = new Map<string, string>()
+function notifyOnChange(s: Session) {
+  const m = s.meta
+  const was = lastStatus.get(m.id)
+  lastStatus.set(m.id, m.status)
+  const status = m.status
+  if (m.kind !== 'worker' || was !== 'working' || !NOTIFY[status]) return
+  setTimeout(() => {
+    if (m.status !== status) return
+    // The reply's own tags (<answer>, <consider …>) are not text.
+    const said = (m.lastText ?? '').replace(/<\/?[a-z][^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+    remoteNotify({ title: m.title, body: status === 'waiting' && said ? said.slice(-300) : NOTIFY[status], session: m.id })
+  }, 2000).unref()
+}
+
 const hooks: Hooks = {
-  meta: metaChanged,
+  meta: (s) => { notifyOnChange(s); metaChanged() },
   event: (s, event) => {
     broadcast({ type: 'event', sessionId: s.meta.id, event })
     metaChanged()
@@ -1565,7 +1584,7 @@ const server = http.createServer(async (req, res) => {
     if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look), claimTool(look), mcpTool(look), artifactTool(look), fileTool(look), ...(settings.estimates !== false ? [spendTool(look), ...estimateTools(look, () => get(look).meta)] : []), ...taskTools(look), ...mailTools(look)])
     // The web UI asks this first; here it is a machine's own page.
     if (url.pathname === '/_remote/whoami') return send(res, 200, { web: false })
-    if (url.pathname.startsWith('/api/remote/m/') || url.pathname.startsWith('/api/remote/machines')) return await remoteProxy(req, res, url)
+    if (url.pathname.startsWith('/api/remote/m/') || url.pathname.startsWith('/api/remote/machines') || /^\/api\/remote\/push\/(key|subscribe|unsubscribe)$/.test(url.pathname)) return await remoteProxy(req, res, url)
     if (url.pathname.startsWith('/api/')) return await api(req, res, url)
     if (vite) return vite.middlewares(req, res)
     serveStatic(url.pathname, res, req.headers['x-codinger-remote'] ? `/m/${remoteName()}` : '')
