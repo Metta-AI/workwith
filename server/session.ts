@@ -508,8 +508,15 @@ export class Session {
         return
       }
       case 'assistant': {
-        if (msg.parent_tool_use_id) return // a subagent's own turns: too noisy for the transcript
         const a = msg.message ?? {}
+        const synthetic = a.model === '<synthetic>'
+        if (!synthetic && a.usage) {
+          // A message's blocks come as separate lines with the usage so far: count only what grew.
+          // Subagents' calls count too: they are this session's spend.
+          const id = a.id ?? msg.uuid, usd = costOf(a.usage, a.model ?? m.model), prev = this.costSeen.get(id) ?? 0
+          if (usd > prev) { this.costSeen.set(id, usd); addSpend(m, usd - prev) }
+        }
+        if (msg.parent_tool_use_id) return // a subagent's own turns: too noisy for the transcript, and not this context
         const blocks: Block[] = []
         for (const b of a.content ?? []) {
           // Images of local files in the text point at kept copies (server/media.ts).
@@ -517,7 +524,6 @@ export class Session {
           else if (b.type === 'thinking' && b.thinking) blocks.push({ type: 'thinking', text: b.thinking })
           else if (b.type === 'tool_use') blocks.push({ type: 'tool_use', id: b.id, name: b.name, input: b.input })
         }
-        const synthetic = a.model === '<synthetic>'
         if (synthetic && blocks.some((b) => b.type === 'text' && AUTH_ERROR.test(b.text))) this.authError()
         if (!synthetic && a.usage) {
           const u = a.usage
@@ -531,9 +537,6 @@ export class Session {
           const cc = u.cache_creation ?? {}
           const ttl = cc.ephemeral_1h_input_tokens > 0 ? 3_600_000 : cc.ephemeral_5m_input_tokens > 0 ? 300_000 : m.cache?.ttl ?? 300_000
           m.cache = { at: this.callStart || Date.now(), ttl }
-          // A message's blocks come as separate lines with the usage so far: count only what grew.
-          const id = a.id ?? msg.uuid, usd = costOf(u, a.model ?? m.model), prev = this.costSeen.get(id) ?? 0
-          if (usd > prev) { this.costSeen.set(id, usd); addSpend(m, usd - prev) }
         }
         this.callFrom = Date.now()
         this.hooks.delta(this, '', true)
