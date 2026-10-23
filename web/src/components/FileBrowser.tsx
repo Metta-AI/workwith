@@ -12,7 +12,7 @@ import { ChevronIcon, FolderIcon } from './Icons.tsx'
 import { Splitter, useWidth } from './Splitter.tsx'
 import { baseName, dirName, FileView, ltr, sepOf, type Edit, type ReviewOf } from './FileView.tsx'
 import { groupOfFile, ReviewSection, useReview } from './Review.tsx'
-import { setFileVerdict } from '../review.ts'
+import { setFileVerdict, uncommittedOf } from '../review.ts'
 
 type Entry = { name: string; kind: 'dir' | 'file'; size: number; mtime: number; dim?: boolean; secret?: boolean }
 type Node = { path: string; kind: 'dir'; entries: Entry[] } | { path: string; kind: 'file'; size: number; mtime: number }
@@ -183,9 +183,9 @@ export function FileBrowser({ m, width }: { m: SessionMeta; width: number }) {
 
   const edits = editsOf(m.id)
   const rv = useReview(m)
-  const flat = (title: string | null, paths: string[], changes = false) => paths.length > 0 && (
+  const flat = (title: string | null, paths: string[], changes = false, action?: React.ReactNode) => paths.length > 0 && (
     <div className="fb-group">
-      {title && <div className="attention-head">{title}</div>}
+      {title && <div className="attention-head">{title}{action && <><span className="grow" />{action}</>}</div>}
       {paths.map((p) => (
         <button key={p} className={`fb-row${isOn(p) ? ' on' : ''}`} onClick={() => pick(p, changes)}>
           <FileTypeIcon name={p} /><span className="fb-name">{baseName(p)}</span>
@@ -194,6 +194,16 @@ export function FileBrowser({ m, width }: { m: SessionMeta; width: number }) {
       ))}
     </div>
   )
+  // Commit and push: asks the agent, which knows which changes are its own and writes the message
+  // as the repository does. Shown while a file changed in this session has uncommitted changes.
+  const git = uncommittedOf(m.id)
+  const dirty = !!git && [...edits.keys()].some((p) => git.has(rel(p)) || git.has(p))
+  const [asked, setAsked] = useState(false)
+  const commit = dirty && <button className="link fb-commit" data-pid="commit-push" disabled={asked} onClick={() => {
+    setAsked(true)
+    void api(`/api/sessions/${m.id}/send`, 'POST', { parts: [{ kind: 'text', text: 'Commit and push the changes you made in this session. Leave out the changes of other sessions.' }] })
+      .finally(() => setAsked(false))
+  }}>Commit and push</button>
   const close = () => {
     setFile(null)
     setErr(null)
@@ -213,7 +223,7 @@ export function FileBrowser({ m, width }: { m: SessionMeta; width: number }) {
         {found ? (found.length ? flat(null, found) : <div className="fb-note muted">No file has that in its name.</div>)
           : <>
             <ReviewSection m={m} rel={rel} isOn={isOn} onOpen={(p, g) => openFile(m.id, p, true, g)} />
-            {flat('Changed in this session', [...edits.keys()].slice(0, 30), true)}
+            {flat('Changed in this session', [...edits.keys()].slice(0, 30), true, commit)}
             {flat('Attached', filesOf(m.id))}
             {root && <div className="fb-group">
               <div className="attention-head">{baseName(root)}</div>

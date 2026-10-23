@@ -189,10 +189,24 @@ export function Sidebar({ width }: { width: number }) {
   // Machines move like folders: drag one by its head.
   const drag = useDragSort((_key, names) => { state.machineOrder = names; changed() })
   const tree = (machine: string) => <MachineTree machine={machine} onNew={(cwd, group) => setNewIn({ cwd, machine, group: group || undefined })} onMenu={openMenu} />
+  const newSession = () => setNewIn({ cwd: '', machine: tab === 'local' ? LOCAL : others[0]?.name })
+  // ⌘N (Ctrl+N off a Mac) opens the new session dialog, as the button does. A browser tab keeps
+  // ⌘N for a new window; the page gets it in an installed app window.
+  const newRef = useRef(newSession)
+  newRef.current = newSession
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'n' || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return
+      e.preventDefault()
+      newRef.current()
+    }
+    document.addEventListener('keydown', key)
+    return () => document.removeEventListener('keydown', key)
+  }, [])
   return (
     <aside className="sidebar" style={{ width }}>
       <div className="side-actions">
-        <button className="primary" onClick={() => setNewIn({ cwd: '', machine: tab === 'local' ? LOCAL : others[0]?.name })}>+ New session</button>
+        <button className="primary" onClick={newSession}>+ New session</button>
         <button onClick={() => setHistory(true)} title={`Continue any Claude Code conversation on ${st.web ? currentMachine() : 'this machine'}, including terminal ones`}>Resume…</button>
         {/* Opens the palette (Palette.tsx), as ⌘K does: the way in on a phone. */}
         <button className="icon-btn side-search" aria-label="Search" data-tip="Search (⌘K)" onClick={() => window.dispatchEvent(new Event('codinger:palette'))}><SearchIcon size={16} /></button>

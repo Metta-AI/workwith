@@ -262,6 +262,9 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .attention { flex: none; overflow-y: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 6px 12px 20px; font-size: calc(13px * var(--fs, 1)); }
 .attention-top { display: flex; justify-content: space-between; align-items: center; position: sticky; top: -6px; background: var(--panel); z-index: 1; padding-top: 4px; }
 .attention-head { font-size: calc(11.5px * var(--fs, 1)); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 8px 0 6px; display: flex; gap: 6px; align-items: center; }
+/* Commit and push, at the right of the head of the files changed in a session (FileBrowser.tsx). */
+.fb-group .attention-head .grow { flex: 1; }
+.fb-commit { text-transform: none; letter-spacing: 0; font-size: inherit; padding: 0 2px; }
 .attention-empty { font-size: calc(12.5px * var(--fs, 1)); padding: 4px 2px 8px; }
 /* The panel beside a session (SidePanel.tsx): its tabs at the top, one tab's content below. */
 .side-panel { flex: none; display: flex; flex-direction: column; min-height: 0; min-width: 0; border-left: 1px solid var(--line); background: var(--panel); }
