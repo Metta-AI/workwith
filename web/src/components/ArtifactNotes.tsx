@@ -15,7 +15,8 @@ import { isReaction } from '../emoji.ts'
 import { focusField } from './Inputs.tsx'
 import { CARD_W, NoteCard, SentCard } from './Margin.tsx'
 
-type Box = { left: number; top: number; right: number; bottom: number; last: { left: number; right: number; bottom: number } }
+// out: the mark is out of view in the page (in a box scrolled away from it, or under a sticky header).
+type Box = { left: number; top: number; right: number; bottom: number; last: { left: number; right: number; bottom: number }; out?: boolean }
 type FromFrame =
   | { t: 'ready' }
   | { t: 'new'; anchor: Omit<ArtDraft['anchor'], 'artifact'>; quote: string; box: Box | null }
@@ -96,10 +97,8 @@ export function ArtifactNotes({ sid, artifact, v, mtime, frame, mode, setMode }:
     requestAnimationFrame(() => focusField(layer.current?.querySelector<HTMLElement>(`.note-card[data-id="${id}"] .ri-edit`)))
   }
   const peekTimer = useRef(0)
-  const onCard = useRef<string | null>(null)
   const hoverCard = (id: string, on: boolean) => {
     clearTimeout(peekTimer.current)
-    onCard.current = on ? id : null
     setPeek(on ? id : null)
     setLit(on ? id : null)
   }
@@ -119,7 +118,7 @@ export function ArtifactNotes({ sid, artifact, v, mtime, frame, mode, setMode }:
         clearTimeout(peekTimer.current)
         // It goes one frame after the pointer leaves the highlight.
         // The pointer went from the highlight onto its card: the card keeps itself open.
-        if (onCard.current) return
+        if (layer.current?.querySelector('.note-card:hover')) return
         if (m.id) setPeek(m.id); else peekTimer.current = window.setTimeout(() => setPeek(null), 16)
         setLit(m.id)
       } else if (m.t === 'open') openCard(m.id)
@@ -145,9 +144,10 @@ export function ArtifactNotes({ sid, artifact, v, mtime, frame, mode, setMode }:
     const w = el.clientWidth, h = el.clientHeight
     for (const c of el.querySelectorAll<HTMLElement>('.note-card, .react-badge')) {
       const id = c.dataset.id!, b = boxes[id]
+      // One card is open at a time (the one you write in, or opened last), and one more while the pointer is on its highlight.
       const writing = c.contains(document.activeElement)
-      const shown = c.classList.contains('react-badge') || [open, peek, focused, state.focus].includes(id) || writing
-      if (!b || !shown || (!writing && (b.bottom < 0 || b.top > h))) { c.style.display = 'none'; continue }
+      const shown = c.classList.contains('react-badge') || [open, peek, state.focus].includes(id)
+      if (!b || !shown || (!writing && (b.out || b.bottom < 0 || b.top > h))) { c.style.display = 'none'; continue }
       c.style.display = ''
       if (c.classList.contains('react-badge')) {
         c.style.left = `${Math.min(b.right + 2, w - c.offsetWidth - 2)}px`

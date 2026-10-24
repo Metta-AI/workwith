@@ -18,7 +18,7 @@ import { occurrenceOf, resolveNthQuote } from '../vendor/anchor.ts'
 declare const CODINGER_APP: string
 
 type Mark = { id: string; kind: 'draft' | 'sent'; anchor: ArtifactAnchor }
-type Box = { left: number; top: number; right: number; bottom: number; last: { left: number; right: number; bottom: number } }
+type Box = { left: number; top: number; right: number; bottom: number; last: { left: number; right: number; bottom: number }; out?: boolean }
 
 export function startNotes() {
   const send = (m: Record<string, unknown>) => parent.postMessage({ codinger: 'notes', ...m }, CODINGER_APP)
@@ -88,6 +88,45 @@ export function startNotes() {
     const l = rs[rs.length - 1]
     return { left: Math.min(...rs.map((r) => r.left)), top: Math.min(...rs.map((r) => r.top)), right: Math.max(...rs.map((r) => r.right)), bottom: Math.max(...rs.map((r) => r.bottom)), last: { left: l.left, right: l.right, bottom: l.bottom } }
   }
+  // The part of the window where an element shows: inside each element around it that clips
+  // what overflows it (a table that scrolls in a box, for one). Null when none of it shows.
+  type Clip = { left: number; top: number; right: number; bottom: number }
+  // The sticky headers of a box that scrolls: its own children, and the head of a table in it.
+  // Found once for each box, and again when the page changes.
+  let sticky = new WeakMap<Element, Element[]>()
+  const stickyIn = (p: Element) => {
+    let list = sticky.get(p)
+    if (!list) {
+      list = [...p.children, ...p.querySelectorAll(':scope > table > thead, :scope > table > thead > tr > th')].filter((e) => getComputedStyle(e).position === 'sticky')
+      sticky.set(p, list)
+    }
+    return list
+  }
+  const clipOf = (el: Element | null): Clip | null => {
+    let c: Clip = { left: 0, top: 0, right: innerWidth, bottom: innerHeight }
+    for (let p = el?.parentElement; p && p !== document.documentElement; p = p.parentElement) {
+      const cs = getComputedStyle(p)
+      if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue
+      const r = p.getBoundingClientRect()
+      const left = r.left + p.clientLeft, top = r.top + p.clientTop
+      c = { left: Math.max(c.left, left), top: Math.max(c.top, top), right: Math.min(c.right, left + p.clientWidth), bottom: Math.min(c.bottom, top + p.clientHeight) }
+      // A sticky header at the top of the box covers what scrolls under it.
+      for (const h of stickyIn(p)) {
+        const hr = h.getBoundingClientRect()
+        if (h !== el && !h.contains(el) && hr.top <= c.top + 1 && hr.bottom > c.top) c.top = hr.bottom
+      }
+      if (cs.position === 'fixed') break
+    }
+    return c.right > c.left && c.bottom > c.top ? c : null
+  }
+  // Draw a box over rect r, cut to the part inside c; hidden when none of it is.
+  const place = (b: HTMLElement, r: DOMRect, c: Clip | null) => {
+    const x = r.left - 2, y = r.top - 2, w = r.width + 4, h = r.height + 4
+    const cut = c && [Math.max(0, c.top - y), Math.max(0, x + w - c.right), Math.max(0, y + h - c.bottom), Math.max(0, c.left - x)]
+    if (!cut || cut[0] + cut[2] >= h || cut[1] + cut[3] >= w) { b.style.display = 'none'; return }
+    Object.assign(b.style, { display: 'block', left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px`, clipPath: cut.some(Boolean) ? `inset(${cut.map((n) => `${n}px`).join(' ')})` : '' })
+  }
+
   const startOn = (el: Element) => {
     handBack()
     send({ t: 'new', anchor: elementAnchor(el), quote: labelOf(el), box: boxOf([el.getBoundingClientRect()]) })
@@ -143,17 +182,12 @@ export function startNotes() {
   }, true)
   addEventListener('keyup', (e) => { if (e.key === 'Alt' && altAt && performance.now() - altAt < 400) send({ t: 'mode', on: !mode }); altAt = 0 }, true)
 
-  // While you comment, the mark under the pointer has an outline and says what a comment on it quotes.
+  // While you comment, the mark under the pointer has a dashed outline.
   let pick: HTMLElement | null = null
   const showPick = (el: Element | null) => {
     if (!el) { if (pick) pick.style.display = 'none'; return }
-    if (!pick?.isConnected) { pick = document.createElement('div'); pick.className = 'cd-pick'; ensureLayer().appendChild(pick); pick.appendChild(document.createElement('span')) }
-    const r = el.getBoundingClientRect(), tag = pick.firstElementChild as HTMLElement
-    Object.assign(pick.style, { display: 'block', left: `${r.left - 2}px`, top: `${r.top - 2}px`, width: `${r.width + 4}px`, height: `${r.height + 4}px` })
-    tag.textContent = clip(labelOf(el) || el.localName, 80)
-    tag.style.top = r.top > 26 ? '-24px' : `${r.height + 8}px`
-    // Inside the window: at the left of the mark, moved left as far as it must go.
-    tag.style.left = `${Math.min(0, innerWidth - r.left - tag.offsetWidth - 4)}px`
+    if (!pick?.isConnected) { pick = document.createElement('div'); pick.className = 'cd-pick'; ensureLayer().appendChild(pick) }
+    place(pick, el.getBoundingClientRect(), clipOf(el))
   }
   addEventListener('mousemove', (e) => showPick(commenting(e) && !isOurs(e.target) ? markAt(e.target as Element, true) : null), { capture: true, passive: true })
   addEventListener('keyup', (e) => { if (e.key === 'Alt' && !mode) showPick(null) }, true)
@@ -191,12 +225,11 @@ export function startNotes() {
     layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483646'
     const css = document.createElement('style')
     css.textContent = `
-      ::highlight(cd-draft){background-color:rgba(255,196,0,.38)} ::highlight(cd-sent){background-color:rgba(255,196,0,.16)} ::highlight(cd-focus){background-color:rgba(255,170,0,.62)}
-      [${UI}] .cd-box{position:fixed;border-radius:4px;box-shadow:0 0 0 3px rgba(255,196,0,.75);background:rgba(255,196,0,.14)}
-      [${UI}] .cd-box.sent{box-shadow:0 0 0 2px rgba(255,196,0,.4);background:none}
-      [${UI}] .cd-box.focus{box-shadow:0 0 0 3px rgba(255,150,0,.95);background:rgba(255,170,0,.22)}
-      [${UI}] .cd-pick{position:fixed;display:none;border-radius:4px;outline:2px dashed rgba(240,160,0,.95);outline-offset:0}
-      [${UI}] .cd-pick span{position:absolute;left:0;max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:12px/1.5 system-ui,sans-serif;color:#1d1d1f;background:#ffe9a8;border-radius:4px;padding:1px 6px;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+      ::highlight(cd-draft){background-color:rgba(255,196,0,.19)} ::highlight(cd-sent){background-color:rgba(255,196,0,.12)} ::highlight(cd-focus){background-color:rgba(255,196,0,.38)}
+      [${UI}] .cd-box{position:fixed;border-radius:4px;background:rgba(255,196,0,.12)}
+      [${UI}] .cd-box.sent{background:rgba(255,196,0,.08)}
+      [${UI}] .cd-box.focus{background:rgba(255,196,0,.24);box-shadow:inset 0 0 0 2px rgba(240,180,0,.95)}
+      [${UI}] .cd-pick{position:fixed;display:none;border-radius:4px;outline:2px dashed rgba(240,160,0,.95);outline-offset:-2px}
       html[data-codinger-commenting], html[data-codinger-commenting] *{cursor:crosshair!important}`
     layer.appendChild(css)
     document.documentElement.appendChild(layer)
@@ -229,24 +262,28 @@ export function startNotes() {
       const boxes: Record<string, Box | null> = {}
       for (const f of found) {
         const rects = rectsOf(f)
-        boxes[f.m.id] = boxOf(rects)
+        // Codinger hides the card of a mark that is out of view, as in a table scrolled away from it.
+        const c = clipOf(f.el ?? (f.range ? at(f.range.commonAncestorContainer) : null))
+        const box = boxOf(rects)
+        boxes[f.m.id] = box && (!c || box.bottom < c.top || box.top > c.bottom || box.right < c.left || box.left > c.right) ? { ...box, out: true } : box
         if (!f.el || !rects.length) continue
-        const r = rects[0], b = document.createElement('div')
+        const b = document.createElement('div')
         b.className = `cd-box ${kind(f.m)}`
-        Object.assign(b.style, { left: `${r.left - 2}px`, top: `${r.top - 2}px`, width: `${r.width + 4}px`, height: `${r.height + 4}px` })
         l.appendChild(b)
+        place(b, rects[0], c)
       }
       send({ t: 'boxes', boxes, h: innerHeight, w: innerWidth })
     })
   }
-  addEventListener('scroll', paint, { capture: true, passive: true })
+  // A scroll moves the marks: the outline goes until the pointer moves again.
+  addEventListener('scroll', () => { paint(); showPick(null) }, { capture: true, passive: true })
   addEventListener('resize', paint)
   // The page draws again (new data, a filter): find each mark again.
   let redo = 0
   new MutationObserver((ms) => {
     if (ms.every((m) => isOurs(m.target))) return
     clearTimeout(redo)
-    redo = window.setTimeout(() => { resolve(); paint() }, 100)
+    redo = window.setTimeout(() => { sticky = new WeakMap(); resolve(); paint() }, 100)
   }).observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['data-pid', 'aria-label', 'class', 'style', 'transform', 'd', 'x', 'y', 'width', 'height'] })
 
   // The pointer over a mark lights up its card in Codinger.
