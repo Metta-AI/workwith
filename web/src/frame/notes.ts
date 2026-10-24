@@ -229,8 +229,7 @@ export function startNotes() {
       [${UI}] .cd-box{position:fixed;border-radius:4px;background:rgba(255,196,0,.12)}
       [${UI}] .cd-box.sent{background:rgba(255,196,0,.08)}
       [${UI}] .cd-box.focus{background:rgba(255,196,0,.24);box-shadow:inset 0 0 0 2px rgba(240,180,0,.95)}
-      [${UI}] .cd-pick{position:fixed;display:none;border-radius:4px;outline:2px dashed rgba(240,160,0,.95);outline-offset:-2px}
-      html[data-codinger-commenting], html[data-codinger-commenting] *{cursor:crosshair!important}`
+      [${UI}] .cd-pick{position:fixed;display:none;border-radius:4px;outline:2px dashed rgba(240,160,0,.95);outline-offset:-2px}`
     layer.appendChild(css)
     document.documentElement.appendChild(layer)
     return layer

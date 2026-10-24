@@ -144,9 +144,10 @@ export function ArtifactNotes({ sid, artifact, v, mtime, frame, mode, setMode }:
     const w = el.clientWidth, h = el.clientHeight
     for (const c of el.querySelectorAll<HTMLElement>('.note-card, .react-badge')) {
       const id = c.dataset.id!, b = boxes[id]
-      // One card is open at a time (the one you write in, or opened last), and one more while the pointer is on its highlight.
+      // One card is open at a time (the one you write in, or opened last), and one more while the
+      // pointer is on its highlight, except while you write: then no card shows over the one you write in.
       const writing = c.contains(document.activeElement)
-      const shown = c.classList.contains('react-badge') || [open, peek, state.focus].includes(id)
+      const shown = c.classList.contains('react-badge') || [open, state.focus].includes(id) || (id === peek && !focused)
       if (!b || !shown || (!writing && (b.out || b.bottom < 0 || b.top > h))) { c.style.display = 'none'; continue }
       c.style.display = ''
       if (c.classList.contains('react-badge')) {
