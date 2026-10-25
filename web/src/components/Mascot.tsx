@@ -2,8 +2,9 @@
 // it looks is how full the context is (droopy eyes, sweat, then sleep). What it
 // wears is its look, which each Claude picks for itself (shared/looks.ts). A session
 // another session started (a child) wears red shoes, which Codinger gives it. A session you
-// starred has a yellow star behind its critter.
+// starred has a yellow aura round its critter, which glows and swells a little.
 
+import { useId } from 'react'
 import type { Status } from '../../../shared/types.ts'
 import type { Look } from '../../../shared/looks.ts'
 import { BODY_COLORS, DRAWINGS, partsOf, rects } from './looks.tsx'
@@ -19,14 +20,10 @@ const LAYERS = ['face', 'hair', 'neck', 'eyewear', 'hat', 'held'] as const
 
 const SHOE = '#ff2a2a'
 
-// The star behind a starred critter: five points round the middle of its body.
-const STAR = Array.from({ length: 10 }, (_, i) => {
-  const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 4 : 9.5
-  return `${(8 + r * Math.cos(a)).toFixed(2)},${(4.5 + r * Math.sin(a)).toFixed(2)}`
-}).join(' ')
-
 export function Mascot({ status, fatigue, size = 28, title, look = {}, body, alert, child, review, starred }: Props) {
   // Looks saved before 'teal' became the default may still say 'classic'.
+  // The ids of the critter's shape and of the aura drawn from it: one each per critter on the page.
+  const id = useId().replace(/:/g, '')
   const BODY = body ?? BODY_COLORS[look.color ?? 'teal'] ?? BODY_COLORS.teal
   const ink = (body ? inkOn(body) === '#ffffff' : look.color === 'midnight') ? '#e8ecff' : '#2a1f1a'
   const tired = fatigue >= 0.55
@@ -42,9 +39,19 @@ export function Mascot({ status, fatigue, size = 28, title, look = {}, body, ale
       role="img" aria-label={title ?? status}
     >
       {title && <title>{title}</title>}
-      {starred && <polygon className="m-star" points={STAR} fill="#ffc83d" stroke="#ffe08a" strokeWidth="0.5" strokeLinejoin="round" shapeRendering="auto" />}
-      {/* A starred critter moves up into the middle of its star and of its box. */}
-      <g transform={starred ? 'translate(0 -3)' : undefined}>
+      {/* The aura: the critter's shape, made thicker, with a soft edge and a wider glow, filled yellow, behind it. */}
+      {starred && <>
+        <filter id={`${id}-aura`} x="-50%" y="-50%" width="200%" height="200%">
+          <feMorphology in="SourceAlpha" operator="dilate" radius="1.5" result="thick" />
+          <feGaussianBlur in="thick" stdDeviation="0.5" result="edge" />
+          <feGaussianBlur in="thick" stdDeviation="1.8" result="glow" />
+          <feMerge result="soft"><feMergeNode in="glow" /><feMergeNode in="edge" /></feMerge>
+          <feFlood floodColor="#ffc83d" />
+          <feComposite in2="soft" operator="in" />
+        </filter>
+        <use href={`#${id}-shape`} className="m-aura" filter={`url(#${id}-aura)`} shapeRendering="auto" />
+      </>}
+      <g id={`${id}-shape`}>
       <g className="m-body">
         {parts.map((p) => rects(p.back, `b${p.slot}`))}
         <rect x="3" y="3" width="10" height="1" fill={BODY} />
@@ -60,9 +67,9 @@ export function Mascot({ status, fatigue, size = 28, title, look = {}, body, ale
         <g className="m-leg a"><rect x="4" y="10" width="2" height="2" />{child && <rect x="3" y="10" width="3" height="2" fill={SHOE} />}</g>
         <g className="m-leg b"><rect x="10" y="10" width="2" height="2" />{child && <rect x="10" y="10" width="3" height="2" fill={SHOE} />}</g>
       </g>
+      </g>
       {tired && !spent && <rect className="m-sweat" x="14" y="2" width="1" height="2" fill="#7cc4ff" />}
       {spent && status !== 'working' && <text className="m-z" x="14" y="3" fontSize="4" fill="#9aa">z</text>}
-      </g>
       {badge && (
         <g className="m-badge">
           <rect x="13" y="0" width="5" height="5" rx="1" fill={badge.bg} shapeRendering="auto" />

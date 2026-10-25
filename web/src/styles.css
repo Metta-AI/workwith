@@ -227,7 +227,8 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 
 /* ---- mascot ---- */
 .mascot { flex: none; overflow: visible; }
-.mascot .m-star { filter: drop-shadow(0 0 1px #ffc83d); }
+.mascot .m-aura { transform-box: fill-box; transform-origin: center; animation: aura 2.4s ease-in-out infinite; }
+@keyframes aura { 0%, 100% { opacity: .75; transform: scale(1); } 50% { opacity: 1; transform: scale(1.08); } }
 .calm .mascot, .calm .mascot * { animation: none !important; }
 @media (prefers-reduced-motion: reduce) { .mascot, .mascot * { animation: none !important; } }
 .mascot.st-working .m-body { animation: bob .5s ease-in-out infinite alternate; }
