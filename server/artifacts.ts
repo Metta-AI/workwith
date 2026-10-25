@@ -57,6 +57,9 @@ type Manifest = {
   /** the isle this page is, pulled down to change it: its first publish from here is that isle's
    *  next version (when it is yours), not a new page */
   isle?: string
+  /** with a parent and a changed page: "same" when it is still the parent's view (adapted or improved),
+   *  "new" when it looks or works differently. Prolifica decides from it whether the page is a rebind. */
+  view?: 'same' | 'new'
   slots?: Record<string, { kind?: string; description?: string }>
   bindings?: Record<string, string>
   /** the data the bound files were made from (a scraper's export, a download), by file, with
@@ -176,7 +179,7 @@ export const artifactsPrompt = () => `
 When the user wants to see something (a chart, a table to explore, a dashboard, a report over data, a small tool), and whenever you analyse data, make an artifact: a page that Codinger shows in a pane next to this session. Each artifact is a folder in \`${ARTIFACTS}/<name>/\`, with a short lowercase name with hyphens:
 - \`index.html\`: one self-contained page. Use \`<script type="module">\` (top-level await works) and libraries from a CDN (https://esm.sh/..., https://cdn.jsdelivr.net/npm/...). There is no build step.
 - \`data/\`: the data, as files (csv, json, md, txt, images). Do not put data in the page. Subfolders are fine (\`data/media/a.jpg\`).
-- \`artifact.json\`: \`{"title": "...", "description": "Two to four short sentences on what it shows.", "slots": {"rows": {"kind": "csv", "description": "One row per ...: the columns the page uses"}}, "bindings": {"rows": "data/rows.csv"}}\`. When the page came from an isle on Prolifica, add \`"parent": "<isle id>"\`: the isle you started from, also when you change that isle itself, and not the parent that isle shows on Prolifica (Codinger does not send a parent equal to the isle it updates). When you pulled an isle down to change it (its page, data and instructions), add \`"isle": "<isle id>"\` too: the first Publish from Codinger then makes that isle's next version, not a new page. Do not publish it yourself; the user publishes when ready.
+- \`artifact.json\`: \`{"title": "...", "description": "Two to four short sentences on what it shows.", "slots": {"rows": {"kind": "csv", "description": "One row per ...: the columns the page uses"}}, "bindings": {"rows": "data/rows.csv"}}\`. When the page came from an isle on Prolifica, add \`"parent": "<isle id>"\`: the isle you started from, also when you change that isle itself, and not the parent that isle shows on Prolifica (Codinger does not send a parent equal to the isle it updates). When you pulled an isle down to change it (its page, data and instructions), add \`"isle": "<isle id>"\` too: the first Publish from Codinger then makes that isle's next version, not a new page. When you change the page of a parent isle, add \`"view": "same"\` if it is still the same kind of page (adapted to the data, fixed or improved), or \`"view": "new"\` if it now looks or works differently: without it, Prolifica can count a changed page as a new view and put it apart from its family on the map. Do not publish it yourself; the user publishes when ready.
 - Source data: copy the data you started from (a scraper's export, a download, a file the user gave you) into \`data/\` as it is, even when no slot uses it, and list it in artifact.json: \`"sources": {"data/source.json": {"url": "...", "method": "...", "collected_at": "...", "notes": "..."}}\` (where it came from; each field optional). \`method\` is one of: upload, bookmarklet, extension, userscript, agent, script, api, manual, other; say more in \`notes\`. It is published with the page, and the bound data says it was made from it, so it goes public when the page does. When a source made only some of the slots' data, add \`"slots": ["..."]\` to it.
 - \`instructions.md\`: instructions for agents about this page, so the next agent does not have to learn it from the HTML. Write them for each artifact. Say which data fields drive the wording, what text is fixed in the page, the limits, and what breaks. Write about the page, not about this data. Update them when you learn something about the page. They are published with the page.
 
@@ -543,7 +546,8 @@ export async function publish(name: string, opts: { visibility?: Visibility; not
   const visibility = opts.visibility ?? before?.visibility ?? 'public'
   const body = (id?: string) => JSON.stringify({
     id, html: src.read('index.html')?.toString('utf8') ?? '', title: m.title ?? name, description: m.description,
-    shortTitle: m.short_title, viewName: m.view_name, slots: m.slots ?? {}, bindings, visibility, note: opts.note || undefined,
+    shortTitle: m.short_title, viewName: m.view_name, view: m.view === 'same' || m.view === 'new' ? m.view : undefined,
+    slots: m.slots ?? {}, bindings, visibility, note: opts.note || undefined,
     // an isle is never its own parent: when this updates the isle it came from, there is none to send
     parent: [m.parent, m.isle].find((x) => x && x !== id), instructions: src.read('instructions.md')?.toString('utf8'),
   })
