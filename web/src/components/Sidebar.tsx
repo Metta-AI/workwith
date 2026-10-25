@@ -316,7 +316,6 @@ function ArchiveFilter({ machines }: { machines: string[] }) {
     folders.set(path, { path, n: f.n + 1, newest: Math.max(f.newest, s.createdAt) })
     sessions.push({ s, machine, path })
   }
-  const nameOf = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path
   const picked = [...folders.keys()].find((p) => p.toLowerCase() === q)
   const typed = q && !picked ? q : ''
   const first = (name: string) => name.toLowerCase().startsWith(typed) ? 0 : 1
@@ -558,7 +557,7 @@ function MachineTree({ machine, onNew, onMenu }: { machine: string; onNew(cwd: s
       const b = sortable(key, x.id)
       return (
         <div key={x.id} {...b} className={`branch${b.className}`}>
-          <Row s={x} depth={depth} active={st.selected === x.id} onPointerDown={(e) => start(e, key, x.id, byDir ? undefined : g.id)} onMenu={onMenu} />
+          <Row s={x} depth={depth} active={st.selected === x.id} folder={!byDir} onPointerDown={(e) => start(e, key, x.id, byDir ? undefined : g.id)} onMenu={onMenu} />
           {kids(x.id).map((k) => branch(k, depth + 1))}
         </div>
       )
@@ -615,14 +614,18 @@ function GroupName({ name, onDone }: { name: string; onDone(name: string): void 
     onKeyDown={(e) => { if (e.key === 'Enter') finish(v); if (e.key === 'Escape') finish(name) }} />
 }
 
-function Row({ s, depth = 0, active, label, onPointerDown, onMenu }: { s: SessionMeta; depth?: number; active: boolean; label?: string; onPointerDown?(e: React.PointerEvent): void; onMenu?(e: React.MouseEvent, items: MenuItem[]): void }) {
+// The last part of a path: the folder's own name.
+const nameOf = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path
+
+// A row names its folder, not its status: the critter shows the status. In a folder section the head names the folder.
+function Row({ s, depth = 0, active, label, folder = true, onPointerDown, onMenu }: { s: SessionMeta; depth?: number; active: boolean; label?: string; folder?: boolean; onPointerDown?(e: React.PointerEvent): void; onMenu?(e: React.MouseEvent, items: MenuItem[]): void }) {
   const parent = useStore().sessions.find((x) => x.id === s.parentId)
   return (
     <button className={`row${active ? ' active' : ''}${s.unread ? ' unread' : ''}${alertOf(s) ? ' alert' : ''}${s.status === 'error' ? ' error' : ''}`} style={{ paddingLeft: 10 + depth * 16 }} onClick={() => select(s.id)} onPointerDown={onPointerDown} onContextMenu={onMenu && ((e) => onMenu(e, rowItems(s)))}>
       <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={26} title={STATUS_LABEL[s.status]} child={!!s.parentId} review={!!s.pendingReviews} starred={s.starred} />
       <span className="row-main">
         <span className="row-title">{machineOf(s.id) !== LOCAL && <GlobeIcon size={11} className="row-remote" title={`On ${machineOf(s.id)}`} />}{label ?? s.title}{parent && <span className="row-from"> (from {parent.title})</span>}</span>
-        <span className="row-sub">{s.compacting ? 'compacting' : STATUS_LABEL[s.status]} · {timeAgo(s.lastActivity)}<SpendHint s={s} /><CacheHint s={s} /></span>
+        <span className="row-sub">{[s.compacting && 'compacting', folder && nameOf(s.cwd), timeAgo(s.lastActivity)].filter(Boolean).join(' · ')}<SpendHint s={s} /><CacheHint s={s} /></span>
       </span>
       {!!s.pendingCritical && <span className="count critical" data-tip="Critical items" data-tip-at="right">{s.pendingCritical}</span>}
       {s.inbox.length > 0 && <span className="count" title="Drafts from the lead">{s.inbox.length}</span>}
