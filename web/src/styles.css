@@ -256,7 +256,7 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 /* ---- session ---- */
 .session { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .session-body { flex: 1; min-height: 0; display: flex; }
-.session-main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
+.session-main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; container: main / inline-size; }
 /* Shown while files are dragged over the chat; drops pass through it to what is under it. */
 .drop-zone { position: absolute; inset: 6px; z-index: 20; pointer-events: none; display: flex; align-items: center; justify-content: center; border: 2px dashed var(--blue); border-radius: 12px; background: color-mix(in srgb, var(--blue) 8%, color-mix(in srgb, var(--bg) 70%, transparent)); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
 .drop-card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 18px 26px; border-radius: 12px; background: var(--card); box-shadow: 0 4px 24px rgba(0, 0, 0, .18); text-align: center; max-width: 80%; }
@@ -996,6 +996,18 @@ h1.rename { cursor: text; border-radius: 5px; } h1.rename:hover { background: rg
 .slash-desc { color: var(--muted); font-size: calc(12.5px * var(--fs, 1)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .send { height: 32px; padding: 0 16px; white-space: nowrap; }
 .composer-row .stop { height: 32px; padding: 0 12px; display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+.send { display: inline-flex; gap: .3em; align-items: center; justify-content: center; }
+.send-icon { display: none; }
+/* A narrow main area (side panels open): the field takes the width, without the 72px for the
+   transcript's margin, and Send and Stop show only their icons. */
+@container main (max-width: 600px) {
+  .composer { padding: 8px 12px 12px; }
+  .composer .slash-menu, .session-main.gutter .composer .slash-menu { left: 12px; width: calc(100% - 24px); }
+  .composer .send { padding: 0 11px; }
+  .composer .send-icon { display: block; }
+  /* Hidden from view, still read by screen readers. */
+  .composer .not-narrow { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
 
 /* ==text== in markdown (util.ts): a highlight, as in Obsidian, in one of six colours. */
 mark.hl { color: inherit; border-radius: 3px; padding: 0 2px; --hl: #f2c200; background: color-mix(in srgb, var(--hl) 35%, transparent); }

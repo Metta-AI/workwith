@@ -11,7 +11,7 @@ import { ItemCount } from './AttentionPanel.tsx'
 import { hasPreview } from './Artifacts.tsx'
 import { SidePanel } from './SidePanel.tsx'
 import { revealItem, useItems } from '../items.ts'
-import { CheckIcon, ChevronIcon, ChildrenIcon, ClipIcon, FolderIcon, MailIcon, MoreIcon, PanelIcon, StarIcon, StopIcon, UndoIcon, XIcon } from './Icons.tsx'
+import { CheckIcon, ChevronIcon, ChildrenIcon, ClipIcon, FolderIcon, MailIcon, MoreIcon, PanelIcon, SendIcon, StarIcon, StopIcon, UndoIcon, XIcon } from './Icons.tsx'
 import { inboxLabel } from '../../../shared/inbox.ts'
 import { renderInline } from '../util.ts'
 import { isReaction } from '../emoji.ts'
@@ -437,7 +437,7 @@ function DismissedChip({ sid }: { sid: string }) {
 }
 
 // On a phone the word goes, for room.
-const resolve = (n: number) => <>Resolve {n}<span className="not-phone"> {n === 1 ? 'issue' : 'issues'}</span> ↑</>
+const resolve = (n: number) => <>Resolve {n}<span className="not-phone not-narrow"> {n === 1 ? 'issue' : 'issues'}</span> ↑</>
 
 export function Composer({ m, attachRef }: { m: SessionMeta; attachRef?: React.RefObject<((files: File[]) => void) | null> }) {
   useStore()
@@ -525,9 +525,10 @@ export function Composer({ m, attachRef }: { m: SessionMeta; attachRef?: React.R
           uploadDir={m.cwd}
           attachRef={attachRef}
         />
-        {busy && <button className="stop danger" onClick={() => void api(`/api/sessions/${m.id}/interrupt`)}><StopIcon size={12} />Stop</button>}
+        {busy && <button className="stop danger" aria-label="Stop" onClick={() => void api(`/api/sessions/${m.id}/interrupt`)}><StopIcon size={12} /><span className="not-phone not-narrow">Stop</span></button>}
         <button className={`primary send${critical.length ? ' critical' : ''}`} disabled={(!n && !critical.length) || sending} onClick={() => send()} title={costly ? 'Prompt cache expired: use Send anyway above' : undefined}>
-          {sending ? 'Sending…' : critical.length ? resolve(critical.length) : isCommand ? 'Run' : open.length && n ? (warned ? 'Send anyway' : resolve(open.length)) : n > 1 ? `Send ${n}` : 'Send'}
+          {/* In a narrow main area, plain Send is a paper airplane (styles.css, @container main). */}
+          {sending ? 'Sending…' : critical.length ? resolve(critical.length) : isCommand ? 'Run' : open.length && n ? (warned ? 'Send anyway' : resolve(open.length)) : <><SendIcon className="send-icon" size={15} /><span className="not-narrow">Send</span>{n > 1 && <span>{n}</span>}</>}
         </button>
       </div>
     </div>
