@@ -93,6 +93,8 @@ function ranked<T>(list: T[], q: string, best: boolean, fields: (x: T) => Field[
 
 // The order of the results for a query: the most recent first, or the best matches first. Kept for next time.
 const SORT_KEY = 'codinger.paletteSort'
+// Whether the Sessions results leave out the archived sessions. Kept for next time.
+const ARCHIVED_KEY = 'codinger.paletteHideArchived'
 
 export function Palette() {
   const [open, setOpen] = useState(false)
@@ -143,6 +145,8 @@ function PaletteDialog({ onClose, onTask, onFolder }: { onClose(): void; onTask(
   const [q, setQ] = useState('')
   const [best, setBest] = useState(() => localStorage.getItem(SORT_KEY) === 'best')
   const sortBy = (on: boolean) => { setBest(on); localStorage.setItem(SORT_KEY, on ? 'best' : 'recent') }
+  const [hideArchived, setHideArchived] = useState(() => localStorage.getItem(ARCHIVED_KEY) === '1')
+  const hideBy = (on: boolean) => { setHideArchived(on); localStorage.setItem(ARCHIVED_KEY, on ? '1' : '0') }
   const [tab, setTab] = useState<Tab>('all')
   // The result marked (-1: none), and whether the keys work in the results or in the field.
   const [active, setActive] = useState(-1)
@@ -166,7 +170,7 @@ function PaletteDialog({ onClose, onTask, onFolder }: { onClose(): void; onTask(
     const groupOf = (s: SessionMeta) => st.machines[machineOf(s.id)]?.settings.groups?.find((g) => g.id === s.group)?.name
     const titles = (sids: Iterable<string>) => [...new Set([...sids].map((id) => byId.get(id)?.title).filter(Boolean))].join(', ')
     // Each tab lists the most recent first, and a query keeps that order unless you pick Best match.
-    const sessions = ranked([...workers].sort((a, b) => b.lastActivity - a.lastActivity), query, best, (s) => [
+    const sessions = ranked(workers.filter((s) => !hideArchived || !s.archived).sort((a, b) => b.lastActivity - a.lastActivity), query, best, (s) => [
       ['', s.title], ['', s.cwd], ['Group', groupOf(s)], ['Sub-task of', s.parentId ? byId.get(s.parentId)?.title : undefined],
       ['Model', s.model ?? s.expectedModel], ['Machine', machineOf(s.id) ? labelOf(machineOf(s.id)) : undefined],
       ['Last reply', s.lastText], ['Id', query.length >= 4 ? localId(s.id) : undefined],
@@ -201,7 +205,7 @@ function PaletteDialog({ onClose, onTask, onFolder }: { onClose(): void; onTask(
       files: files.map((p): Row => ({ kind: 'files', key: p, path: p })),
       folders: folders.map(({ x: f, why }): Row => ({ kind: 'folders', key: `${f.machine}\n${f.cwd}`, f, why })),
     }
-  }, [st.sessions, st.artifacts, st.tasks, st.events, query, best, found, sel?.id])
+  }, [st.sessions, st.artifacts, st.tasks, st.events, query, best, hideArchived, found, sel?.id])
   // The rows of a tab, in the order the keys move through them.
   const rowsOf = (t: Tab): Row[] => t === 'all' ? TABS.slice(1).flatMap((x) => rows[x.id as Exclude<Tab, 'all'>].slice(0, ALL_MAX)) : rows[t]
   const list = rowsOf(tab)
@@ -469,6 +473,7 @@ function PaletteDialog({ onClose, onTask, onFolder }: { onClose(): void; onTask(
             onChange={(e) => { setQ(e.target.value); setInList(false) }} onKeyDown={onKey} spellCheck={false} autoComplete="off" />
           {/* Only a query has an order to change: with none, every tab shows the most recent first. */}
           {query && <button className="pal-sort" data-pid="palette-sort" onClick={() => sortBy(!best)}>{best ? 'Best match' : 'Most recent'}</button>}
+          <button className={`pal-sort${hideArchived ? ' on' : ''}`} data-pid="palette-hide-archived" aria-pressed={hideArchived} onClick={() => hideBy(!hideArchived)}>Hide archived</button>
           <kbd className="pal-kbd">esc</kbd>
           {/* On a phone the palette fills the screen, with no Esc key and nothing outside it to tap. */}
           <button className="icon-btn pal-close" aria-label="Close" onClick={onClose}><XIcon size={16} /></button>
