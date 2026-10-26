@@ -373,7 +373,9 @@ type Group = { kind: 'one'; item: Item } | { kind: 'activity'; items: Item[] }
 // all but its last text fold into the activity rows, unless they hold questions,
 // items to consider or comments. Tool calls that only keep the session's own records
 // (its notes, its memory, its name) do not end a step: an answer the agent wrote before
-// it updated its notes is still part of its last text.
+// it updated its notes is still part of its last text. A turn with no user message
+// before it (Claude Code woke the agent when a background agent ended) continues the
+// turn before it, so the status lines of the earlier wake-ups fold too.
 function interim(events: Event[], f: Folded, drafted: Set<string>): Set<string> {
   const out = new Set<string>()
   let texts: { key: string; text: string; work: boolean }[] = []
@@ -385,7 +387,8 @@ function interim(events: Event[], f: Folded, drafted: Set<string>): Set<string> 
     })
     else if (e.t === 'result') {
       for (const t of texts.slice(0, -1)) if (t.work && !f.sent.has(t.key) && !f.reacts.has(t.key) && !drafted.has(t.key) && !itemsOf(t.text).length) out.add(t.key)
-      texts = []
+      // A later wake-up means work went on in the background since these texts.
+      for (const t of texts) t.work = true
     }
   }
   return out
