@@ -4,6 +4,8 @@ import type { ImageRef, PermissionMode, SessionMeta } from '../../../shared/type
 import { api, currentMachine, globalId, localId, LOCAL, machineList, machineOf, select, setComposer, state } from '../store.ts'
 import { DirPicker } from './DirPicker.tsx'
 import { FlagPicker } from './FlagPicker.tsx'
+import { McpPicker } from './McpDialog.tsx'
+import { SessionPicker } from './SessionPicker.tsx'
 import { focusField, RichInput } from './Inputs.tsx'
 
 // machine: where it runs; the current session's by default.
@@ -17,6 +19,9 @@ export function NewSession({ cwd: initial, machine: start = currentMachine(), gr
   const [mode, setMode] = useState<PermissionMode>('auto')
   const [flags, setFlags] = useState<string[]>([])
   const [parentId, setParentId] = useState('')
+  // The MCP servers it starts with; null: not changed, so the default of your settings.
+  const [mcp, setMcp] = useState<string[] | null>(null)
+  const mcpOff = state.machines[machine]?.settings.mcpStartOff !== false
   const [prompt, setPrompt] = useState(initialPrompt)
   const [images, setImages] = useState<ImageRef[]>([])
   const [err, setErr] = useState<string | null>(null)
@@ -38,7 +43,7 @@ export function NewSession({ cwd: initial, machine: start = currentMachine(), gr
   const create = async () => {
     setBusy(true); setErr(null)
     try {
-      const meta = await api<SessionMeta>('/api/sessions', 'POST', { cwd, title, model: model || null, permissionMode: mode, flags, parentId: parentId ? localId(parentId) : null, group: machine === start ? group : undefined, mkdir: missing }, machine)
+      const meta = await api<SessionMeta>('/api/sessions', 'POST', { cwd, title, model: model || null, permissionMode: mode, flags, parentId: parentId ? localId(parentId) : null, ...(mcp ? { mcp } : {}), group: machine === start ? group : undefined, mkdir: missing }, machine)
       const id = globalId(machine, meta.id)
       if (prompt.trim() || images.length) await api(`/api/sessions/${id}/send`, 'POST', { parts: [{ kind: 'text', text: prompt, images }] })
       else setComposer(id, { text: '' })
@@ -56,7 +61,7 @@ export function NewSession({ cwd: initial, machine: start = currentMachine(), gr
         <h2>New session</h2>
         {machineList().length > 1 && (
           <label>Machine
-            <select value={machine} onChange={(e) => { setMachine(e.target.value); setCwd(''); setParentId(''); setImages([]) }}>
+            <select value={machine} onChange={(e) => { setMachine(e.target.value); setCwd(''); setParentId(''); setMcp(null); setImages([]) }}>
               {machineList().map((m) => <option key={m.name} value={m.name}>{m.name === LOCAL ? `This machine${state.self ? ` (${state.self})` : ''}` : m.name}</option>)}
             </select>
           </label>
@@ -81,12 +86,12 @@ export function NewSession({ cwd: initial, machine: start = currentMachine(), gr
         <div className="field">Claude Code flags
           <FlagPicker value={flags} onChange={setFlags} />
         </div>
-        <label>Sub-task of
-          <select value={parentId} onChange={(e) => setParentId(e.target.value)}>
-            <option value="">(none)</option>
-            {state.sessions.filter((s) => s.kind === 'worker' && !s.archived && machineOf(s.id) === machine).map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
-          </select>
-        </label>
+        <div className="field">MCP servers
+          <McpPicker cwd={cwd} machine={machine} value={mcp} onChange={setMcp} startOn={!mcpOff} always={state.machines[machine]?.settings.mcpAlways ?? []} />
+        </div>
+        <div className="field">Sub-task of
+          <SessionPicker sessions={state.sessions.filter((s) => s.kind === 'worker' && !s.archived && machineOf(s.id) === machine)} value={parentId} onChange={setParentId} placeholder="None. Type to search sessions" />
+        </div>
         <div className="field" ref={first}>First message (optional)
           <RichInput value={prompt} onChange={setPrompt} images={images} onImages={setImages} onSubmit={() => void create()} minRows={4} machine={machine} autoFocus={!!initial} uploadDir={cwd} />
         </div>

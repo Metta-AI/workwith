@@ -2,7 +2,7 @@
 // a chip in the header, and a dialog to turn each on for this session, or keep it
 // on for every new session.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useEscape } from '../escape.ts'
 import type { SessionMeta } from '../../../shared/types.ts'
 import { api, useStore } from '../store.ts'
@@ -73,6 +73,76 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
           <button className={m.mcp?.missing || servers?.length === 0 ? 'primary' : 'link'} disabled={busy} onClick={() => void look()} data-tip="Runs Claude Code for a few seconds to list your MCP servers. No API call.">{busy ? 'Looking…' : 'Refresh'}</button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// The MCP servers a new session starts with (NewSession): type to search the servers
+// Codinger knows in the folder; each one picked shows as a pill. value null: not changed
+// yet, so the picked ones are all of them (startOn) or the ones you keep always on.
+export function McpPicker({ cwd, machine, value, onChange, startOn, always }: { cwd: string; machine: string; value: string[] | null; onChange(v: string[]): void; startOn: boolean; always: string[] }) {
+  const [servers, setServers] = useState<Server[] | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const [index, setIndex] = useState(0)
+  const [moved, setMoved] = useState(false)
+  const input = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    let live = true
+    const t = setTimeout(() => void api<Server[]>(`/api/mcp?cwd=${encodeURIComponent(cwd.trim() || '~')}`, 'GET', undefined, machine)
+      .then((r) => { if (live) { setServers(r); setErr(null) } }).catch(() => { if (live) setServers([]) }), 200)
+    return () => { live = false; clearTimeout(t) }
+  }, [cwd, machine])
+  const look = async () => {
+    setBusy(true); setErr(null)
+    try { setServers(await api<Server[]>('/api/mcp', 'POST', { cwd: cwd.trim() || '~' }, machine)) } catch (e) { setErr(e instanceof Error ? e.message : String(e)) } finally { setBusy(false) }
+  }
+  const usable = (servers ?? []).filter((s) => s.status !== 'needs-auth')
+  const picked = value ?? (startOn ? usable.map((s) => s.name) : always)
+  const q = query.trim().toLowerCase()
+  const items = (servers ?? []).filter((s) => !picked.includes(s.name) && (!q || s.name.toLowerCase().includes(q)))
+  const add = (s: Server) => { if (s.status === 'needs-auth') return; onChange([...picked, s.name]); setQuery(''); setIndex(0); setMoved(false) }
+  return (
+    <div className="flag-picker">
+      <div className="mcp-row">
+        <div className="flag-box" onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); input.current?.focus() } }}>
+          {picked.map((n) => (
+            <span key={n} className="flag-chip">{n}
+              <button type="button" className="link" aria-label={`Remove ${n}`} onClick={() => onChange(picked.filter((x) => x !== n))}><XIcon size={11} /></button>
+            </span>
+          ))}
+          <input
+            ref={input}
+            value={query}
+            placeholder={picked.length ? '' : servers && !servers.length ? 'None known here yet. Press Refresh' : 'None. Type to search'}
+            onFocus={() => setOpen(true)}
+            onBlur={() => setTimeout(() => { setOpen(false); setMoved(false) }, 150)}
+            onChange={(e) => { setQuery(e.target.value); setOpen(true); setIndex(0) }}
+            onKeyDown={(e) => {
+              if (e.key === 'Backspace' && !query && picked.length) onChange(picked.slice(0, -1))
+              else if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setMoved(true); setIndex((i) => Math.min(i + 1, items.length - 1)) }
+              else if (e.key === 'ArrowUp') { e.preventDefault(); setMoved(true); setIndex((i) => Math.max(i - 1, 0)) }
+              // Enter with nothing typed or chosen is left to the form: it creates the session.
+              else if (e.key === 'Enter' && open && (q || moved) && items[index]) { e.preventDefault(); add(items[index]) }
+              else if (e.key === 'Escape' && open) { e.preventDefault(); e.stopPropagation(); setOpen(false) }
+            }}
+          />
+        </div>
+        <button type="button" className="link" disabled={busy} onClick={() => void look()} data-tip="Runs Claude Code for a few seconds to list your MCP servers. No API call.">{busy ? 'Looking…' : 'Refresh'}</button>
+      </div>
+      {err && <div className="flag-err">{err}</div>}
+      {open && items.length > 0 && (
+        <div className="dir-menu" onMouseDown={(e) => e.preventDefault()}>
+          {items.map((s, i) => (
+            <button type="button" key={s.name} className={i === index ? 'on' : ''} disabled={s.status === 'needs-auth'} onMouseEnter={() => setIndex(i)} onClick={() => add(s)}>
+              <span>{s.name}</span>
+              <span className="muted">{s.status === 'needs-auth' ? 'needs sign-in' : s.status === 'failed' ? 'failed' : s.tools ? `${s.tools} tools` : ''}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

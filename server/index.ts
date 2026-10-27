@@ -361,7 +361,7 @@ function get(id: string): Session {
   return s
 }
 
-function createSession(o: { cwd: string; title?: string; model?: string | null; permissionMode?: PermissionMode; flags?: string[]; parentId?: string | null; group?: string | null; mkdir?: boolean }): Session {
+function createSession(o: { cwd: string; title?: string; model?: string | null; permissionMode?: PermissionMode; flags?: string[]; parentId?: string | null; group?: string | null; mkdir?: boolean; mcp?: string[] }): Session {
   const flags = Array.isArray(o.flags) ? o.flags.map((f) => String(f).trim()).filter(Boolean) : []
   for (const f of flags) { const p = flagProblem(f); if (p) throw new HttpError(400, p) }
   const cwd = path.resolve(expandHome(String(o.cwd ?? '').trim()))
@@ -377,8 +377,10 @@ function createSession(o: { cwd: string; title?: string; model?: string | null; 
     parentId: o.parentId && sessions.has(o.parentId) ? o.parentId : null,
     // Its group: the one asked for, else its parent's.
     ...(group ? { group } : {}),
-    // Your MCP servers start off, except the ones you keep always on.
-    ...(settings.mcpStartOff !== false ? { mcp: { strict: true as const, on: [...(settings.mcpAlways ?? [])] } } : {}),
+    // Only the MCP servers picked in the new session dialog; with no pick, your servers start off
+    // except the ones you keep always on, or all start on if you turned that setting off.
+    ...(Array.isArray(o.mcp) ? { mcp: { strict: true as const, on: [...new Set(o.mcp.map(String))] } }
+      : settings.mcpStartOff !== false ? { mcp: { strict: true as const, on: [...(settings.mcpAlways ?? [])] } } : {}),
   }))
   metaChanged()
   return s
@@ -1181,6 +1183,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   // What the usage meter has measured, to see how steady its estimate is.
   // What a new session in a folder starts with, by category.
   // Your MCP servers in a folder, found by a probe (server/mcpservers.ts).
+  if (a === 'mcp' && method === 'GET') return send(res, 200, serversFor(path.resolve(expandHome(url.searchParams.get('cwd') || '~'))).map(({ config: _, ...x }) => x))
   if (a === 'mcp' && method === 'POST') {
     const cwd = path.resolve(expandHome(String((await json(req)).cwd ?? '~')))
     let found

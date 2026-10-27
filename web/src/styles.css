@@ -1228,6 +1228,18 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .mcp-table { border-collapse: collapse; font-size: calc(13px * var(--fs, 1)); }
 .mcp-table th { text-align: left; font-weight: 500; color: var(--muted); padding: 2px 12px 4px 0; }
 .mcp-table td { padding: 3px 12px 3px 0; border-top: 1px solid var(--line); }
+.mcp-row { display: flex; align-items: center; gap: 8px; } .mcp-row .flag-box { flex: 1; min-width: 0; }
+.session-picker { position: relative; color: var(--text); font-size: calc(14px * var(--fs, 1)); }
+.session-picker > input { width: 100%; }
+.sp-chosen { display: flex; align-items: center; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 7px; padding: 2px 6px 2px 2px; }
+.sp-chosen .sp-row { flex: 1; min-width: 0; }
+.sp-chosen .link { display: inline-flex; padding: 4px; }
+.session-picker .sp-row { display: flex; width: 100%; align-items: center; gap: 10px; text-align: left; border: none; background: none; border-radius: 6px; padding: 4px 8px; }
+.sp-menu .sp-row { align-items: center; }
+.sp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sp-title, .sp-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-sub { color: var(--muted); font-size: calc(11.5px * var(--fs, 1)); }
+.sp-meta { color: var(--muted); font-size: calc(11.5px * var(--fs, 1)); white-space: nowrap; }
 
 /* Tasks (TasksDialog.tsx): the list on the left, the chosen task's log on the right. */
 .side-tasks span { font-variant-numeric: tabular-nums; }
