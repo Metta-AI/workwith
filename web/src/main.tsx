@@ -16,6 +16,7 @@ import { closeLinkedNew, initUrl, linkedNew } from './url.ts'
 import { NewSession } from './components/NewSession.tsx'
 import { Lightbox } from './components/Lightbox.tsx'
 import { Palette } from './components/Palette.tsx'
+import { PhoneSetup } from './components/PhoneSetup.tsx'
 import './push.ts'
 import './styles.css'
 
@@ -46,6 +47,7 @@ function App() {
         <Update />
         <Restart />
         <Reload />
+        <PhoneSetup />
         {!st.connected && !st.sessions.length ? <div className="empty">Connecting to the Codinger server…</div>
           : st.page === 'artifacts' ? <ArtifactsView />
           : sel ? <SessionView key={sel.id} id={sel.id} />
