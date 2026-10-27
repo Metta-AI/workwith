@@ -40,6 +40,8 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   useEffect(() => { void api<{ servers: Server[] }>(`/api/sessions/${m.id}/mcp`, 'GET').then((r) => setServers(r.servers)).catch((e) => setErr(String(e.message ?? e))) }, [m.id])
+  const [adding, setAdding] = useState(false)
+  const signIn = () => void api(`/api/sessions/${m.id}/run`, 'POST', { command: 'claude /mcp' }).catch((e) => setErr(String(e.message ?? e)))
   const look = async () => {
     setBusy(true); setErr(null)
     try { setServers(await api<Server[]>('/api/mcp', 'POST', { cwd: m.cwd })) } catch (e) { setErr(e instanceof Error ? e.message : String(e)) } finally { setBusy(false) }
@@ -70,7 +72,7 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
             <tbody>
               {servers.map((s) => (
                 <tr key={s.name}>
-                  <td><Name n={s.name} />{s.status === 'needs-auth' && <span className="muted"> · needs sign-in</span>}{s.status === 'failed' && <span className="muted"> · failed</span>}</td>
+                  <td><Name n={s.name} />{s.status === 'needs-auth' && <> <span className="muted">· needs sign-in ·</span> <button className="link" onClick={signIn} data-tip="Opens Claude Code in Terminal with /mcp (type /mcp if the menu does not open). Choose the server and sign in, quit Claude Code, then press Refresh here.">Sign in</button></>}{s.status === 'failed' && <span className="muted"> · failed</span>}</td>
                   <td className="muted">{size(s)}</td>
                   <td><input type="checkbox" checked={on.includes(s.name)} disabled={s.status === 'needs-auth'} onChange={(e) => toggle(s.name, e.target.checked)} /></td>
                   <td className={startOff ? 'mcp-overridden' : undefined}><input type="checkbox" checked={always.includes(s.name)} onChange={(e) => keep(s.name, e.target.checked)} /></td>
@@ -80,9 +82,64 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
           </table>
         )}
         {startOff && !!servers?.length && <p className="muted mcp-hint">"Start new sessions with my MCP servers off" is on in Settings, so new sessions start with none of these. Every new session takes effect when you turn that setting off.</p>}
+        {adding ? <AddServer cwd={m.cwd} onDone={(added) => { setAdding(false); if (added) void look() }} /> : (
+          <div className="mcp-add-links">
+            <button className="link" onClick={() => setAdding(true)}>Add a server…</button>
+            <a href="https://claude.ai/settings/connectors" target="_blank" rel="noreferrer">Add a claude.ai connector</a>
+          </div>
+        )}
         <div className="modal-actions">
           <button className={m.mcp?.missing || servers?.length === 0 ? 'primary' : 'link'} disabled={busy} onClick={() => void look()} data-tip="Runs Claude Code for a few seconds to list your MCP servers. No API call.">{busy ? 'Looking…' : 'Refresh'}</button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// Add a server with `claude mcp add` (POST /api/mcp/add): a URL, or a command that starts it.
+const SCOPES = [
+  { v: 'local', label: 'This folder, only for you' },
+  { v: 'project', label: 'This project, shared in .mcp.json' },
+  { v: 'user', label: 'All folders' },
+]
+function AddServer({ cwd, onDone }: { cwd: string; onDone(added: boolean): void }) {
+  const [name, setName] = useState('')
+  const [transport, setTransport] = useState('http')
+  const [target, setTarget] = useState('')
+  const [scope, setScope] = useState('local')
+  const [extra, setExtra] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const stdio = transport === 'stdio'
+  const add = async () => {
+    setBusy(true); setErr(null)
+    const list = extra.split('\n').map((l) => l.trim()).filter(Boolean)
+    try { await api('/api/mcp/add', 'POST', { cwd, name, transport, target, scope, ...(stdio ? { env: list } : { headers: list }) }); onDone(true) }
+    catch (e) { setErr(e instanceof Error ? e.message : String(e)) } finally { setBusy(false) }
+  }
+  return (
+    <div className="mcp-add">
+      <h3>Add a server</h3>
+      <div className="two">
+        <label>Name <input value={name} placeholder="sentry" autoFocus onChange={(e) => setName(e.target.value)} /></label>
+        <label>Kind
+          <select value={transport} onChange={(e) => setTransport(e.target.value)}>
+            <option value="http">URL (HTTP)</option><option value="sse">URL (SSE)</option><option value="stdio">Command on this machine</option>
+          </select>
+        </label>
+      </div>
+      <label>{stdio ? 'Command' : 'URL'} <input className="mono" value={target} placeholder={stdio ? 'npx -y @modelcontextprotocol/server-github' : 'https://mcp.sentry.dev/mcp'} onChange={(e) => setTarget(e.target.value)} /></label>
+      <label>{stdio ? 'Environment variables, one KEY=value on each line (optional)' : 'Headers, one "Name: value" on each line (optional)'}
+        <textarea className="mono" rows={2} value={extra} placeholder={stdio ? 'GITHUB_TOKEN=…' : 'Authorization: Bearer …'} onChange={(e) => setExtra(e.target.value)} />
+      </label>
+      <label>Where
+        <select value={scope} onChange={(e) => setScope(e.target.value)}>{SCOPES.map((x) => <option key={x.v} value={x.v}>{x.label}</option>)}</select>
+      </label>
+      {!stdio && <p className="muted mcp-hint">If the server asks you to sign in, a Sign in link shows next to it after you add it.</p>}
+      {err && <div className="notice error">{err}</div>}
+      <div className="modal-actions">
+        <button onClick={() => onDone(false)}>Cancel</button>
+        <button className="primary" disabled={busy || !name.trim() || !target.trim()} onClick={() => void add()}>{busy ? 'Adding…' : 'Add'}</button>
       </div>
     </div>
   )

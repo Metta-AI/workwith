@@ -989,6 +989,20 @@ async function json(req: http.IncomingMessage): Promise<any> {
   return s ? JSON.parse(s) : {}
 }
 
+// A command line as its words, as a shell splits it, with '…' and "…" quotes (no variables or escapes).
+function splitArgs(line: string): string[] {
+  const out: string[] = []
+  let cur = '', quote = '', word = false
+  for (const ch of line) {
+    if (quote) { if (ch === quote) quote = ''; else cur += ch }
+    else if (ch === '"' || ch === "'") { quote = ch; word = true }
+    else if (/\s/.test(ch)) { if (word || cur) out.push(cur); cur = ''; word = false }
+    else cur += ch
+  }
+  if (word || cur) out.push(cur)
+  return out
+}
+
 // Claude Code's /context for a new worker session in `cwd`, with a worker's own
 // arguments (system prompt, Codinger's tools), so it counts what Codinger adds too.
 // It makes no API call: Claude Code estimates the sizes itself. Kept 10 minutes.
@@ -1185,6 +1199,22 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   // What the usage meter has measured, to see how steady its estimate is.
   // What a new session in a folder starts with, by category.
   // Your MCP servers in a folder, found by a probe (server/mcpservers.ts).
+  // Add a server with `claude mcp add` (the form in the MCP dialog); the page then looks for servers again.
+  if (a === 'mcp' && id === 'add' && method === 'POST') {
+    const body = await json(req)
+    const cwd = path.resolve(expandHome(String(body.cwd ?? '~')))
+    const name = String(body.name ?? '').trim(), target = String(body.target ?? '').trim()
+    const transport = ['http', 'sse', 'stdio'].includes(body.transport) ? body.transport as string : 'http'
+    const scope = ['local', 'project', 'user'].includes(body.scope) ? body.scope as string : 'local'
+    if (!/^[\w.-]+$/.test(name)) throw new HttpError(400, 'Give the server a name of letters, digits, ".", "-" or "_"')
+    if (!target) throw new HttpError(400, transport === 'stdio' ? 'Give the command that starts the server' : 'Give the URL of the server')
+    const lines = (x: unknown) => Array.isArray(x) ? x.map((l) => String(l).trim()).filter(Boolean) : []
+    const opts = transport === 'stdio' ? lines(body.env).flatMap((e) => ['-e', e]) : lines(body.headers).flatMap((h) => ['-H', h])
+    const args = ['mcp', 'add', '-t', transport, '-s', scope, name, ...opts, '--', ...(transport === 'stdio' ? splitArgs(target) : [target])]
+    await new Promise<void>((resolve, reject) => execFile(CLAUDE, args, { cwd, env: childEnv(), timeout: 30_000 }, (err, _out, errOut) =>
+      err ? reject(new HttpError(400, String(errOut).trim() || err.message)) : resolve()))
+    return send(res, 200, { ok: true })
+  }
   if (a === 'mcp' && method === 'GET') return send(res, 200, serversFor(path.resolve(expandHome(url.searchParams.get('cwd') || '~'))).map(({ config: _, ...x }) => x))
   if (a === 'mcp' && method === 'POST') {
     const cwd = path.resolve(expandHome(String((await json(req)).cwd ?? '~')))
