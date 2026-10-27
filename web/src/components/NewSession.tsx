@@ -87,7 +87,7 @@ export function NewSession({ cwd: initial, machine: start = currentMachine(), gr
           <FlagPicker value={flags} onChange={setFlags} />
         </div>
         <div className="field">MCP servers
-          <McpPicker cwd={cwd} machine={machine} value={mcp} onChange={setMcp} startOn={!mcpOff} always={state.machines[machine]?.settings.mcpAlways ?? []} />
+          <McpPicker cwd={cwd} machine={machine} value={mcp} onChange={setMcp} startOff={mcpOff} always={state.machines[machine]?.settings.mcpAlways} />
         </div>
         <div className="field">Sub-task of
           <SessionPicker sessions={state.sessions.filter((s) => s.kind === 'worker' && !s.archived && machineOf(s.id) === machine)} value={parentId} onChange={setParentId} placeholder="None. Type to search sessions" />

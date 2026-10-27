@@ -377,10 +377,12 @@ function createSession(o: { cwd: string; title?: string; model?: string | null; 
     parentId: o.parentId && sessions.has(o.parentId) ? o.parentId : null,
     // Its group: the one asked for, else its parent's.
     ...(group ? { group } : {}),
-    // Only the MCP servers picked in the new session dialog; with no pick, your servers start off
-    // except the ones you keep always on, or all start on if you turned that setting off.
+    // Only the MCP servers picked in the new session dialog. With no pick: none when you start
+    // sessions with them off (that setting wins over the ones kept on for every new session),
+    // else the ones kept on for every new session, or all of them if you never chose those.
     ...(Array.isArray(o.mcp) ? { mcp: { strict: true as const, on: [...new Set(o.mcp.map(String))] } }
-      : settings.mcpStartOff !== false ? { mcp: { strict: true as const, on: [...(settings.mcpAlways ?? [])] } } : {}),
+      : settings.mcpStartOff !== false ? { mcp: { strict: true as const, on: [] } }
+      : settings.mcpAlways ? { mcp: { strict: true as const, on: [...settings.mcpAlways] } } : {}),
   }))
   metaChanged()
   return s

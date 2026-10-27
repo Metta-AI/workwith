@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useEscape } from '../escape.ts'
 import type { SessionMeta } from '../../../shared/types.ts'
 import { api, useStore } from '../store.ts'
-import { XIcon } from './Icons.tsx'
+import { CheckIcon, XIcon } from './Icons.tsx'
 
 type Server = { name: string; status: string; scope: string; tools: number }
 
@@ -37,7 +37,9 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
     try { setServers(await api<Server[]>('/api/mcp', 'POST', { cwd: m.cwd })) } catch (e) { setErr(e instanceof Error ? e.message : String(e)) } finally { setBusy(false) }
   }
   const on = m.mcp?.on ?? []
-  const always = st.settings.mcpAlways ?? []
+  // "Start with them off" wins over these; before you choose any, all of them start on.
+  const startOff = st.settings.mcpStartOff !== false
+  const always = st.settings.mcpAlways ?? (startOff ? [] : (servers ?? []).map((s) => s.name))
   const toggle = (name: string, value: boolean) => void api(`/api/sessions/${m.id}/mcp`, 'POST', { name, on: value }).catch((e) => setErr(String(e.message ?? e)))
   const keep = (name: string, value: boolean) => void api('/api/settings', 'PUT', { mcpAlways: value ? [...new Set([...always, name])] : always.filter((n) => n !== name) })
   return (
@@ -56,19 +58,20 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
         {err && <div className="notice error">{err}</div>}
         {!servers ? <div className="muted">Loading…</div> : !servers.length ? <div className="muted">Codinger knows no MCP servers here yet. Press Refresh to look for them.</div> : (
           <table className="mcp-table">
-            <thead><tr><th>Server</th><th>Tools</th><th>This session</th><th>Every new session</th></tr></thead>
+            <thead><tr><th>Server</th><th>Tools</th><th>This session</th><th data-tip={startOff ? 'Off while "Start new sessions with my MCP servers off" is on in Settings' : undefined}>Every new session</th></tr></thead>
             <tbody>
               {servers.map((s) => (
                 <tr key={s.name}>
                   <td>{s.name}{s.status === 'needs-auth' && <span className="muted"> · needs sign-in</span>}{s.status === 'failed' && <span className="muted"> · failed</span>}</td>
                   <td className="muted">{s.tools || ''}</td>
                   <td><input type="checkbox" checked={on.includes(s.name)} disabled={s.status === 'needs-auth'} onChange={(e) => toggle(s.name, e.target.checked)} /></td>
-                  <td><input type="checkbox" checked={always.includes(s.name)} onChange={(e) => keep(s.name, e.target.checked)} /></td>
+                  <td className={startOff ? 'mcp-overridden' : undefined}><input type="checkbox" checked={always.includes(s.name)} onChange={(e) => keep(s.name, e.target.checked)} /></td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
+        {startOff && !!servers?.length && <p className="muted mcp-hint">"Start new sessions with my MCP servers off" is on in Settings, so new sessions start with none of these. Every new session takes effect when you turn that setting off.</p>}
         <div className="modal-actions">
           <button className={m.mcp?.missing || servers?.length === 0 ? 'primary' : 'link'} disabled={busy} onClick={() => void look()} data-tip="Runs Claude Code for a few seconds to list your MCP servers. No API call.">{busy ? 'Looking…' : 'Refresh'}</button>
         </div>
@@ -77,10 +80,11 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
   )
 }
 
-// The MCP servers a new session starts with (NewSession): type to search the servers
-// Codinger knows in the folder; each one picked shows as a pill. value null: not changed
-// yet, so the picked ones are all of them (startOn) or the ones you keep always on.
-export function McpPicker({ cwd, machine, value, onChange, startOn, always }: { cwd: string; machine: string; value: string[] | null; onChange(v: string[]): void; startOn: boolean; always: string[] }) {
+// The MCP servers a new session starts with (NewSession): the menu lists every server
+// Codinger knows in the folder, and each one picked shows as a pill. value null: not changed
+// yet, so the picked ones are what a session starts with now: none when sessions start with
+// them off, else the ones kept on for every new session (all of them before you chose).
+export function McpPicker({ cwd, machine, value, onChange, startOff, always }: { cwd: string; machine: string; value: string[] | null; onChange(v: string[]): void; startOff: boolean; always?: string[] }) {
   const [servers, setServers] = useState<Server[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -100,10 +104,14 @@ export function McpPicker({ cwd, machine, value, onChange, startOn, always }: { 
     try { setServers(await api<Server[]>('/api/mcp', 'POST', { cwd: cwd.trim() || '~' }, machine)) } catch (e) { setErr(e instanceof Error ? e.message : String(e)) } finally { setBusy(false) }
   }
   const usable = (servers ?? []).filter((s) => s.status !== 'needs-auth')
-  const picked = value ?? (startOn ? usable.map((s) => s.name) : always)
+  const picked = value ?? (startOff ? [] : always ?? usable.map((s) => s.name))
   const q = query.trim().toLowerCase()
-  const items = (servers ?? []).filter((s) => !picked.includes(s.name) && (!q || s.name.toLowerCase().includes(q)))
-  const add = (s: Server) => { if (s.status === 'needs-auth') return; onChange([...picked, s.name]); setQuery(''); setIndex(0); setMoved(false) }
+  const items = (servers ?? []).filter((s) => !q || s.name.toLowerCase().includes(q))
+  const flip = (s: Server) => {
+    if (picked.includes(s.name)) onChange(picked.filter((n) => n !== s.name))
+    else if (s.status !== 'needs-auth') onChange([...picked, s.name])
+    setQuery(''); setIndex(0); setMoved(false)
+  }
   return (
     <div className="flag-picker">
       <div className="mcp-row">
@@ -125,7 +133,7 @@ export function McpPicker({ cwd, machine, value, onChange, startOn, always }: { 
               else if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setMoved(true); setIndex((i) => Math.min(i + 1, items.length - 1)) }
               else if (e.key === 'ArrowUp') { e.preventDefault(); setMoved(true); setIndex((i) => Math.max(i - 1, 0)) }
               // Enter with nothing typed or chosen is left to the form: it creates the session.
-              else if (e.key === 'Enter' && open && (q || moved) && items[index]) { e.preventDefault(); add(items[index]) }
+              else if (e.key === 'Enter' && open && (q || moved) && items[index]) { e.preventDefault(); flip(items[index]) }
               else if (e.key === 'Escape' && open) { e.preventDefault(); e.stopPropagation(); setOpen(false) }
             }}
           />
@@ -136,8 +144,8 @@ export function McpPicker({ cwd, machine, value, onChange, startOn, always }: { 
       {open && items.length > 0 && (
         <div className="dir-menu" onMouseDown={(e) => e.preventDefault()}>
           {items.map((s, i) => (
-            <button type="button" key={s.name} className={i === index ? 'on' : ''} disabled={s.status === 'needs-auth'} onMouseEnter={() => setIndex(i)} onClick={() => add(s)}>
-              <span>{s.name}</span>
+            <button type="button" key={s.name} className={i === index ? 'on' : ''} disabled={s.status === 'needs-auth' && !picked.includes(s.name)} aria-pressed={picked.includes(s.name)} onMouseEnter={() => setIndex(i)} onClick={() => flip(s)}>
+              <span className="mcp-item"><span className="mcp-check">{picked.includes(s.name) && <CheckIcon size={12} />}</span>{s.name}</span>
               <span className="muted">{s.status === 'needs-auth' ? 'needs sign-in' : s.status === 'failed' ? 'failed' : s.tools ? `${s.tools} tools` : ''}</span>
             </button>
           ))}

@@ -1229,6 +1229,9 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .mcp-table th { text-align: left; font-weight: 500; color: var(--muted); padding: 2px 12px 4px 0; }
 .mcp-table td { padding: 3px 12px 3px 0; border-top: 1px solid var(--line); }
 .mcp-row { display: flex; align-items: center; gap: 8px; } .mcp-row .flag-box { flex: 1; min-width: 0; }
+.mcp-item { display: inline-flex; align-items: center; gap: 6px; } .mcp-check { display: inline-flex; width: 12px; color: var(--accent); }
+.mcp-table td.mcp-overridden input { opacity: .4; }
+.mcp-hint { font-size: calc(12px * var(--fs, 1)); margin: 6px 0 0; }
 .session-picker { position: relative; color: var(--text); font-size: calc(14px * var(--fs, 1)); }
 .session-picker > input { width: 100%; }
 .sp-chosen { display: flex; align-items: center; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 7px; padding: 2px 6px 2px 2px; }
