@@ -30,7 +30,7 @@ export function NewSession({ cwd: initial, machine: start = currentMachine(), gr
   // Whether the typed directory exists; if it doesn't, Create makes it first.
   const [missing, setMissing] = useState(false)
   const first = useRef<HTMLDivElement>(null)
-  // Model, permissions, flags, MCP servers and parent: under "Advanced settings", open or closed as you left it.
+  // Model, permissions, flags, MCP servers and parent: under "Advanced settings", above the first message, open or closed as you left it.
   const [advanced, setAdvanced] = useState(() => localStorage.getItem('codinger.newSession.advanced') === '1')
   const showAdvanced = (on: boolean) => { setAdvanced(on); localStorage.setItem('codinger.newSession.advanced', on ? '1' : '0') }
   // What is set there, when it is closed.
@@ -84,9 +84,6 @@ export function NewSession({ cwd: initial, machine: start = currentMachine(), gr
           <DirPicker value={cwd} onChange={setCwd} onPick={() => focusField(first.current?.querySelector<HTMLElement>('[contenteditable]'))} autoFocus={!initial} machine={machine} />
         </div>
         <label>Title <input value={title} placeholder="Defaults to the folder name" onChange={(e) => setTitle(e.target.value)} /></label>
-        <div className="field" ref={first}>First message (optional)
-          <RichInput value={prompt} onChange={setPrompt} images={images} onImages={setImages} onSubmit={() => void create()} minRows={4} machine={machine} autoFocus={!!initial} uploadDir={cwd} />
-        </div>
         <button type="button" className="adv-toggle" aria-expanded={advanced} onClick={() => showAdvanced(!advanced)}>
           <span className="adv-label"><ChevronIcon size={12} className={advanced ? 'open' : undefined} />Advanced settings{!advanced && summary && <span className="muted"> · {summary}</span>}</span>
         </button>
@@ -113,6 +110,9 @@ export function NewSession({ cwd: initial, machine: start = currentMachine(), gr
             <SessionPicker sessions={state.sessions.filter((s) => s.kind === 'worker' && !s.archived && machineOf(s.id) === machine)} value={parentId} onChange={setParentId} placeholder="None. Type to search sessions" />
           </div>
         </>}
+        <div className="field" ref={first}>First message (optional)
+          <RichInput value={prompt} onChange={setPrompt} images={images} onImages={setImages} onSubmit={() => void create()} minRows={4} machine={machine} autoFocus={!!initial} uploadDir={cwd} />
+        </div>
         {err && <div className="notice error">{err}</div>}
         <div className="modal-actions">
           <button type="button" onClick={onClose}>Cancel</button>
