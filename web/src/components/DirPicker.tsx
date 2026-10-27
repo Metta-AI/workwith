@@ -48,10 +48,12 @@ export function DirPicker({ value, onChange, onPick, autoFocus, machine = curren
           className="mono"
           value={value}
           placeholder="~/Projects/my-repo"
-          onFocus={() => setOpen(true)}
+          // Focus alone does not open the menu: Down, typing or a click does.
+          onMouseDown={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           onChange={(e) => { onChange(e.target.value); setFilter(e.target.value); setOpen(true); setIndex(0) }}
           onKeyDown={(e) => {
+            if (e.key === 'ArrowDown' && !open && shown.length) { e.preventDefault(); setOpen(true); setIndex(0); return }
             if (!open || !shown.length) return
             if (e.key === 'ArrowDown') { e.preventDefault(); setIndex((i) => Math.min(i + 1, shown.length - 1)) }
             else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex((i) => Math.max(i - 1, 0)) }
