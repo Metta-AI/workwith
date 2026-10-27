@@ -96,7 +96,7 @@ export function askTools(id: string): Tool[] {
     {
       name: 'notify_user',
       description: "Send a push notification to the user's phone now. A tap on it opens this session. Use it only for news the user wants while away, or when the user asked for it.",
-      inputSchema: { type: 'object', required: ['body'], properties: { body: { type: 'string', description: 'One or two short sentences' }, title: { type: 'string', description: "This session's name if you leave it out" } } },
+      inputSchema: { type: 'object', required: ['body'], properties: { body: { type: 'string', description: 'One or two short sentences, at most 180 characters, that say what happened or what you need. No markdown: a phone shows it as plain text.' }, title: { type: 'string', description: "This session's name if you leave it out" } } },
       run: async ({ body, title }) => {
         const b = String(body ?? '').trim()
         if (!b) throw new Error('Give a body')
@@ -108,7 +108,7 @@ export function askTools(id: string): Tool[] {
     {
       name: 'ask_user',
       description: "Ask the user a question by a push notification to their phone now. A tap opens this session, and the user answers there; the answer comes to you as the user's next message, with a note that names this question. Use it when the user is away and you need an answer, or when the user asked for it.",
-      inputSchema: { type: 'object', required: ['question'], properties: { question: { type: 'string', description: 'Short: it shows in a notification' }, then } },
+      inputSchema: { type: 'object', required: ['question'], properties: { question: { type: 'string', description: 'One short question, at most 180 characters, that makes sense alone. No markdown: a phone shows it as plain text.' }, then } },
       run: async ({ question, then }) => {
         const q = String(question ?? '').trim()
         if (!q) throw new Error('Give a question')
@@ -122,7 +122,7 @@ export function askTools(id: string): Tool[] {
       inputSchema: {
         type: 'object', required: ['question', 'time'],
         properties: {
-          question: { type: 'string', description: 'Short: it shows in a notification' },
+          question: { type: 'string', description: 'One short question, at most 180 characters, that makes sense alone. No markdown: a phone shows it as plain text.' },
           time: { type: 'string', description: 'HH:MM, 24-hour, local time, for example 20:00' },
           days: { type: 'array', items: { type: 'string', enum: DAYS }, description: 'The days to ask; every day if you leave it out' },
           then,

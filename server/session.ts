@@ -696,6 +696,44 @@ function overview(text: string): string {
     .trim().slice(-400)
 }
 
+// The body of a push when a turn ends: the questions it left, the tool that waits for a
+// permission, or the answer it gave. A phone shows about 180 characters of it, with no markdown.
+export function pushBody(events: Event[], status: string): string | null {
+  const from = events.findLastIndex((e) => e.t === 'user')
+  const turn = events.slice(from + 1)
+  if (status === 'permission') {
+    const p = turn.findLast((e) => e.t === 'permission')
+    if (p?.t !== 'permission') return null
+    const what = toolSummary(p.toolName, p.input) || p.description || ''
+    return clip(`Needs your permission: ${p.toolName}${what ? ` ${what}` : ''}`)
+  }
+  const texts = turn.flatMap((e) => e.t === 'assistant' ? [e.blocks.flatMap((b) => b.type === 'text' ? [b.text] : []).join('\n')] : []).filter(Boolean)
+  if (status === 'asking') {
+    const all = texts.join('\n')
+    const items = [
+      ...[...all.matchAll(/<consider\b[^>]*\btitle="([^"]*)"[^>]*\bcritical\b[^>]*>/g)].map((m) => m[1]),
+      ...[...all.matchAll(/<ask\b[^>]*>\s*\n?([^\n]*)/g)].map((m) => m[1]),
+    ].map(plain).filter(Boolean)
+    if (!items.length) return null
+    return clip(items.length === 1 ? items[0] : `${items.length} questions: ${items.join(' · ')}`)
+  }
+  const last = texts.findLast((t) => /<answer\b/.test(t)) ?? texts.at(-1)
+  if (!last) return null
+  const answer = /<answer\b[^>]*>([\s\S]*?)<\/answer>/.exec(last)?.[1]
+  // With no <answer>, the first paragraph of the last message.
+  return clip(plain(answer ?? last.replace(/<[^>]*>[\s\S]*?<\/[^>]*>/g, '').trim().split(/\n\s*\n/)[0] ?? '')) || null
+}
+
+const plain = (t: string) => t
+  .replace(/```[\s\S]*?```/g, ' ')
+  .replace(/<\/?[a-z][^>]*>/g, ' ')
+  .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+  .replace(/^\s*(#+|[-*+]|\d+\.)\s+/gm, '')
+  .replace(/\*\*|__|`/g, '')
+  .replace(/\s+/g, ' ').trim()
+
+const clip = (t: string, n = 180) => t.length <= n ? t : `${t.slice(0, n).replace(/\s+\S*$/, '')}…`
+
 export function toolSummary(name: string, input: any): string {
   if (!input) return ''
   const v = input.command ?? input.file_path ?? input.pattern ?? input.url ?? input.query ?? input.description ?? input.prompt

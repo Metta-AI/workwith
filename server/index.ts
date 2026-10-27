@@ -15,7 +15,7 @@ import type { InboxItem, Part, PermissionMode, ServerMsg, SessionMeta, Settings,
 import { criticalUnanswered, inboxLabel, inboxParts, openItemsOf } from '../shared/inbox.ts'
 import { execFile, spawn } from 'node:child_process'
 import os from 'node:os'
-import { Session, slashCommand, type Hooks, type Launch, type SlashCommand } from './session.ts'
+import { Session, pushBody, slashCommand, type Hooks, type Launch, type SlashCommand } from './session.ts'
 import { Proc } from './proc.ts'
 import { findHistory, importTranscript, lastCache, listDirs, listHistory } from './history.ts'
 import { LEAD_PROMPT, WORKER_PROMPT, lookPrompt, workerNotesPrompt } from './prompts.ts'
@@ -211,9 +211,7 @@ function notifyOnChange(s: Session) {
   if (m.kind !== 'worker' || was !== 'working' || !NOTIFY[status]) return
   setTimeout(() => {
     if (m.status !== status) return
-    // The reply's own tags (<answer>, <consider …>) are not text.
-    const said = (m.lastText ?? '').replace(/<\/?[a-z][^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-    remoteNotify({ title: m.title, body: status === 'waiting' && said ? said.slice(-300) : NOTIFY[status], session: m.id })
+    remoteNotify({ title: m.title, body: pushBody(s.getEvents(), status) ?? NOTIFY[status], session: m.id })
   }, 2000).unref()
 }
 

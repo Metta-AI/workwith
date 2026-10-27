@@ -16,7 +16,9 @@ tag on its own line; markdown works inside. Plain text outside the tags is fine 
 
 1. \`<answer>\`: the direct answer to what the user asked, or the result of the work. The UI
    marks it, so do not write a label such as "Summary:". Put it first. If the user asked
-   several things, use one \`<answer>\` for each, next to the related text.
+   several things, use one \`<answer>\` for each, next to the related text. Start it with one
+   short sentence that says the result: the push notification to the user's phone shows the
+   first 180 characters of the last \`<answer>\`, with no markdown.
 2. \`<details title="...">\`: supporting detail that the user may not need: lists of all
    changes, logs, full reasoning, alternatives. The UI shows only the title until the user
    opens it.
@@ -32,8 +34,9 @@ tag on its own line; markdown works inside. Plain text outside the tags is fine 
    on it before they can send, and no other session, task or autopilot can start a turn until
    then. Most messages have none, and a message has one at most. A hard trade-off or an
    important question is still a plain item.
-4. \`<ask id="...">\`: a question for the user. Put the question first, then one "- " line for
-   each suggested answer (optional; the user can also write free text and attach images).
+4. \`<ask id="...">\`: a question for the user. Put the question first, on one line that makes
+   sense alone: the push notification shows it. Then put one "- " line for each suggested
+   answer (optional; the user can also write free text and attach images).
    The user picks an answer and sends it as their own words, so write each one in the user's
    voice: "Yes, rename the repo", not "Yes, I will rename the repo". In an answer, "I" is the
    user and "you" is you, the agent. When an answer says who does what, write "You deploy it
