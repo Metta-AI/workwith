@@ -473,7 +473,7 @@ function PaletteDialog({ onClose, onTask, onFolder }: { onClose(): void; onTask(
             onChange={(e) => { setQ(e.target.value); setInList(false) }} onKeyDown={onKey} spellCheck={false} autoComplete="off" />
           {/* Only a query has an order to change: with none, every tab shows the most recent first. */}
           {query && <button className="pal-sort" data-pid="palette-sort" onClick={() => sortBy(!best)}>{best ? 'Best match' : 'Most recent'}</button>}
-          <button className={`pal-sort${hideArchived ? ' on' : ''}`} data-pid="palette-hide-archived" aria-pressed={hideArchived} onClick={() => hideBy(!hideArchived)}>Hide archived</button>
+          <button className={`pal-sort pal-toggle${hideArchived ? ' on' : ''}`} data-pid="palette-hide-archived" aria-pressed={hideArchived} onClick={() => hideBy(!hideArchived)}>Hide archived</button>
           {/* On a phone the palette fills the screen, with no Esc key and nothing outside it to tap. */}
           <button className="icon-btn pal-close" aria-label="Close" onClick={onClose}><XIcon size={16} /></button>
         </div>

@@ -1600,7 +1600,10 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
 .pal-close { display: none; flex: none; padding: 9px; margin: -9px -9px -9px -3px; }
 .pal-sort { flex: none; margin: -4px 0; border: none; border-radius: 5px; background: var(--panel); color: var(--muted); font: inherit; font-size: 12px; padding: 3px 8px; cursor: pointer; white-space: nowrap; }
 .pal-sort:hover { color: var(--text); }
-.pal-sort.on { color: var(--text); box-shadow: inset 0 0 0 1px var(--accent); }
+/* A toggle: an outline when it is off, the accent fill when it is on. */
+.pal-toggle { background: none; box-shadow: inset 0 0 0 1px var(--line); }
+.pal-toggle.on { background: var(--accent); color: var(--on-accent); box-shadow: none; }
+.pal-toggle.on:hover { color: var(--on-accent); }
 /* The bar scrolls only sideways: its rule is a shadow inside it, and the line of the current tab covers it, not a margin that sticks out below. */
 .pal-tabs { flex: none; display: flex; gap: 2px; padding: 6px 10px 0; box-shadow: inset 0 -1px 0 var(--line); overflow-x: auto; overflow-y: hidden; overscroll-behavior: contain; touch-action: pan-x; scrollbar-width: none; }
 /* The current tab has a straight line under it: no rounded corners with a border. */
