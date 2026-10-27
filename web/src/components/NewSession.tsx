@@ -7,6 +7,7 @@ import { FlagPicker } from './FlagPicker.tsx'
 import { McpPicker } from './McpDialog.tsx'
 import { SessionPicker } from './SessionPicker.tsx'
 import { focusField, RichInput } from './Inputs.tsx'
+import { ChevronIcon } from './Icons.tsx'
 
 // machine: where it runs; the current session's by default.
 // title and prompt: filled in already (a link from another app, url.ts).
@@ -29,6 +30,18 @@ export function NewSession({ cwd: initial, machine: start = currentMachine(), gr
   // Whether the typed directory exists; if it doesn't, Create makes it first.
   const [missing, setMissing] = useState(false)
   const first = useRef<HTMLDivElement>(null)
+  // Model, permissions, flags, MCP servers and parent: under "Advanced settings", open or closed as you left it.
+  const [advanced, setAdvanced] = useState(() => localStorage.getItem('codinger.newSession.advanced') === '1')
+  const showAdvanced = (on: boolean) => { setAdvanced(on); localStorage.setItem('codinger.newSession.advanced', on ? '1' : '0') }
+  // What is set there, when it is closed.
+  const parent = state.sessions.find((s) => s.id === parentId)
+  const summary = [
+    model && model[0].toUpperCase() + model.slice(1),
+    mode !== 'auto' && { default: 'Ask before tools', acceptEdits: 'Auto-accept edits', plan: 'Plan only', bypassPermissions: 'Bypass permissions' }[mode as string],
+    flags.length && `${flags.length} ${flags.length === 1 ? 'flag' : 'flags'}`,
+    mcp && `${mcp.length} MCP ${mcp.length === 1 ? 'server' : 'servers'}`,
+    parent && `sub-task of ${parent.title}`,
+  ].filter(Boolean).join(' · ')
 
   useEffect(() => {
     if (!cwd.trim()) { setMissing(false); return }
@@ -71,30 +84,35 @@ export function NewSession({ cwd: initial, machine: start = currentMachine(), gr
           <DirPicker value={cwd} onChange={setCwd} onPick={() => focusField(first.current?.querySelector<HTMLElement>('[contenteditable]'))} autoFocus={!initial} machine={machine} />
         </div>
         <label>Title <input value={title} placeholder="Defaults to the folder name" onChange={(e) => setTitle(e.target.value)} /></label>
-        <div className="two">
-          <label>Model
-            <select value={model} onChange={(e) => setModel(e.target.value)}>
-              <option value="">Default</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option><option value="fable">Fable</option>
-            </select>
-          </label>
-          <label>Permissions
-            <select value={mode} onChange={(e) => setMode(e.target.value as PermissionMode)}>
-              <option value="auto">Auto mode</option><option value="default">Ask before tools</option><option value="acceptEdits">Auto-accept edits</option><option value="plan">Plan only</option><option value="bypassPermissions">Bypass permissions</option>
-            </select>
-          </label>
-        </div>
-        <div className="field">Claude Code flags
-          <FlagPicker value={flags} onChange={setFlags} />
-        </div>
-        <div className="field">MCP servers
-          <McpPicker cwd={cwd} machine={machine} value={mcp} onChange={setMcp} startOff={mcpOff} always={state.machines[machine]?.settings.mcpAlways} />
-        </div>
-        <div className="field">Sub-task of
-          <SessionPicker sessions={state.sessions.filter((s) => s.kind === 'worker' && !s.archived && machineOf(s.id) === machine)} value={parentId} onChange={setParentId} placeholder="None. Type to search sessions" />
-        </div>
         <div className="field" ref={first}>First message (optional)
           <RichInput value={prompt} onChange={setPrompt} images={images} onImages={setImages} onSubmit={() => void create()} minRows={4} machine={machine} autoFocus={!!initial} uploadDir={cwd} />
         </div>
+        <button type="button" className="adv-toggle" aria-expanded={advanced} onClick={() => showAdvanced(!advanced)}>
+          <span className="adv-label"><ChevronIcon size={12} className={advanced ? 'open' : undefined} />Advanced settings{!advanced && summary && <span className="muted"> · {summary}</span>}</span>
+        </button>
+        {advanced && <>
+          <div className="two">
+            <label>Model
+              <select value={model} onChange={(e) => setModel(e.target.value)}>
+                <option value="">Default</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option><option value="fable">Fable</option>
+              </select>
+            </label>
+            <label>Permissions
+              <select value={mode} onChange={(e) => setMode(e.target.value as PermissionMode)}>
+                <option value="auto">Auto mode</option><option value="default">Ask before tools</option><option value="acceptEdits">Auto-accept edits</option><option value="plan">Plan only</option><option value="bypassPermissions">Bypass permissions</option>
+              </select>
+            </label>
+          </div>
+          <div className="field">Claude Code flags
+            <FlagPicker value={flags} onChange={setFlags} />
+          </div>
+          <div className="field">MCP servers
+            <McpPicker cwd={cwd} machine={machine} value={mcp} onChange={setMcp} startOff={mcpOff} always={state.machines[machine]?.settings.mcpAlways} />
+          </div>
+          <div className="field">Sub-task of
+            <SessionPicker sessions={state.sessions.filter((s) => s.kind === 'worker' && !s.archived && machineOf(s.id) === machine)} value={parentId} onChange={setParentId} placeholder="None. Type to search sessions" />
+          </div>
+        </>}
         {err && <div className="notice error">{err}</div>}
         <div className="modal-actions">
           <button type="button" onClick={onClose}>Cancel</button>

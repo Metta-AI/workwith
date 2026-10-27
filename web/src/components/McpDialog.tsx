@@ -7,8 +7,16 @@ import { useEscape } from '../escape.ts'
 import type { SessionMeta } from '../../../shared/types.ts'
 import { api, useStore } from '../store.ts'
 import { CheckIcon, XIcon } from './Icons.tsx'
+import { kTokens } from '../util.ts'
 
-type Server = { name: string; status: string; scope: string; tools: number }
+type Server = { name: string; status: string; scope: string; tools: number; tokens?: number }
+
+// Claude Code names a claude.ai connector "claude.ai Gmail": the name, and where it comes from.
+const split = (n: string) => n.startsWith('claude.ai ') ? { name: n.slice(10), from: 'claude.ai' } : { name: n, from: '' }
+const Name = ({ n }: { n: string }) => { const x = split(n); return <>{x.name}{x.from && <span className="muted mcp-from"> {x.from}</span>}</> }
+// "8 tools · 2k tokens": the size of all its tools.
+const size = (s: Server) => [s.tools ? `${s.tools} ${s.tools === 1 ? 'tool' : 'tools'}` : '', s.tokens ? `${kTokens(s.tokens)} tokens` : ''].filter(Boolean).join(' · ')
+const SIZE_TIP = 'The size of all its tools in tokens, as Claude Code estimates it. Claude Code sends the full text of a tool only when Claude looks it up.'
 
 export function McpPill({ m }: { m: SessionMeta }) {
   const [open, setOpen] = useState(false)
@@ -58,12 +66,12 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
         {err && <div className="notice error">{err}</div>}
         {!servers ? <div className="muted">Loading…</div> : !servers.length ? <div className="muted">Codinger knows no MCP servers here yet. Press Refresh to look for them.</div> : (
           <table className="mcp-table">
-            <thead><tr><th>Server</th><th>Tools</th><th>This session</th><th data-tip={startOff ? 'Off while "Start new sessions with my MCP servers off" is on in Settings' : undefined}>Every new session</th></tr></thead>
+            <thead><tr><th>Server</th><th data-tip={SIZE_TIP}>Tools</th><th>This session</th><th data-tip={startOff ? 'Off while "Start new sessions with my MCP servers off" is on in Settings' : undefined}>Every new session</th></tr></thead>
             <tbody>
               {servers.map((s) => (
                 <tr key={s.name}>
-                  <td>{s.name}{s.status === 'needs-auth' && <span className="muted"> · needs sign-in</span>}{s.status === 'failed' && <span className="muted"> · failed</span>}</td>
-                  <td className="muted">{s.tools || ''}</td>
+                  <td><Name n={s.name} />{s.status === 'needs-auth' && <span className="muted"> · needs sign-in</span>}{s.status === 'failed' && <span className="muted"> · failed</span>}</td>
+                  <td className="muted">{size(s)}</td>
                   <td><input type="checkbox" checked={on.includes(s.name)} disabled={s.status === 'needs-auth'} onChange={(e) => toggle(s.name, e.target.checked)} /></td>
                   <td className={startOff ? 'mcp-overridden' : undefined}><input type="checkbox" checked={always.includes(s.name)} onChange={(e) => keep(s.name, e.target.checked)} /></td>
                 </tr>
@@ -117,8 +125,8 @@ export function McpPicker({ cwd, machine, value, onChange, startOff, always }: {
       <div className="mcp-row">
         <div className="flag-box" onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); input.current?.focus() } }}>
           {picked.map((n) => (
-            <span key={n} className="flag-chip">{n}
-              <button type="button" className="link" aria-label={`Remove ${n}`} onClick={() => onChange(picked.filter((x) => x !== n))}><XIcon size={11} /></button>
+            <span key={n} className="flag-chip">{split(n).name}
+              <button type="button" className="link" aria-label={`Remove ${split(n).name}`} onClick={() => onChange(picked.filter((x) => x !== n))}><XIcon size={11} /></button>
             </span>
           ))}
           <input
@@ -145,8 +153,8 @@ export function McpPicker({ cwd, machine, value, onChange, startOff, always }: {
         <div className="dir-menu" onMouseDown={(e) => e.preventDefault()}>
           {items.map((s, i) => (
             <button type="button" key={s.name} className={i === index ? 'on' : ''} disabled={s.status === 'needs-auth' && !picked.includes(s.name)} aria-pressed={picked.includes(s.name)} onMouseEnter={() => setIndex(i)} onClick={() => flip(s)}>
-              <span className="mcp-item"><span className="mcp-check">{picked.includes(s.name) && <CheckIcon size={12} />}</span>{s.name}</span>
-              <span className="muted">{s.status === 'needs-auth' ? 'needs sign-in' : s.status === 'failed' ? 'failed' : s.tools ? `${s.tools} tools` : ''}</span>
+              <span className="mcp-item"><span className="mcp-check">{picked.includes(s.name) && <CheckIcon size={12} />}</span><span><Name n={s.name} /></span></span>
+              <span className="muted">{s.status === 'needs-auth' ? 'needs sign-in' : s.status === 'failed' ? 'failed' : size(s)}</span>
             </button>
           ))}
         </div>
