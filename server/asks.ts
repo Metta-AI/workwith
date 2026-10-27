@@ -26,8 +26,8 @@ type State = { schedules: Schedule[]; open: Open[] }
 
 type Ctx = {
   session(id: string): { title: string } | undefined
-  // false: no push can go (the hub link is off).
-  push(n: { title: string; body: string; session: string }): Promise<boolean>
+  // Why no push went, or null when one did.
+  push(n: { title: string; body: string; session: string }): Promise<string | null>
   notice(sid: string, text: string, level?: 'info' | 'warn' | 'error'): void
 }
 let ctx: Ctx
@@ -45,11 +45,12 @@ function update(f: (s: State) => void) {
 const pad = (n: number) => String(n).padStart(2, '0')
 const dateOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 const clock = (ts: number) => new Date(ts).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-const NO_HUB = 'No push can go: this machine is not linked to the Codinger hub, or the link is off. Ask the user to turn on phone access in Codinger\'s Settings.'
+const noPush = (why: string) => new Error(`No push went: ${why}. Ask the user to link this machine to the hub and to turn on notifications in Codinger's Settings, in the app on the phone's home screen.`)
 
 async function ask(sid: string, question: string, then?: string) {
   const title = ctx.session(sid)?.title ?? 'Codinger'
-  if (!await ctx.push({ title, body: question, session: sid })) throw new Error(NO_HUB)
+  const why = await ctx.push({ title, body: question, session: sid })
+  if (why) throw noPush(why)
   update((s) => { s.open = [...s.open.filter((o) => o.sid !== sid || Date.now() - o.ts < 7 * 86400_000), { sid, question, ts: Date.now(), ...(then ? { then } : {}) }] })
   ctx.notice(sid, `Asked you on your phone: "${question}"`)
 }
@@ -99,7 +100,8 @@ export function askTools(id: string): Tool[] {
       run: async ({ body, title }) => {
         const b = String(body ?? '').trim()
         if (!b) throw new Error('Give a body')
-        if (!await ctx.push({ title: String(title ?? '').trim() || (ctx.session(id)?.title ?? 'Codinger'), body: b, session: id })) throw new Error(NO_HUB)
+        const why = await ctx.push({ title: String(title ?? '').trim() || (ctx.session(id)?.title ?? 'Codinger'), body: b, session: id })
+        if (why) throw noPush(why)
         return 'Sent.'
       },
     },

@@ -344,17 +344,21 @@ export async function remoteProxy(req: http.IncomingMessage, res: http.ServerRes
 }
 
 // A push notification to each browser that subscribed (remote/src/push.ts), if this machine is connected.
-// false: no notification went (no hub link, or the hub did not take it).
-export async function remoteNotify(n: { title: string; body: string; session: string }): Promise<boolean> {
-  if (!saved.token || !saved.on) return false
+// Why no notification went, or null when one did. A hub from before October 2026 does not say how
+// many browsers took it: then a push it took counts as sent.
+export async function remoteNotify(n: { title: string; body: string; session: string }): Promise<string | null> {
+  if (!saved.token || !saved.on) return 'this machine is not linked to the Codinger hub, or the link is off'
   try {
     const r = await fetch(hubUrl() + '/_remote/push/send', {
       method: 'POST',
       headers: { authorization: `Bearer ${saved.token}`, 'content-type': 'application/json' },
       body: JSON.stringify(n),
     })
-    return r.ok
-  } catch { return false }
+    if (!r.ok) return `the hub answered ${r.status}`
+    const j = await r.json().catch(() => ({})) as { sent?: number; failed?: number }
+    if (j.sent === 0) return j.failed ? `the push service refused it for all ${j.failed} browsers that have notifications on` : 'no browser or phone has notifications on for Codinger'
+    return null
+  } catch (e) { return `the hub did not answer (${e instanceof Error ? e.message : e})` }
 }
 
 // A WebSocket to /api/remote/m/<name>/…: one to the hub, joined to it.

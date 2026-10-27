@@ -120,8 +120,8 @@ export class Hub extends DurableObject<Env> {
           if (!m) return json({ error: 'Not allowed' }, 403)
           const body = await req.json<{ title?: string; body?: string; session?: string }>()
           const payload = JSON.stringify({ title: String(body.title ?? 'Codinger').slice(0, 200), body: String(body.body ?? '').slice(0, 500), machine: m.name, session: String(body.session ?? '') })
-          this.ctx.waitUntil(this.push(payload))
-          return json({ ok: true })
+          // sent: the browsers that took it. 0 when no browser has notifications on.
+          return json({ ok: true, ...await this.push(payload) })
         }
       }
       // A machine's display name, or its name: from the web, or from one of your machines.
@@ -225,13 +225,17 @@ export class Hub extends DurableObject<Env> {
   }
 
   // To each browser that subscribed. A subscription the push service no longer knows goes.
-  private async push(payload: string) {
+  private async push(payload: string): Promise<{ sent: number; failed: number }> {
     const vapid = await this.vapid()
     const subs = await this.ctx.storage.list<Subscription>({ prefix: 'push:sub:' })
+    let sent = 0, failed = 0
     await Promise.all([...subs].map(async ([k, sub]) => {
       const status = await sendPush(sub, payload, vapid, `mailto:${this.env.MAIL_FROM}`).catch(() => 0)
+      if (status >= 200 && status < 300) sent++
+      else failed++
       if (status === 404 || status === 410) await this.ctx.storage.delete(k)
     }))
+    return { sent, failed }
   }
 
   // Signed in, or one of your machines.
