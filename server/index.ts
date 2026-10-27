@@ -36,6 +36,7 @@ import { handleMcp, type Tool } from './mcp.ts'
 import { spendSince, spendText } from './spend.ts'
 import { backfillSubagentSpend } from './subspend.ts'
 import { ESTIMATE_TOOLS, estimateTools, estimatesPrompt, estimatesReply } from './estimates.ts'
+import { answered, askTools, forgetAsks, startAsks } from './asks.ts'
 import { MAIL_TOOLS, flushMail, mailTools, release, startMail, stepped, takeMail, turnEnded, userWrote } from './mail.ts'
 import { AUTOPILOT_MODES, amount, nudge, startAutopilot, usedOf, verdict } from './autopilot.ts'
 import { blame, initFileHistory, moveHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
@@ -347,6 +348,11 @@ function resumeCut(s: Session) {
 startNotes({ sessions: () => sessions.values(), settings: () => settings, usage: () => usage, changed: metaChanged })
 startTasks({ changed: (tasks) => broadcast({ type: 'tasks', tasks }), ended: taskEnded })
 startMail({ sessions, create: createSession, hidden: hiddenFor, changed: metaChanged })
+startAsks({
+  session: (id) => { const s = sessions.get(id); return s && s.meta.kind === 'worker' ? { title: s.meta.title } : undefined },
+  push: remoteNotify,
+  notice: (id, text, level) => sessions.get(id)?.notice(text, level),
+})
 // Autopilot goes on in sessions the last server left between turns (a handed-on busy one
 // gets there when its turn ends).
 setTimeout(() => { for (const s of sessions.values()) autopilotTurn(s, false, true) }, 3000)
@@ -1384,6 +1390,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     if (s.meta.kind !== 'worker') throw new HttpError(400, 'The lead session cannot be deleted')
     s.stop()
     sessions.delete(id)
+    forgetAsks(id)
     deleteEvents(id)
     metaChanged()
     return send(res, 200, { ok: true })
@@ -1467,7 +1474,9 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       // The lead's drafts that went with your reply.
       if (Array.isArray(body.inbox) && body.inbox.length) { s.meta.inbox = s.meta.inbox.filter((i) => !body.inbox.includes(i.id)); metaChanged() }
       reopen(s)
-      s.send(p, hiddenFor(s, p))
+      // A message after an ask on the phone takes a note that names the ask.
+      const h = hiddenFor(s, p), a = answered(s.meta.id)
+      s.send(p, a ? { ...h, hidden: [a, h.hidden].filter(Boolean).join('\n\n') } : h)
       userWrote(s)
       return send(res, 200, { ok: true })
     }
@@ -1584,7 +1593,7 @@ const server = http.createServer(async (req, res) => {
       return await handleMcp(req, res, lead ? [...tools, lookTool(lead.meta.id)] : tools)
     }
     const look = url.pathname.startsWith(`/mcp/${MCP_TOKEN}/look/`) && url.pathname.split('/').pop()
-    if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look), claimTool(look), mcpTool(look), artifactTool(look), fileTool(look), ...(settings.estimates !== false ? [spendTool(look), ...estimateTools(look, () => get(look).meta)] : []), ...taskTools(look), ...mailTools(look)])
+    if (look && sessions.has(look)) return await handleMcp(req, res, [lookTool(look), titleTool(look), claimTool(look), mcpTool(look), artifactTool(look), fileTool(look), ...(settings.estimates !== false ? [spendTool(look), ...estimateTools(look, () => get(look).meta)] : []), ...taskTools(look), ...mailTools(look), ...askTools(look)])
     // The web UI asks this first; here it is a machine's own page.
     if (url.pathname === '/_remote/whoami') return send(res, 200, { web: false })
     if (url.pathname.startsWith('/api/remote/m/') || url.pathname.startsWith('/api/remote/machines') || /^\/api\/remote\/push\/(key|subscribe|unsubscribe)$/.test(url.pathname)) return await remoteProxy(req, res, url)
@@ -1599,7 +1608,7 @@ const server = http.createServer(async (req, res) => {
 })
 
 const DIST = path.join(ROOT, 'dist')
-const TYPES: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' }
+const TYPES: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' }
 // base: where the browser sees this machine's files, when the hub passes its page through
 // (/m/<name>, vite.config.ts): the page's root paths go under it, and so do its scripts' loads.
 function serveStatic(p: string, res: http.ServerResponse, base = '') {

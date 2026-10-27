@@ -344,13 +344,17 @@ export async function remoteProxy(req: http.IncomingMessage, res: http.ServerRes
 }
 
 // A push notification to each browser that subscribed (remote/src/push.ts), if this machine is connected.
-export function remoteNotify(n: { title: string; body: string; session: string }) {
-  if (!saved.token || !saved.on) return
-  void fetch(hubUrl() + '/_remote/push/send', {
-    method: 'POST',
-    headers: { authorization: `Bearer ${saved.token}`, 'content-type': 'application/json' },
-    body: JSON.stringify(n),
-  }).catch(() => { /* no hub, no notification */ })
+// false: no notification went (no hub link, or the hub did not take it).
+export async function remoteNotify(n: { title: string; body: string; session: string }): Promise<boolean> {
+  if (!saved.token || !saved.on) return false
+  try {
+    const r = await fetch(hubUrl() + '/_remote/push/send', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${saved.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(n),
+    })
+    return r.ok
+  } catch { return false }
 }
 
 // A WebSocket to /api/remote/m/<name>/…: one to the hub, joined to it.

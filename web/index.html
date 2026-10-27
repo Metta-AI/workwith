@@ -5,7 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>Codinger</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 -1 16 14' shape-rendering='crispEdges'><rect x='3' y='3' width='10' height='1' fill='%232b98c6'/><rect x='2' y='4' width='12' height='5' fill='%232b98c6'/><rect x='3' y='9' width='10' height='1' fill='%232b98c6'/><rect x='0' y='6' width='2' height='2' fill='%232b98c6'/><rect x='14' y='6' width='2' height='2' fill='%232b98c6'/><rect x='5' y='4' width='1' height='2' fill='%23222'/><rect x='10' y='4' width='1' height='2' fill='%23222'/><rect x='4' y='10' width='2' height='2' fill='%232b98c6'/><rect x='10' y='10' width='2' height='2' fill='%232b98c6'/></svg>" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Codinger" />
     <script>
+      // Add to Home Screen saves the start address of the manifest, not the address the page
+      // shows (which names a session). On a machine's page on the hub, window.__base is
+      // /m/<name>/, and the saved app opens that machine.
+      for (const [rel, href] of [['manifest', 'manifest.webmanifest'], ['apple-touch-icon', 'icon-180.png']]) {
+        const l = document.createElement('link')
+        l.rel = rel
+        l.href = (window.__base || '/') + href
+        document.head.appendChild(l)
+      }
       // Codinger was called Codiner until October 2026: copy what this page kept under the old name, once.
       try {
         for (const k of Object.keys(localStorage)) if (k.startsWith('codiner.') && localStorage.getItem('codinger.' + k.slice(8)) == null) localStorage.setItem('codinger.' + k.slice(8), localStorage.getItem(k))

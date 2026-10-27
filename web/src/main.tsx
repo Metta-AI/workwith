@@ -252,7 +252,8 @@ document.addEventListener('touchstart', (e) => {
   // A reaction button keeps its press and drag: no pull, and no back swipe from Safari (which opens
   // the sessions, below), however near the edge it is. It works by pointer events, which still come.
   if (phone.matches && el.closest?.('.ack-btn, .react-mark')) { edge = null; e.preventDefault(); return }
-  const shut = state.sideOpen && !!el.closest?.('.sidebar')
+  // A dialog that the sidebar opened (Settings) is inside it, but a drag there scrolls the dialog.
+  const shut = state.sideOpen && !!el.closest?.('.sidebar') && !el.closest?.('.modal-back')
   edge = phone.matches && e.touches.length === 1 && (shut || (!state.sideOpen && t.clientX < 20 && !el.closest?.('button, a, input, textarea, select, .ack-pop, .emoji-picker')))
     ? { x0: t.clientX, y0: t.clientY, x: t.clientX, t: e.timeStamp, v: 0, drag: false, shut } : null
   if (edge && !shut) e.preventDefault()  // so Safari does not start its own back swipe, where it lets a page stop it

@@ -1,7 +1,8 @@
 // Tooltips that show quickly, for any element with a data-tip attribute. The
 // browser's own (title) waits about a second and can't be styled; this one
 // waits a moment, sits below the element (above it near the bottom of the
-// window) and stays inside the window. In the sidebar it sits to the right of
+// window) and stays inside the window. In a dialog it sits just right of what the row
+// shows, if it fits there. In the sidebar it sits to the right of
 // the element, over the page, so it covers none of the list (data-tip-at="right"
 // puts it just right of the element instead). A title becomes a data-tip the first
 // time the pointer is on it, so the browser's own never shows; React sets the
@@ -45,6 +46,19 @@ export function initTooltips() {
       tip.style.left = `${x}px`
       tip.style.top = `${Math.max(6, Math.min(r.top + r.height / 2 - t.height / 2, innerHeight - t.height - 6))}px`
       return
+    }
+    // In a dialog, a row (a label with its control) is as wide as the dialog: the tip goes just
+    // right of what the row shows, so it covers none of the rows above and below it.
+    const box = el.closest('.modal')?.getBoundingClientRect()
+    if (box) {
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      const end = Math.min(r.right, range.getBoundingClientRect().right) + 12
+      if (end + t.width < Math.min(box.right, innerWidth) - 6) {
+        tip.style.left = `${end}px`
+        tip.style.top = `${Math.max(6, Math.min(r.top + r.height / 2 - t.height / 2, innerHeight - t.height - 6))}px`
+        return
+      }
     }
     const left = Math.max(6, Math.min(r.left + r.width / 2 - t.width / 2, innerWidth - t.width - 6))
     const below = r.bottom + 6 + t.height < innerHeight - 6
