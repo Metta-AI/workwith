@@ -91,7 +91,7 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
                   <td className="mcp-remove">{WHERE[s.scope] && (removing === s.name
                     ? <>Remove from {WHERE[s.scope]}? <button className="link danger" disabled={busy} onClick={() => void remove(s)}>Remove</button> <button className="link" onClick={() => setRemoving(null)}>Cancel</button></>
                     : <button className="link" onClick={() => setRemoving(s.name)}>Remove</button>)}
-                    {s.scope === 'claudeai' && <a href={`${CONNECTORS}?q=${encodeURIComponent(split(s.name).name)}`} target="_blank" rel="noreferrer" data-tip="Opens this connector on claude.ai, where you remove it. Press Refresh here after.">Remove</a>}</td>
+                    {s.scope === 'claudeai' && <a href={`${CONNECTORS}/yours`} target="_blank" rel="noreferrer" data-tip="Opens your connectors on claude.ai, where you remove one. Press Refresh here after.">Remove</a>}</td>
                 </tr>
               ))}
             </tbody>
