@@ -997,7 +997,7 @@ function startContext(cwd: string, fresh: boolean): Promise<string> {
   const file = promptFile(meta.id, prompt)
   return new Promise((resolve, reject) => {
     execFile(CLAUDE, ['-p', '--output-format', 'json', '--no-session-persistence', '--append-system-prompt-file', file, ...args, '--', '/context'],
-      { cwd, env: childEnv(), timeout: 120_000, maxBuffer: 8 << 20 }, (err, out) => {
+      { cwd, env: childEnv(), timeout: 120_000, windowsHide: true, maxBuffer: 8 << 20 }, (err, out) => {
         fs.rm(file, { force: true }, () => {})
         let text = ''
         try { text = String(JSON.parse(out).result ?? '') } catch { /* reported below */ }

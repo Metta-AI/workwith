@@ -26,7 +26,7 @@ function set(u: UpdateStatus) {
 
 function run(cmd: string, args: string[], timeout = 120_000): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(cmd, args, { cwd: o!.root, timeout, shell: WIN && cmd === 'npm', maxBuffer: 10 << 20 }, (err, stdout, stderr) => {
+    execFile(cmd, args, { cwd: o!.root, timeout, windowsHide: true, shell: WIN && cmd === 'npm', maxBuffer: 10 << 20 }, (err, stdout, stderr) => {
       if (err) reject(new Error(String(stderr || err.message).trim().split('\n').slice(-3).join(' ')))
       else resolve(stdout.trim())
     })

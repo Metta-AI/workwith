@@ -69,7 +69,7 @@ export function allowed(meta: SessionMeta, events: Event[], p: string): string |
 function ignored(dir: string, names: string[]): Promise<Set<string>> {
   if (!names.length) return Promise.resolve(new Set())
   return new Promise((ok) => {
-    const child = execFile('git', ['-C', dir, 'check-ignore', '-z', '--stdin'], { timeout: 3000 }, (_err, out) => {
+    const child = execFile('git', ['-C', dir, 'check-ignore', '-z', '--stdin'], { timeout: 3000, windowsHide: true }, (_err, out) => {
       ok(new Set(String(out ?? '').split('\0').filter(Boolean)))
     })
     child.stdin?.end(names.join('\0') + '\0')
@@ -95,7 +95,7 @@ export async function listDir(dir: string): Promise<Entry[]> {
 }
 
 const run = (cmd: string, args: string[], cwd: string) => new Promise<{ ok: boolean; out: string }>((ok) => {
-  execFile(cmd, args, { cwd, timeout: 5000, maxBuffer: 64 * 1024 * 1024 }, (err, out) => ok({ ok: !err, out: String(out ?? '') }))
+  execFile(cmd, args, { cwd, timeout: 5000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 }, (err, out) => ok({ ok: !err, out: String(out ?? '') }))
 })
 
 // The files under dir (relative paths), for search: what git knows and what it does not ignore,

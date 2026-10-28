@@ -22,7 +22,7 @@ let onSignedIn: () => void = () => {}
 export function initAuth(o: { change(a: AuthState): void; signedIn(): void }) {
   onChange = o.change
   onSignedIn = o.signedIn
-  execFile(CLAUDE, ['auth', 'status'], { env: childEnv(), timeout: 20_000 }, (_err, out) => {
+  execFile(CLAUDE, ['auth', 'status'], { env: childEnv(), timeout: 20_000, windowsHide: true }, (_err, out) => {
     let loggedIn = true
     try { loggedIn = JSON.parse(out).loggedIn !== false } catch { /* unknown: assume fine */ }
     if (!loggedIn) needed()
@@ -54,7 +54,7 @@ export function needed() {
 
 export function startLogin() {
   if (proc) return
-  const p = spawn(CLAUDE, ['auth', 'login'], { env: childEnv(), stdio: ['pipe', 'pipe', 'pipe'] })
+  const p = spawn(CLAUDE, ['auth', 'login'], { env: childEnv(), windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
   proc = p
   let out = ''
   set({ state: 'pending' })

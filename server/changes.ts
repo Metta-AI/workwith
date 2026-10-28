@@ -30,7 +30,7 @@ const cache = new Map<string, Version[]>()
 const seen = new Map<string, string>()   // by file: its mtime and size when Codinger last read it
 
 const run = (args: string[], cwd: string) => new Promise<string | null>((ok) => {
-  execFile('git', args, { cwd, timeout: 5000, maxBuffer: 64 * 1024 * 1024 }, (err, out) => ok(err ? null : String(out)))
+  execFile('git', args, { cwd, timeout: 5000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 }, (err, out) => ok(err ? null : String(out)))
 })
 
 function versions(p: string): Version[] {

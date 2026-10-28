@@ -53,7 +53,7 @@ function run(cwd: string): Promise<McpServer[]> {
   return new Promise((resolve, reject) => {
     const p = spawn(CLAUDE,
       ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--no-session-persistence'],
-      { cwd, env: childEnv(), stdio: ['pipe', 'pipe', 'ignore'] })
+      { cwd, env: childEnv(), windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] })
     let buf = '', n = 0, last = '', same = 0, done = false
     const ask = () => p.stdin.write(JSON.stringify({ type: 'control_request', request_id: `s${n++}`, request: { subtype: 'mcp_status' } }) + '\n')
     const finish = (servers: McpServer[] | null, err?: string) => {

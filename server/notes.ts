@@ -245,7 +245,7 @@ async function call(s: Session, kind: 'notes' | 'ping') {
   const { cmd, args, cwd, env } = s.forkCommand()
   let out = '', err = ''
   const code = await new Promise<number | null>((resolve) => {
-    const p = spawn(cmd, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
+    const p = spawn(cmd, args, { cwd, env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
     const timer = setTimeout(() => p.kill('SIGTERM'), TIMEOUT)
     p.stdout.setEncoding('utf8').on('data', (d: string) => { out += d })
     p.stderr.setEncoding('utf8').on('data', (d: string) => { err = (err + d).slice(-1000) })
