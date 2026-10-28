@@ -1236,7 +1236,9 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .mcp-total { white-space: nowrap; font-size: calc(12.5px * var(--fs, 1)); }
 .mcp-remove { white-space: nowrap; }
 .mcp-remove .link.danger { color: var(--bad); }
-.mcp-add-links { display: flex; gap: 16px; align-items: center; margin-top: 10px; font-size: calc(13px * var(--fs, 1)); }
+.mcp-actions { flex-wrap: wrap; margin-top: 12px; } .mcp-actions .grow { flex: 1; }
+.mcp-size { white-space: nowrap; }
+.mcp-add-go { min-width: 84px; }
 .mcp-add { display: flex; flex-direction: column; gap: 8px; }
 .mcp-back { display: flex; align-items: center; gap: 6px; } .mcp-back .icon-btn { margin-left: -6px; }
 .mcp-remove a { font-size: calc(12.5px * var(--fs, 1)); }

@@ -13,12 +13,12 @@ type Server = { name: string; status: string; scope: string; tools: number; toke
 
 // Claude Code names a claude.ai connector "claude.ai Gmail": the name, and where it comes from.
 const split = (n: string) => n.startsWith('claude.ai ') ? { name: n.slice(10), from: 'claude.ai' } : { name: n, from: '' }
-const Name = ({ n }: { n: string }) => { const x = split(n); return <>{x.name}{x.from && <span className="muted mcp-from"> {x.from}</span>}</> }
+const Name = ({ n }: { n: string }) => { const x = split(n); return <>{x.name}{x.from && <> <i className="muted mcp-from">{x.from}</i></>}</> }
 // "8 tools · 2k tokens": the size of all its tools.
 const size = (s: Server) => [s.tools ? `${s.tools} ${s.tools === 1 ? 'tool' : 'tools'}` : '', s.tokens ? `${kTokens(s.tokens)} tokens` : ''].filter(Boolean).join(' · ')
 // Where a server you added with Claude Code is on; claude.ai connectors and others are not removable here.
 const WHERE: Record<string, string> = { local: 'this folder', project: "this project's .mcp.json", user: 'all folders' }
-const CONNECTORS = 'https://claude.ai/settings/connectors'
+const CONNECTORS = 'https://claude.ai/new#customize/connectors'
 const SIZE_TIP = 'The size of all its tools in tokens, as Claude Code estimates it. Claude Code sends the full text of a tool only when Claude looks it up.'
 
 export function McpPill({ m }: { m: SessionMeta }) {
@@ -80,30 +80,29 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
         {err && <div className="notice error">{err}</div>}
         {!servers ? <div className="muted">Loading…</div> : !servers.length ? <div className="muted">Codinger knows no MCP servers here yet. Press Refresh to look for them.</div> : (
           <table className="mcp-table">
-            <thead><tr><th>Server</th><th data-tip={SIZE_TIP}>Tools</th><th>This session</th><th data-tip={startOff ? 'Off while "Start new sessions with my MCP servers off" is on in Settings' : undefined}>Every new session</th><th></th></tr></thead>
+            <thead><tr><th>Server</th><th data-tip={SIZE_TIP}>Tools</th><th>This session</th><th data-tip={startOff ? 'Off while "Start new sessions with my MCP servers off" is on in Settings' : undefined}>Every session</th><th></th></tr></thead>
             <tbody>
               {servers.map((s) => (
                 <tr key={s.name}>
                   <td><Name n={s.name} />{s.status === 'needs-auth' && <> <span className="muted">· needs sign-in ·</span> <button className="link" onClick={signIn} data-tip="Opens Claude Code in Terminal with /mcp (type /mcp if the menu does not open). Choose the server and sign in, quit Claude Code, then press Refresh here.">Sign in</button></>}{s.status === 'failed' && <span className="muted"> · failed</span>}</td>
-                  <td className="muted">{size(s)}</td>
+                  <td className="muted mcp-size">{s.tools ? <div>{s.tools} {s.tools === 1 ? 'tool' : 'tools'}</div> : null}{s.tokens ? <div>{kTokens(s.tokens)} tokens</div> : null}</td>
                   <td><input type="checkbox" checked={on.includes(s.name)} disabled={s.status === 'needs-auth'} onChange={(e) => toggle(s.name, e.target.checked)} /></td>
                   <td className={startOff ? 'mcp-overridden' : undefined}><input type="checkbox" checked={always.includes(s.name)} onChange={(e) => keep(s.name, e.target.checked)} /></td>
                   <td className="mcp-remove">{WHERE[s.scope] && (removing === s.name
                     ? <>Remove from {WHERE[s.scope]}? <button className="link danger" disabled={busy} onClick={() => void remove(s)}>Remove</button> <button className="link" onClick={() => setRemoving(null)}>Cancel</button></>
                     : <button className="link" onClick={() => setRemoving(s.name)}>Remove</button>)}
-                    {s.scope === 'claudeai' && <a href={CONNECTORS} target="_blank" rel="noreferrer" data-tip="claude.ai connectors are removed on claude.ai. Press Refresh here after.">Remove on claude.ai</a>}</td>
+                    {s.scope === 'claudeai' && <a href={CONNECTORS} target="_blank" rel="noreferrer" data-tip="Opens claude.ai, where you remove a claude.ai connector. Press Refresh here after.">Remove</a>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
-        {startOff && !!servers?.length && <p className="muted mcp-hint">"Start new sessions with my MCP servers off" is on in Settings, so new sessions start with none of these. Every new session takes effect when you turn that setting off.</p>}
-        <div className="mcp-add-links">
-          <button className="link" onClick={() => setAdding(true)}>Add a server…</button>
-          <a href={CONNECTORS} target="_blank" rel="noreferrer">Add a claude.ai connector</a>
-        </div>
-        <div className="modal-actions">
-          <button className={m.mcp?.missing || servers?.length === 0 ? 'primary' : 'link'} disabled={busy} onClick={() => void look()} data-tip="Runs Claude Code for a few seconds to list your MCP servers. No API call.">{busy ? 'Looking…' : 'Refresh'}</button>
+        {startOff && !!servers?.length && <p className="muted mcp-hint">"Start new sessions with my MCP servers off" is on in Settings, so new sessions start with none of these. Every session takes effect when you turn that setting off.</p>}
+        <div className="modal-actions mcp-actions">
+          <button onClick={() => setAdding(true)}>Add a server</button>
+          <button onClick={() => window.open(CONNECTORS, '_blank', 'noreferrer')}>Add a claude.ai connector</button>
+          <span className="grow" />
+          <button className={m.mcp?.missing || servers?.length === 0 ? 'primary' : undefined} disabled={busy} onClick={() => void look()} data-tip="Runs Claude Code for a few seconds to list your MCP servers. No API call.">{busy ? 'Looking…' : 'Refresh'}</button>
         </div>
         </>}
       </div>
@@ -154,7 +153,7 @@ function AddServer({ cwd, onDone }: { cwd: string; onDone(added: boolean): void 
       {err && <div className="notice error">{err}</div>}
       <div className="modal-actions">
         <button onClick={() => onDone(false)}>Cancel</button>
-        <button className="primary" disabled={busy || !name.trim() || !target.trim()} onClick={() => void add()}>{busy ? 'Adding…' : 'Add'}</button>
+        <button className="primary mcp-add-go" disabled={busy || !name.trim() || !target.trim()} onClick={() => void add()}>{busy ? 'Adding…' : 'Add'}</button>
       </div>
     </div>
   )
