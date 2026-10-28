@@ -1215,6 +1215,17 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
       err ? reject(new HttpError(400, String(errOut).trim() || err.message)) : resolve()))
     return send(res, 200, { ok: true })
   }
+  // Remove a server you added with Claude Code (not a claude.ai connector) with `claude mcp remove`.
+  if (a === 'mcp' && id === 'remove' && method === 'POST') {
+    const body = await json(req)
+    const cwd = path.resolve(expandHome(String(body.cwd ?? '~')))
+    const name = String(body.name ?? '').trim()
+    if (!['local', 'project', 'user'].includes(body.scope)) throw new HttpError(400, 'Claude Code can remove only a server added in this folder, this project or all folders')
+    if (!name) throw new HttpError(400, 'No server name')
+    await new Promise<void>((resolve, reject) => execFile(CLAUDE, ['mcp', 'remove', '-s', body.scope, name], { cwd, env: childEnv(), timeout: 30_000 }, (err, _out, errOut) =>
+      err ? reject(new HttpError(400, String(errOut).trim() || err.message)) : resolve()))
+    return send(res, 200, { ok: true })
+  }
   if (a === 'mcp' && method === 'GET') return send(res, 200, serversFor(path.resolve(expandHome(url.searchParams.get('cwd') || '~'))).map(({ config: _, ...x }) => x))
   if (a === 'mcp' && method === 'POST') {
     const cwd = path.resolve(expandHome(String((await json(req)).cwd ?? '~')))

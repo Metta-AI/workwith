@@ -1233,6 +1233,9 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .mcp-table td.mcp-overridden input { opacity: .4; }
 .mcp-hint { font-size: calc(12px * var(--fs, 1)); margin: 6px 0 0; }
 .mcp-from { font-size: calc(11.5px * var(--fs, 1)); }
+.mcp-total { white-space: nowrap; font-size: calc(12.5px * var(--fs, 1)); }
+.mcp-remove { white-space: nowrap; }
+.mcp-remove .link.danger { color: var(--bad); }
 .mcp-add-links { display: flex; gap: 16px; align-items: center; margin-top: 10px; font-size: calc(13px * var(--fs, 1)); }
 .mcp-add { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
 .mcp-add h3 { margin: 0; font-size: calc(14px * var(--fs, 1)); font-weight: 600; }

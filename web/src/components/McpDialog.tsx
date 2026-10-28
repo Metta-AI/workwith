@@ -16,6 +16,8 @@ const split = (n: string) => n.startsWith('claude.ai ') ? { name: n.slice(10), f
 const Name = ({ n }: { n: string }) => { const x = split(n); return <>{x.name}{x.from && <span className="muted mcp-from"> {x.from}</span>}</> }
 // "8 tools · 2k tokens": the size of all its tools.
 const size = (s: Server) => [s.tools ? `${s.tools} ${s.tools === 1 ? 'tool' : 'tools'}` : '', s.tokens ? `${kTokens(s.tokens)} tokens` : ''].filter(Boolean).join(' · ')
+// Where a server you added with Claude Code is on; claude.ai connectors and others are not removable here.
+const WHERE: Record<string, string> = { local: 'this folder', project: "this project's .mcp.json", user: 'all folders' }
 const SIZE_TIP = 'The size of all its tools in tokens, as Claude Code estimates it. Claude Code sends the full text of a tool only when Claude looks it up.'
 
 export function McpPill({ m }: { m: SessionMeta }) {
@@ -41,6 +43,12 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
   const [err, setErr] = useState<string | null>(null)
   useEffect(() => { void api<{ servers: Server[] }>(`/api/sessions/${m.id}/mcp`, 'GET').then((r) => setServers(r.servers)).catch((e) => setErr(String(e.message ?? e))) }, [m.id])
   const [adding, setAdding] = useState(false)
+  const [removing, setRemoving] = useState<string | null>(null)
+  const remove = async (s: Server) => {
+    setBusy(true); setErr(null)
+    try { await api('/api/mcp/remove', 'POST', { cwd: m.cwd, name: s.name, scope: s.scope }); setRemoving(null); await look() }
+    catch (e) { setErr(e instanceof Error ? e.message : String(e)); setBusy(false) }
+  }
   const signIn = () => void api(`/api/sessions/${m.id}/run`, 'POST', { command: 'claude /mcp' }).catch((e) => setErr(String(e.message ?? e)))
   const look = async () => {
     setBusy(true); setErr(null)
@@ -68,7 +76,7 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
         {err && <div className="notice error">{err}</div>}
         {!servers ? <div className="muted">Loading…</div> : !servers.length ? <div className="muted">Codinger knows no MCP servers here yet. Press Refresh to look for them.</div> : (
           <table className="mcp-table">
-            <thead><tr><th>Server</th><th data-tip={SIZE_TIP}>Tools</th><th>This session</th><th data-tip={startOff ? 'Off while "Start new sessions with my MCP servers off" is on in Settings' : undefined}>Every new session</th></tr></thead>
+            <thead><tr><th>Server</th><th data-tip={SIZE_TIP}>Tools</th><th>This session</th><th data-tip={startOff ? 'Off while "Start new sessions with my MCP servers off" is on in Settings' : undefined}>Every new session</th><th></th></tr></thead>
             <tbody>
               {servers.map((s) => (
                 <tr key={s.name}>
@@ -76,6 +84,9 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
                   <td className="muted">{size(s)}</td>
                   <td><input type="checkbox" checked={on.includes(s.name)} disabled={s.status === 'needs-auth'} onChange={(e) => toggle(s.name, e.target.checked)} /></td>
                   <td className={startOff ? 'mcp-overridden' : undefined}><input type="checkbox" checked={always.includes(s.name)} onChange={(e) => keep(s.name, e.target.checked)} /></td>
+                  <td className="mcp-remove">{WHERE[s.scope] && (removing === s.name
+                    ? <>Remove from {WHERE[s.scope]}? <button className="link danger" disabled={busy} onClick={() => void remove(s)}>Remove</button> <button className="link" onClick={() => setRemoving(null)}>Cancel</button></>
+                    : <button className="link" onClick={() => setRemoving(s.name)}>Remove</button>)}</td>
                 </tr>
               ))}
             </tbody>
@@ -170,6 +181,7 @@ export function McpPicker({ cwd, machine, value, onChange, startOff, always }: {
   }
   const usable = (servers ?? []).filter((s) => s.status !== 'needs-auth')
   const picked = value ?? (startOff ? [] : always ?? usable.map((s) => s.name))
+  const total = (servers ?? []).filter((s) => picked.includes(s.name)).reduce((n, s) => n + (s.tokens ?? 0), 0)
   const q = query.trim().toLowerCase()
   const items = (servers ?? []).filter((s) => !q || s.name.toLowerCase().includes(q))
   const flip = (s: Server) => {
@@ -203,6 +215,7 @@ export function McpPicker({ cwd, machine, value, onChange, startOff, always }: {
             }}
           />
         </div>
+        {total > 0 && <span className="muted mcp-total" data-tip={SIZE_TIP}>{kTokens(total)} tokens</span>}
         <button type="button" className="link" disabled={busy} onClick={() => void look()} data-tip="Runs Claude Code for a few seconds to list your MCP servers. No API call.">{busy ? 'Looking…' : 'Refresh'}</button>
       </div>
       {err && <div className="flag-err">{err}</div>}
