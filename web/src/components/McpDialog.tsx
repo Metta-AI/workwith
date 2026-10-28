@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useEscape } from '../escape.ts'
 import type { SessionMeta } from '../../../shared/types.ts'
 import { api, useStore } from '../store.ts'
-import { CheckIcon, XIcon } from './Icons.tsx'
+import { BackIcon, CheckIcon, XIcon } from './Icons.tsx'
 import { kTokens } from '../util.ts'
 
 type Server = { name: string; status: string; scope: string; tools: number; tokens?: number }
@@ -18,6 +18,7 @@ const Name = ({ n }: { n: string }) => { const x = split(n); return <>{x.name}{x
 const size = (s: Server) => [s.tools ? `${s.tools} ${s.tools === 1 ? 'tool' : 'tools'}` : '', s.tokens ? `${kTokens(s.tokens)} tokens` : ''].filter(Boolean).join(' · ')
 // Where a server you added with Claude Code is on; claude.ai connectors and others are not removable here.
 const WHERE: Record<string, string> = { local: 'this folder', project: "this project's .mcp.json", user: 'all folders' }
+const CONNECTORS = 'https://claude.ai/settings/connectors'
 const SIZE_TIP = 'The size of all its tools in tokens, as Claude Code estimates it. Claude Code sends the full text of a tool only when Claude looks it up.'
 
 export function McpPill({ m }: { m: SessionMeta }) {
@@ -64,9 +65,12 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
     <div className="modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal wide mcp-modal">
         <div className="files-head">
-          <h2>MCP servers</h2>
+          {adding
+            ? <h2 className="mcp-back"><button className="icon-btn" aria-label="Back to the MCP servers" onClick={() => setAdding(false)}><BackIcon size={14} /></button>Add an MCP server</h2>
+            : <h2>MCP servers</h2>}
           <button className="icon-btn" title="Close" onClick={onClose}><XIcon size={14} /></button>
         </div>
+        {adding ? <AddServer cwd={m.cwd} onDone={(added) => { setAdding(false); if (added) void look() }} /> : <>
         <p className="muted">
           This session started with your MCP servers off, so their tools take no room in its context. Turn one on here, or
           let Claude turn it on when the task needs it. A server you turn on adds its tools to the end of the conversation,
@@ -86,22 +90,22 @@ function McpDialog({ m, onClose }: { m: SessionMeta; onClose: () => void }) {
                   <td className={startOff ? 'mcp-overridden' : undefined}><input type="checkbox" checked={always.includes(s.name)} onChange={(e) => keep(s.name, e.target.checked)} /></td>
                   <td className="mcp-remove">{WHERE[s.scope] && (removing === s.name
                     ? <>Remove from {WHERE[s.scope]}? <button className="link danger" disabled={busy} onClick={() => void remove(s)}>Remove</button> <button className="link" onClick={() => setRemoving(null)}>Cancel</button></>
-                    : <button className="link" onClick={() => setRemoving(s.name)}>Remove</button>)}</td>
+                    : <button className="link" onClick={() => setRemoving(s.name)}>Remove</button>)}
+                    {s.scope === 'claudeai' && <a href={CONNECTORS} target="_blank" rel="noreferrer" data-tip="claude.ai connectors are removed on claude.ai. Press Refresh here after.">Remove on claude.ai</a>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
         {startOff && !!servers?.length && <p className="muted mcp-hint">"Start new sessions with my MCP servers off" is on in Settings, so new sessions start with none of these. Every new session takes effect when you turn that setting off.</p>}
-        {adding ? <AddServer cwd={m.cwd} onDone={(added) => { setAdding(false); if (added) void look() }} /> : (
-          <div className="mcp-add-links">
-            <button className="link" onClick={() => setAdding(true)}>Add a server…</button>
-            <a href="https://claude.ai/settings/connectors" target="_blank" rel="noreferrer">Add a claude.ai connector</a>
-          </div>
-        )}
+        <div className="mcp-add-links">
+          <button className="link" onClick={() => setAdding(true)}>Add a server…</button>
+          <a href={CONNECTORS} target="_blank" rel="noreferrer">Add a claude.ai connector</a>
+        </div>
         <div className="modal-actions">
           <button className={m.mcp?.missing || servers?.length === 0 ? 'primary' : 'link'} disabled={busy} onClick={() => void look()} data-tip="Runs Claude Code for a few seconds to list your MCP servers. No API call.">{busy ? 'Looking…' : 'Refresh'}</button>
         </div>
+        </>}
       </div>
     </div>
   )
@@ -122,6 +126,7 @@ function AddServer({ cwd, onDone }: { cwd: string; onDone(added: boolean): void 
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const stdio = transport === 'stdio'
+  useEscape(() => onDone(false))
   const add = async () => {
     setBusy(true); setErr(null)
     const list = extra.split('\n').map((l) => l.trim()).filter(Boolean)
@@ -130,7 +135,6 @@ function AddServer({ cwd, onDone }: { cwd: string; onDone(added: boolean): void 
   }
   return (
     <div className="mcp-add">
-      <h3>Add a server</h3>
       <div className="two">
         <label>Name <input value={name} placeholder="sentry" autoFocus onChange={(e) => setName(e.target.value)} /></label>
         <label>Kind
