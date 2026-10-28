@@ -1211,7 +1211,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     const lines = (x: unknown) => Array.isArray(x) ? x.map((l) => String(l).trim()).filter(Boolean) : []
     const opts = transport === 'stdio' ? lines(body.env).flatMap((e) => ['-e', e]) : lines(body.headers).flatMap((h) => ['-H', h])
     const args = ['mcp', 'add', '-t', transport, '-s', scope, name, ...opts, '--', ...(transport === 'stdio' ? splitArgs(target) : [target])]
-    await new Promise<void>((resolve, reject) => execFile(CLAUDE, args, { cwd, env: childEnv(), timeout: 30_000 }, (err, _out, errOut) =>
+    await new Promise<void>((resolve, reject) => execFile(CLAUDE, args, { cwd, env: childEnv(), timeout: 30_000, windowsHide: true }, (err, _out, errOut) =>
       err ? reject(new HttpError(400, String(errOut).trim() || err.message)) : resolve()))
     return send(res, 200, { ok: true })
   }
@@ -1222,7 +1222,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
     const name = String(body.name ?? '').trim()
     if (!['local', 'project', 'user'].includes(body.scope)) throw new HttpError(400, 'Claude Code can remove only a server added in this folder, this project or all folders')
     if (!name) throw new HttpError(400, 'No server name')
-    await new Promise<void>((resolve, reject) => execFile(CLAUDE, ['mcp', 'remove', '-s', body.scope, name], { cwd, env: childEnv(), timeout: 30_000 }, (err, _out, errOut) =>
+    await new Promise<void>((resolve, reject) => execFile(CLAUDE, ['mcp', 'remove', '-s', body.scope, name], { cwd, env: childEnv(), timeout: 30_000, windowsHide: true }, (err, _out, errOut) =>
       err ? reject(new HttpError(400, String(errOut).trim() || err.message)) : resolve()))
     return send(res, 200, { ok: true })
   }

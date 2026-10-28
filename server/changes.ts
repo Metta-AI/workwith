@@ -33,6 +33,17 @@ const run = (args: string[], cwd: string) => new Promise<string | null>((ok) => 
   execFile('git', args, { cwd, timeout: 5000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 }, (err, out) => ok(err ? null : String(out)))
 })
 
+// The top folder of the git repository of a folder, or null when it is in none. Each tool call of
+// each session looks, so the answer is kept for a while: a folder seldom moves into or out of a repository.
+const tops = new Map<string, { top: string | null; at: number }>()
+async function topOf(dir: string): Promise<string | null> {
+  const t = tops.get(dir)
+  if (t && Date.now() - t.at < 5 * 60_000) return t.top
+  const top = (await run(['rev-parse', '--show-toplevel'], dir))?.trim() || null
+  tops.set(dir, { top, at: Date.now() })
+  return top
+}
+
 function versions(p: string): Version[] {
   let v = cache.get(p)
   if (v) return v
@@ -99,7 +110,7 @@ export function refresh(cwd: string): Promise<void> {
 async function look(cwd: string, sid: string, started: number, until = Infinity, edit?: { file: string; edits: { old: string; new: string; all?: boolean }[] }) {
   let editReal: string | null = null
   if (edit) try { editReal = fs.realpathSync(edit.file) } catch {}
-  const top = (await run(['rev-parse', '--show-toplevel'], cwd))?.trim()
+  const top = await topOf(cwd)
   if (!top) return
   const st = await run(['status', '--porcelain', '-z', '--untracked-files=all'], top)
   if (st == null) return
@@ -143,7 +154,7 @@ async function look(cwd: string, sid: string, started: number, until = Infinity,
 export async function whoChanged(p: string): Promise<{ add: Record<number, string>; del: Record<number, string> } | null> {
   const vs = versions(p)
   if (vs.length < 2) return null
-  const top = (await run(['rev-parse', '--show-toplevel'], path.dirname(p)))?.trim()
+  const top = await topOf(path.dirname(p))
   const head = top ? await run(['show', `HEAD:${path.relative(top, p).split(path.sep).join('/')}`], top) : null
   if ((head ?? '') !== vs[0].text) { forget(p); return null }
   // By version: which one wrote each line now, and which one removed each line of the commit.
