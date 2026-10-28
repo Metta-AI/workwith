@@ -241,25 +241,53 @@ function SessionMenu({ m, open, setOpen, onPublish }: { m: SessionMeta; open: Me
   ].filter(Boolean)
   // Press, drag to an item and release to choose it, as in a native menu. A press opens the
   // menu; a release over an item clicks it, a release away from the menu closes it, and a
-  // release on the button keeps it open, so a plain click works as before.
+  // release on the button keeps it open, so a plain click works as before. A finger works the
+  // same way: the browser keeps a touch's events on the button it started on, so the item is
+  // the element under the point, and it takes the hover colour (.hot) while the finger is on it.
   const pressed = useRef(false)
   const press = (e: React.PointerEvent) => {
-    if (e.pointerType !== 'mouse' || e.button !== 0 || open) return
+    if (e.button !== 0 || open) return
     pressed.current = true
     setOpen('list')
-    window.addEventListener('pointerup', (u) => {
-      const t = u.target as Element
-      if (box.current?.contains(t)) {
+    let hot: Element | null = null
+    const under = (p: PointerEvent) => document.elementFromPoint(p.clientX, p.clientY)
+    const move = (p: PointerEvent) => {
+      if (p.pointerId !== e.pointerId) return
+      const item = under(p)?.closest('.menu button') ?? null
+      if (item === hot) return
+      hot?.classList.remove('hot')
+      item?.classList.add('hot')
+      hot = item
+    }
+    const end = (u: PointerEvent) => {
+      if (u.pointerId !== e.pointerId) return
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+      hot?.classList.remove('hot')
+      // A scroll took the touch: leave the menu open, as after a tap.
+      if (u.type === 'pointercancel') { pressed.current = false; return }
+      const t = under(u)
+      if (t && box.current?.contains(t)) {
         // On the button, its own click follows and clears pressed.
         if (t.closest('.icon-tall')) return
         pressed.current = false
         const item = t.closest('.menu button')
-        if (item instanceof HTMLButtonElement) item.click()
+        if (item instanceof HTMLButtonElement) {
+          item.click()
+          // The browser can send a click of its own after the release: drop it.
+          const eat = (c: MouseEvent) => { c.stopPropagation(); c.preventDefault() }
+          window.addEventListener('click', eat, { capture: true, once: true })
+          setTimeout(() => window.removeEventListener('click', eat, true), 300)
+        }
         return
       }
       pressed.current = false
       setOpen(null)
-    }, { once: true })
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
   }
   const toggle = () => {
     if (pressed.current) { pressed.current = false; return }

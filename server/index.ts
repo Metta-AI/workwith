@@ -361,7 +361,7 @@ function get(id: string): Session {
   return s
 }
 
-function createSession(o: { cwd: string; title?: string; model?: string | null; permissionMode?: PermissionMode; flags?: string[]; parentId?: string | null; group?: string | null; mkdir?: boolean }): Session {
+function createSession(o: { cwd: string; title?: string; model?: string | null; permissionMode?: PermissionMode; flags?: string[]; parentId?: string | null; group?: string | null; mkdir?: boolean; mcp?: string[] }): Session {
   const flags = Array.isArray(o.flags) ? o.flags.map((f) => String(f).trim()).filter(Boolean) : []
   for (const f of flags) { const p = flagProblem(f); if (p) throw new HttpError(400, p) }
   const cwd = path.resolve(expandHome(String(o.cwd ?? '').trim()))
@@ -377,8 +377,12 @@ function createSession(o: { cwd: string; title?: string; model?: string | null; 
     parentId: o.parentId && sessions.has(o.parentId) ? o.parentId : null,
     // Its group: the one asked for, else its parent's.
     ...(group ? { group } : {}),
-    // Your MCP servers start off, except the ones you keep always on.
-    ...(settings.mcpStartOff !== false ? { mcp: { strict: true as const, on: [...(settings.mcpAlways ?? [])] } } : {}),
+    // Only the MCP servers picked in the new session dialog. With no pick: none when you start
+    // sessions with them off (that setting wins over the ones kept on for every new session),
+    // else the ones kept on for every new session, or all of them if you never chose those.
+    ...(Array.isArray(o.mcp) ? { mcp: { strict: true as const, on: [...new Set(o.mcp.map(String))] } }
+      : settings.mcpStartOff !== false ? { mcp: { strict: true as const, on: [] } }
+      : settings.mcpAlways ? { mcp: { strict: true as const, on: [...settings.mcpAlways] } } : {}),
   }))
   metaChanged()
   return s
@@ -759,10 +763,10 @@ function artifactTool(id: string): Tool {
       // This call's place in the conversation, for its line there and the artifact's history.
       const ev = s.getEvents().findLast((e) => e.t === 'assistant' && e.blocks.some((b) => b.type === 'tool_use' && b.name.endsWith('show_artifact')))
       const call = ev?.t === 'assistant' ? ev.blocks.findLast((b) => b.type === 'tool_use' && b.name.endsWith('show_artifact')) : undefined
-      showArtifact(name, { sid: id, seq: ev?.seq ?? 0, ts: Date.now(), show: true, tool: call?.type === 'tool_use' ? call.id : undefined })
+      const v = showArtifact(name, { sid: id, seq: ev?.seq ?? 0, ts: Date.now(), show: true, tool: call?.type === 'tool_use' ? call.id : undefined })
       artifactsChanged()
       broadcast({ type: 'preview', sessionId: id, target: { artifact: name }, at: Date.now() })
-      return `Shown in the preview pane (http://127.0.0.1:${artifactsPort}/${name}/). ${await reportOf(name)}`
+      return `Shown in the preview pane (http://127.0.0.1:${artifactsPort}/${name}/), version ${v}. To show this version in a message, write ![caption](artifact:${name}@${v}) on a line of its own. ${await reportOf(name)}`
     },
   }
 }
@@ -985,6 +989,20 @@ async function json(req: http.IncomingMessage): Promise<any> {
   return s ? JSON.parse(s) : {}
 }
 
+// A command line as its words, as a shell splits it, with '…' and "…" quotes (no variables or escapes).
+function splitArgs(line: string): string[] {
+  const out: string[] = []
+  let cur = '', quote = '', word = false
+  for (const ch of line) {
+    if (quote) { if (ch === quote) quote = ''; else cur += ch }
+    else if (ch === '"' || ch === "'") { quote = ch; word = true }
+    else if (/\s/.test(ch)) { if (word || cur) out.push(cur); cur = ''; word = false }
+    else cur += ch
+  }
+  if (word || cur) out.push(cur)
+  return out
+}
+
 // Claude Code's /context for a new worker session in `cwd`, with a worker's own
 // arguments (system prompt, Codinger's tools), so it counts what Codinger adds too.
 // It makes no API call: Claude Code estimates the sizes itself. Kept 10 minutes.
@@ -1181,6 +1199,34 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   // What the usage meter has measured, to see how steady its estimate is.
   // What a new session in a folder starts with, by category.
   // Your MCP servers in a folder, found by a probe (server/mcpservers.ts).
+  // Add a server with `claude mcp add` (the form in the MCP dialog); the page then looks for servers again.
+  if (a === 'mcp' && id === 'add' && method === 'POST') {
+    const body = await json(req)
+    const cwd = path.resolve(expandHome(String(body.cwd ?? '~')))
+    const name = String(body.name ?? '').trim(), target = String(body.target ?? '').trim()
+    const transport = ['http', 'sse', 'stdio'].includes(body.transport) ? body.transport as string : 'http'
+    const scope = ['local', 'project', 'user'].includes(body.scope) ? body.scope as string : 'local'
+    if (!/^[\w.-]+$/.test(name)) throw new HttpError(400, 'Give the server a name of letters, digits, ".", "-" or "_"')
+    if (!target) throw new HttpError(400, transport === 'stdio' ? 'Give the command that starts the server' : 'Give the URL of the server')
+    const lines = (x: unknown) => Array.isArray(x) ? x.map((l) => String(l).trim()).filter(Boolean) : []
+    const opts = transport === 'stdio' ? lines(body.env).flatMap((e) => ['-e', e]) : lines(body.headers).flatMap((h) => ['-H', h])
+    const args = ['mcp', 'add', '-t', transport, '-s', scope, name, ...opts, '--', ...(transport === 'stdio' ? splitArgs(target) : [target])]
+    await new Promise<void>((resolve, reject) => execFile(CLAUDE, args, { cwd, env: childEnv(), timeout: 30_000 }, (err, _out, errOut) =>
+      err ? reject(new HttpError(400, String(errOut).trim() || err.message)) : resolve()))
+    return send(res, 200, { ok: true })
+  }
+  // Remove a server you added with Claude Code (not a claude.ai connector) with `claude mcp remove`.
+  if (a === 'mcp' && id === 'remove' && method === 'POST') {
+    const body = await json(req)
+    const cwd = path.resolve(expandHome(String(body.cwd ?? '~')))
+    const name = String(body.name ?? '').trim()
+    if (!['local', 'project', 'user'].includes(body.scope)) throw new HttpError(400, 'Claude Code can remove only a server added in this folder, this project or all folders')
+    if (!name) throw new HttpError(400, 'No server name')
+    await new Promise<void>((resolve, reject) => execFile(CLAUDE, ['mcp', 'remove', '-s', body.scope, name], { cwd, env: childEnv(), timeout: 30_000 }, (err, _out, errOut) =>
+      err ? reject(new HttpError(400, String(errOut).trim() || err.message)) : resolve()))
+    return send(res, 200, { ok: true })
+  }
+  if (a === 'mcp' && method === 'GET') return send(res, 200, serversFor(path.resolve(expandHome(url.searchParams.get('cwd') || '~'))).map(({ config: _, ...x }) => x))
   if (a === 'mcp' && method === 'POST') {
     const cwd = path.resolve(expandHome(String((await json(req)).cwd ?? '~')))
     let found

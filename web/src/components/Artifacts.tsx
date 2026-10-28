@@ -44,14 +44,15 @@ export function showArtifactIn(sid: string, artifact: string, v?: number) {
 }
 
 // No title attribute: the browser shows it as a tooltip over the whole page.
-export function ArtifactFrame({ target, at = 0, hidden, frameRef }: { target: PreviewTarget; at?: number; hidden?: boolean; frameRef?: React.Ref<HTMLIFrameElement> }) {
+// inline: in a message, as tall as a page there (.media-frame).
+export function ArtifactFrame({ target, at = 0, hidden, inline, frameRef }: { target: PreviewTarget; at?: number; hidden?: boolean; inline?: boolean; frameRef?: React.Ref<HTMLIFrameElement> }) {
   const st = useStore()
   const a = 'artifact' in target ? st.artifacts.find((x) => x.name === target.artifact) : undefined
   if ('artifact' in target && !st.artifactsPort) return null
   if ('artifact' in target && !a) return <div className="artifact-missing muted">There is no artifact “{target.artifact}” now.</div>
   const src = srcOf(target, a, st.artifactsPort, at)
   if (!src) return hidden ? null : <div className="artifact-missing muted">Artifacts show through web.codinger.app only. Open this page there.</div>
-  return <iframe ref={frameRef} className={hidden ? 'artifact-check' : 'artifact-frame'} aria-label={a?.title ?? 'Preview'} sandbox={SANDBOX} src={src} aria-hidden={hidden} tabIndex={hidden ? -1 : undefined} />
+  return <iframe ref={frameRef} className={hidden ? 'artifact-check' : inline ? 'media-frame' : 'artifact-frame'} aria-label={a?.title ?? 'Preview'} sandbox={SANDBOX} src={src} aria-hidden={hidden} tabIndex={hidden ? -1 : undefined} />
 }
 
 // When an agent shows an artifact, a hidden copy loads it once, so show_artifact can

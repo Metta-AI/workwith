@@ -152,13 +152,17 @@ function artifactOfPath(file: unknown): string | null {
   return !rel.startsWith('..') && !path.isAbsolute(rel) && rel.includes(path.sep) && NAME_RE.test(name) ? name : null
 }
 
-function touch(name: string, t: ArtifactTouch) {
+// The version it kept.
+function touch(name: string, t: ArtifactTouch): number {
   const r = recOf(name)
-  t = { ...t, v: snapshot(name) }
-  if (r.edits.some((e) => t.tool ? e.tool === t.tool : e.sid === t.sid && e.seq === t.seq)) return saveRecord()
-  r.created ??= t
-  r.edits = [...r.edits, t].slice(-100)
+  const v = snapshot(name)
+  t = { ...t, v }
+  if (!r.edits.some((e) => t.tool ? e.tool === t.tool : e.sid === t.sid && e.seq === t.seq)) {
+    r.created ??= t
+    r.edits = [...r.edits, t].slice(-100)
+  }
   saveRecord()
+  return v
 }
 
 // A tool call finished: if it wrote into an artifact's folder, note which session and message did,
@@ -187,6 +191,7 @@ The page reads its data by slot name: \`const rows = await prolifica.data('rows'
 - Make the page work at any width and in light and dark (prefers-color-scheme). Size charts from their container, and draw them again on resize.
 - Put \`data-pid="a-stable-name"\` on each chart, card and control.
 - After you make or change an artifact, call show_artifact with its name. It shows the page to the user and returns the script errors of the load. Fix them until it loads clean.
+- To show an artifact in a message too, write \`![caption](artifact:<name>@<n>)\` on a line of its own, with the version n that show_artifact returned. Do not put its index.html in a message as a markdown image: that copy has no data and no \`prolifica\`.
 - To change an artifact, edit it in place, even one another session made: Codinger records which session changed what.
 - show_artifact also takes \`url\`, to show a page that a dev server on this machine serves.
 `
@@ -205,9 +210,19 @@ export function checkArtifact(name: string): string | null {
   return null
 }
 
-export function showArtifact(name: string, t: ArtifactTouch) {
-  touch(name, t)
+// The version shown.
+export function showArtifact(name: string, t: ArtifactTouch): number {
   reports.delete(name)
+  return touch(name, t)
+}
+
+// ![caption](artifact:<name>) in a message, with no @<n>: the version its files are now, so
+// the message keeps showing that one. null: no such artifact.
+export function artifactVersion(name: string): number | null {
+  if (!NAME_RE.test(name) || !fs.existsSync(path.join(dirOf(name), 'index.html'))) return null
+  const v = snapshot(name)
+  saveRecord()
+  return v
 }
 
 // After the pane reloads the page: what it reported, or why there is nothing. It waits

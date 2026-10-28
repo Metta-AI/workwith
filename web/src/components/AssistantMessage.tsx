@@ -23,6 +23,7 @@ import { CheckIcon, ChevronIcon, CommentIcon, TerminalIcon, UndoIcon, XIcon } fr
 import { EmojiPicker } from './EmojiPicker.tsx'
 import { openFile } from './FileBrowser.tsx'
 import { ReviewCard } from './Review.tsx'
+import { ArtifactFrame } from './Artifacts.tsx'
 import { focusPassage, onPassage } from './Margin.tsx'
 import { lastEmoji, topEmoji, usedEmoji } from '../emoji.ts'
 import { highlight } from '../highlight.ts'
@@ -59,6 +60,7 @@ const AsideMark = ({ sid, itemKey, status }: { sid: string; itemKey: string; sta
 type SectionPiece = { kind: 'answer' | 'details' | 'consider'; title: string; id: string; pieces: Piece[]; block: number; closed: boolean; task: boolean; critical: boolean }
 type Piece =
   | { kind: 'html'; html: string; block: number }
+  | { kind: 'artifact'; name: string; v?: number; block: number }
   | { kind: 'ask'; ask: Ask; block: number }
   | { kind: 'run'; title: string; command: string; block: number; closed: boolean }
   | { kind: 'review'; title: string; files: string[]; n: number; block: number; pieces: Piece[] }
@@ -85,6 +87,13 @@ function piecesOf(text: string): Piece[] {
       if (t.type === 'code' && /^ask\b/.test((t as Tokens.Code).lang ?? '')) {
         const c = t as Tokens.Code
         out.push({ kind: 'ask', block: base + i, ask: parseAskBody(c.lang ?? '', c.text, asks++) })
+        return
+      }
+      // A paragraph of only ![caption](artifact:<name>@<n>): the artifact at that version, as the pane shows it.
+      const img = t.type === 'paragraph' && (t as Tokens.Paragraph).tokens.length === 1 ? (t as Tokens.Paragraph).tokens[0] : undefined
+      const art = img?.type === 'image' && /^artifact:([\w.-]+)(?:@(\d+))?$/.exec((img as Tokens.Image).href)
+      if (art) {
+        out.push({ kind: 'artifact', block: base + i, name: art[1], v: art[2] ? Number(art[2]) : undefined })
         return
       }
       const list = Object.assign([t], { links: tokens.links })
@@ -626,6 +635,7 @@ function Pieces({ c, pieces }: { c: Ctx; pieces: Piece[] }) {
     switch (p.kind) {
       case 'html': return <div key={p.block} data-block={p.block} className="md-block" dangerouslySetInnerHTML={{ __html: p.html }} />
       case 'ask': return <AskCard key={p.block} c={c} ask={p.ask} block={p.block} />
+      case 'artifact': return <div key={p.block} data-block={p.block} className="md-block"><ArtifactFrame target={{ artifact: p.name, v: p.v }} inline /></div>
       case 'answer': return <div key={p.block} className="answer-block"><Pieces c={c} pieces={p.pieces} /></div>
       case 'details': return (
         <details key={p.block} className="more" open={opened.has(`${c.sid}:${c.msg}:${p.block}`)}

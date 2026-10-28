@@ -139,7 +139,7 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
                 {[...new Set([...GUARDS, guard])].sort((x, y) => x - y).map((g) => <option key={g} value={g}>{g ? `${g / 1000}k tokens` : 'never ask'}</option>)}
               </select>
             </label>
-            <label className="settings-check" data-tip="New sessions get only Codinger's tools. The MCP chip or Claude turns servers on. Current sessions do not change.">
+            <label className="settings-check" data-tip="New sessions get only Codinger's tools, also when a server is on for every new session in the MCP dialog. The MCP chip or Claude turns servers on. When this is off, new sessions start with the servers on for every new session. Current sessions do not change.">
               <input type="checkbox" checked={st.settings.mcpStartOff !== false} onChange={(e) => void api('/api/settings', 'PUT', { mcpStartOff: e.target.checked })} />
               Start new sessions with my MCP servers off
             </label>

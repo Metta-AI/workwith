@@ -519,7 +519,9 @@ textarea.agents-md { font-size: calc(12.5px * var(--fs, 1)); line-height: 1.5; r
 .menu-wrap { position: relative; }
 .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 140px; display: flex; flex-direction: column; padding: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, .18); }
 .head-actions .menu button, .ctx-menu button { border: none; background: none; text-align: left; height: auto; padding: 6px 10px; border-radius: 5px; font-size: calc(13px * var(--fs, 1)); }
-.head-actions .menu button:hover, .ctx-menu button:hover { background: rgba(127, 127, 127, .12); }
+.head-actions .menu button:hover, .head-actions .menu button.hot, .ctx-menu button:hover { background: rgba(127, 127, 127, .12); }
+/* A finger that presses the menu button can drag to an item: no scroll, no text selection, no callout. */
+.head-actions .menu-wrap > .icon-tall { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .ctx-menu { position: fixed; right: auto; z-index: 60; }
 .toggle { display: flex; align-items: center; gap: 4px; font-size: calc(12.5px * var(--fs, 1)); }
 .status-pill { font-size: calc(11.5px * var(--fs, 1)); border-radius: 9px; padding: 0 7px; background: rgba(127, 127, 127, .12); display: inline-block; }
@@ -1226,6 +1228,38 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .mcp-table { border-collapse: collapse; font-size: calc(13px * var(--fs, 1)); }
 .mcp-table th { text-align: left; font-weight: 500; color: var(--muted); padding: 2px 12px 4px 0; }
 .mcp-table td { padding: 3px 12px 3px 0; border-top: 1px solid var(--line); }
+.mcp-row { display: flex; align-items: center; gap: 8px; } .mcp-row .flag-box { flex: 1; min-width: 0; }
+.mcp-item { display: inline-flex; align-items: center; gap: 6px; } .mcp-check { display: inline-flex; width: 12px; color: var(--accent); }
+.mcp-table td.mcp-overridden input { opacity: .4; }
+.mcp-hint { font-size: calc(12px * var(--fs, 1)); margin: 6px 0 0; }
+.mcp-from { font-size: calc(11.5px * var(--fs, 1)); }
+.mcp-total { white-space: nowrap; font-size: calc(12.5px * var(--fs, 1)); }
+.mcp-remove { white-space: nowrap; }
+.mcp-remove .link.danger { color: var(--bad); }
+.mcp-actions { flex-wrap: wrap; margin-top: 12px; } .mcp-actions .grow { flex: 1; }
+.mcp-size { white-space: nowrap; }
+.mcp-add-go { min-width: 84px; }
+.mcp-add { display: flex; flex-direction: column; gap: 8px; }
+.mcp-back { display: flex; align-items: center; gap: 6px; } .mcp-back .icon-btn { margin-left: -6px; }
+.mcp-remove a { font-size: calc(12.5px * var(--fs, 1)); }
+.mcp-add textarea { resize: vertical; }
+/* NewSession: a line across the dialog with "Advanced settings" in its middle. */
+.adv-toggle { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: none; padding: 2px 0; color: var(--muted); font-size: calc(12.5px * var(--fs, 1)); }
+.adv-toggle::before, .adv-toggle::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.adv-toggle:hover { color: var(--text); }
+.adv-label { display: inline-flex; align-items: center; gap: 5px; max-width: 80%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adv-label .icon { transition: transform .15s; flex: none; } .adv-label .icon.open { transform: rotate(90deg); }
+.session-picker { position: relative; color: var(--text); font-size: calc(14px * var(--fs, 1)); }
+.session-picker > input { width: 100%; }
+.sp-chosen { display: flex; align-items: center; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 7px; padding: 2px 6px 2px 2px; }
+.sp-chosen .sp-row { flex: 1; min-width: 0; }
+.sp-chosen .link { display: inline-flex; padding: 4px; }
+.session-picker .sp-row { display: flex; width: 100%; align-items: center; gap: 10px; text-align: left; border: none; background: none; border-radius: 6px; padding: 4px 8px; }
+.sp-menu .sp-row { align-items: center; }
+.sp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sp-title, .sp-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-sub { color: var(--muted); font-size: calc(11.5px * var(--fs, 1)); }
+.sp-meta { color: var(--muted); font-size: calc(11.5px * var(--fs, 1)); white-space: nowrap; }
 
 /* Tasks (TasksDialog.tsx): the list on the left, the chosen task's log on the right. */
 .side-tasks span { font-variant-numeric: tabular-nums; }
@@ -1600,7 +1634,10 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
 .pal-close { display: none; flex: none; padding: 9px; margin: -9px -9px -9px -3px; }
 .pal-sort { flex: none; margin: -4px 0; border: none; border-radius: 5px; background: var(--panel); color: var(--muted); font: inherit; font-size: 12px; padding: 3px 8px; cursor: pointer; white-space: nowrap; }
 .pal-sort:hover { color: var(--text); }
-.pal-kbd { flex: none; font: 11px var(--mono); color: var(--muted); background: var(--panel); border-radius: 4px; padding: 2px 6px; }
+/* A toggle: an outline when it is off, the accent fill when it is on. */
+.pal-toggle { background: none; box-shadow: inset 0 0 0 1px var(--line); }
+.pal-toggle.on { background: var(--accent); color: var(--on-accent); box-shadow: none; }
+.pal-toggle.on:hover { color: var(--on-accent); }
 /* The bar scrolls only sideways: its rule is a shadow inside it, and the line of the current tab covers it, not a margin that sticks out below. */
 .pal-tabs { flex: none; display: flex; gap: 2px; padding: 6px 10px 0; box-shadow: inset 0 -1px 0 var(--line); overflow-x: auto; overflow-y: hidden; overscroll-behavior: contain; touch-action: pan-x; scrollbar-width: none; }
 /* The current tab has a straight line under it: no rounded corners with a border. */
@@ -1617,7 +1654,6 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
 .pal-section-head { display: flex; align-items: baseline; justify-content: space-between; width: 100%; border: none; background: none; font: inherit; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 6px 8px 4px; cursor: pointer; text-align: left; }
 .pal-section-head:hover { color: var(--text); }
 .pal-more { text-transform: none; letter-spacing: 0; }
-.pal-sort.on { color: var(--text); box-shadow: inset 0 0 0 1px var(--accent); }
 .pal-row { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: none; color: var(--text); font: inherit; text-align: left; padding: 6px 8px; border-radius: 7px; cursor: pointer; min-height: 40px; }
 .pal-col.on .pal-row.active { background: var(--accent-soft); }
 .pal-icon { flex: none; width: 20px; display: flex; justify-content: center; color: var(--muted); }
@@ -1634,7 +1670,6 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
   .modal-back.pal-back { padding: 0; align-items: stretch; }
   .modal.palette { width: 100vw; height: auto; max-height: none; border-radius: 0; }
   .pal-search input { font-size: 16px; }
-  .pal-kbd { display: none; }
   .pal-close { display: flex; }
   .pal-row { min-height: 46px; }
 }

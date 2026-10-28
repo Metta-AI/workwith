@@ -7,6 +7,7 @@ import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { MEDIA_URL, mediaExt } from '../shared/media.ts'
 import { MEDIA, expandHome } from './store.ts'
+import { artifactVersion } from './artifacts.ts'
 
 export const MEDIA_MAX = 500 * 1024 * 1024
 // The most one range request gets (server/index.ts: /api/media).
@@ -50,7 +51,8 @@ export function keepPath(p: string, cwd: string): string | null {
 const IMAGE = /!\[([^\]\n]*)\]\(\s*(?:<([^>\n]+)>|([^)\s]+))((?:\s+"[^"\n]*")?\s*)\)/g
 
 // An agent's message with its markdown images of local files (`![caption](shot.png)`)
-// pointed at kept copies. Code blocks and inline code stay as written.
+// pointed at kept copies, and ![caption](artifact:<name>) given its version now.
+// Code blocks and inline code stay as written.
 export function keepMediaIn(text: string, cwd: string): string {
   if (!text.includes('![')) return text
   let fence = false
@@ -58,6 +60,9 @@ export function keepMediaIn(text: string, cwd: string): string {
     if (/^\s*(```|~~~)/.test(line)) { fence = !fence; return line }
     if (fence) return line
     return line.split(/(`+[^`]*`+)/).map((part, i) => i % 2 ? part : part.replace(IMAGE, (m, alt: string, angled?: string, bare?: string, title = '') => {
+      const art = /^artifact:([\w.-]+)$/.exec(angled ?? bare ?? '')
+      const v = art && artifactVersion(art[1])
+      if (v) return `![${alt}](artifact:${art[1]}@${v}${title})`
       const url = keepPath(angled ?? bare ?? '', cwd)
       return url ? `![${alt}](${url}${title})` : m
     })).join('')
