@@ -1161,7 +1161,7 @@ label > input[type="checkbox"] { flex: none; margin: 0; }
 .swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
 .swatch { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px 6px; border-radius: 10px; font-size: calc(12.5px * var(--fs, 1)); color: var(--muted); }
 .swatch.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-soft); color: var(--text); }
-.swatch.on .mascot { animation: hop .5s ease-out; }
+.swatch-dot { width: 26px; height: 26px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(0 0 0 / .15); }
 @keyframes hop { 40% { transform: translateY(-5px); } }
 .appearance-row { display: flex; align-items: center; gap: 12px; }
 .appearance-label { width: 64px; font-size: calc(13px * var(--fs, 1)); color: var(--muted); }

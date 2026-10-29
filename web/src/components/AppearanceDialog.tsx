@@ -1,5 +1,5 @@
 // Light or dark, an accent (or a colour of your own), the tone of the surfaces,
-// the font and its size. The first load opens this as a welcome, without the critter
+// the font and its size. The first load opens this as a welcome, without the accent
 // swatches; Settings shows all the picks in a tab. Each pick shows at once and is saved.
 
 import { useEffect } from 'react'
@@ -7,7 +7,7 @@ import { useEscape } from '../escape.ts'
 import { ACCENTS, DEFAULT_APPEARANCE, FONTS, SURFACES, TEXT_SIZES, THEMES, type Appearance } from '../../../shared/appearance.ts'
 import { api, changed, state, useStore } from '../store.ts'
 import { applyAppearance, holdAppearance, loadFonts } from '../appearance.ts'
-import { Mascot } from './Mascot.tsx'
+import { BODY_COLORS } from './looks.tsx'
 import { XIcon } from './Icons.tsx'
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1)
@@ -70,15 +70,16 @@ export function AppearancePanel({ swatches = true }: { swatches?: boolean }) {
       {swatches && <div className="swatches">
         {ACCENTS.filter((c) => c !== 'custom').map((c) => (
           <button key={c} className={`swatch${a.accent === c ? ' on' : ''}`} onClick={() => set({ accent: c })} title={cap(c)}>
-            <Mascot status="idle" fatigue={0} look={{ color: c, ...(a.accent === c ? { hat: 'party' } : {}) }} size={38} />
+            <span className="swatch-dot" style={{ background: BODY_COLORS[c] }} />
             <span>{cap(c)}</span>
           </button>
         ))}
-        {/* Any colour: the swatch is a colour input under a critter of that colour. */}
+        {/* Any colour: the swatch is a colour input over a dot of that colour. Critters belong
+            to sessions (each picks its own look), so the accent is only a colour. */}
         <label className={`swatch${a.accent === 'custom' ? ' on' : ''}`} title="Custom colour">
           <input type="color" value={custom} onClick={() => { if (a.accent !== 'custom') set({ accent: 'custom', custom }) }}
             onChange={(e) => set({ accent: 'custom', custom: e.target.value })} />
-          <Mascot status="idle" fatigue={0} body={custom} look={a.accent === 'custom' ? { hat: 'party' } : {}} size={38} />
+          <span className="swatch-dot" style={{ background: custom }} />
           <span>{a.accent === 'custom' ? custom : 'Your own'}</span>
         </label>
       </div>}
