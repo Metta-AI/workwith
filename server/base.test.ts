@@ -53,12 +53,20 @@ test('pageUnder: under CODINGER_BASE the links go under it and the page knows it
 
 test('a server under /desk/ada answers there, behind a proxy named in CODINGER_HOSTS', async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'codinger-base-'))
+  // A stand-in for the claude CLI that says it is signed in, so the server never starts
+  // `claude auth login` (which, in a home with no login, would open the Keychain on a Mac).
+  const claude = path.join(home, 'claude')
+  fs.writeFileSync(claude, '#!/bin/sh\necho \'{"loggedIn":true}\'\n', { mode: 0o755 })
   const port = 4900 + Math.floor(Math.random() * 90)
   const server = spawn(process.execPath, [path.join(import.meta.dirname, 'index.ts')], {
-    env: { ...process.env, HOME: home, PORT: String(port), CODINGER_BASE: '/desk/ada', CODINGER_AGENT_NAME: 'Ada', CODINGER_HOSTS: 'proxy.test', CODINGER_USER_HEADER: 'x-user' },
+    env: { ...process.env, HOME: home, PORT: String(port), CODINGER_CLAUDE: claude, CLAUDE_CODE_OAUTH_TOKEN: 'test-not-a-real-token', CODINGER_BASE: '/desk/ada', CODINGER_AGENT_NAME: 'Ada', CODINGER_HOSTS: 'proxy.test', CODINGER_USER_HEADER: 'x-user' },
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true, // its own process group, so the teardown stops anything it started too
   })
-  t.after(() => { server.kill(); fs.rmSync(home, { recursive: true, force: true }) })
+  t.after(() => {
+    try { process.kill(-server.pid!, 'SIGKILL') } catch { /* gone already */ }
+    fs.rmSync(home, { recursive: true, force: true })
+  })
   await new Promise<void>((resolve, reject) => {
     server.stdout.on('data', (d) => { if (String(d).includes('Codinger on')) resolve() })
     server.on('exit', (code) => reject(new Error(`the server stopped (${code})`)))
