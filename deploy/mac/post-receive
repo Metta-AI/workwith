@@ -1,0 +1,26 @@
+#!/bin/bash
+# .git/hooks/post-receive in the Mac's checkout (deploy/mac/install.sh puts it there). A push
+# to main (git push <mac> main) has already updated the checkout: receive.denyCurrentBranch
+# is updateInstead, which refuses the push if the checkout has uncommitted changes. Install
+# packages if they changed, then let Codinger restart itself: it rebuilds the page, and busy
+# sessions keep running.
+export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+unset GIT_DIR
+cd "$(dirname "$0")/../.." || exit 1
+PORT=$(sed -n 's/^PORT=//p' "$HOME/.codinger/desk.env" 2>/dev/null | tr -d "'\""); PORT=${PORT:-4545}
+restart=0
+while read -r old new ref; do
+  [ "$ref" = refs/heads/main ] || continue
+  restart=1
+  if [ "$old" = 0000000000000000000000000000000000000000 ] \
+    || git diff --name-only "$old" "$new" | grep -qxE 'package(-lock)?\.json'; then
+    echo "codinger: npm install"
+    npm install --no-audit --no-fund --loglevel=error
+  fi
+done
+[ "$restart" = 1 ] || exit 0
+if curl -fsS -m 5 -X POST "http://127.0.0.1:$PORT/api/restart" >/dev/null; then
+  echo "codinger: restarting on $(git log -1 --format='%h %s')"
+else
+  echo "codinger: the server didn't answer; launchd will start it"
+fi

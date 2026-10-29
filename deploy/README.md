@@ -21,4 +21,7 @@ By hand, once per host:
 
 Update: build in `/opt/codinger`, then `sudo systemctl restart codinger-workwith`.
 
+`mac/` runs Codinger on a Mac on your tailnet (a Mac mini at home), on your Claude
+subscription, behind `tailscale serve`, with `git push` to update it.
+
 `butterfly/` runs a named agent on a laptop behind a Cloudflare quick tunnel, for a demo.
