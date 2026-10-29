@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react'
 import type { SessionMeta } from '../../../shared/types.ts'
 import { DEFAULT_OPTS, type SharePreview, type ShareOpts } from '../../../shared/share.ts'
-import { api, baseOf, localId, machineOf, useStore } from '../store.ts'
+import { api, baseOf, localId, machineOf, ROOT, useStore } from '../store.ts'
 import { useEscape } from '../escape.ts'
 import { XIcon } from './Icons.tsx'
 
@@ -27,7 +27,7 @@ export function PublishDialog({ m, onClose }: { m: SessionMeta; onClose(): void 
   const machine = machineOf(m.id)
   // On web.codinger.app every machine is connected; on a machine, it must be.
   const linked = st.web || !!st.machines[machine]?.remote?.linked
-  const frame = `/share.html?${new URLSearchParams({ preview: localId(m.id), base: baseOf(machine), ...Object.fromEntries(q) })}`
+  const frame = `${ROOT}/share.html?${new URLSearchParams({ preview: localId(m.id), base: baseOf(machine), ...Object.fromEntries(q) })}`
   const set = (p: Partial<ShareOpts>) => setOpts({ ...opts, ...p })
   const publish = async () => {
     setBusy(true)

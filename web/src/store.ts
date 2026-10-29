@@ -229,8 +229,11 @@ export function currentMachine(): string {
 }
 const cur = () => state.machines[currentMachine()] ?? blank(LOCAL)
 
+// Where this page's own server is: the root, or the path a proxy serves it under (CODINGER_BASE,
+// server/base.ts), e.g. /desk/ada.
+export const ROOT: string = (window as { __root?: string }).__root ?? ''
 // Where a machine's server is, from this page.
-export const baseOf = (machine: string) => !machine ? '' : state.web ? `/m/${machine}` : `/api/remote/m/${machine}`
+export const baseOf = (machine: string) => !machine ? ROOT : state.web ? `/m/${machine}` : `/api/remote/m/${machine}`
 export const urlOf = (path: string, machine = currentMachine()) => baseOf(machine) + path
 // An image or file the server keeps (/api/images/…), from the current session's machine.
 export const media = (url: string, machine = currentMachine()) =>
@@ -426,7 +429,7 @@ let whoami: Promise<{ web?: boolean; email?: string | null }> | null = null
 // Start: on web.codinger.app, sign in and find your machines; on a machine, its own server
 // (and, once it is connected to web.codinger.app, the other machines).
 export async function start() {
-  whoami = fetch('/_remote/whoami').then((r) => r.json()).catch(() => ({ web: false }))
+  whoami = fetch(`${ROOT}/_remote/whoami`).then((r) => r.json()).catch(() => ({ web: false }))
     .then((who) => { state.web = !!who.web; return who })
   const who = await whoami
   if (who.web) {
@@ -471,7 +474,7 @@ let known: RemoteMachine[] = []
 export async function refreshMachines() {
   if (!state.web && !state.machines[LOCAL]?.remote?.linked) known = []
   else {
-    const r = await fetch(state.web ? '/_remote/machines' : '/api/remote/machines').catch(() => null)
+    const r = await fetch(state.web ? '/_remote/machines' : `${ROOT}/api/remote/machines`).catch(() => null)
     if (r?.status === 401 && state.web) { location.href = '/_remote/login'; return }
     if (!r?.ok) return
     known = await r.json()
