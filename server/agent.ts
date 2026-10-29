@@ -16,11 +16,14 @@
 //   CODINGER_HOSTS          (server/index.ts) may hold "*.trycloudflare.com" for such a tunnel
 //   CODINGER_SUPERVISED     (server/index.ts) 1: a restart only stops this server, and the
 //                           supervisor (systemd, launchd) starts the next one
+//   CODINGER_BASE           the path the proxy serves Codinger under and passes on unchanged,
+//                           e.g. /desk/ada (no trailing slash); unset, the root (server/base.ts)
 
 import fs from 'node:fs'
 import path from 'node:path'
 import type http from 'node:http'
 import type { AgentInfo, Person } from '../shared/types.ts'
+import { parseBase } from './base.ts'
 
 const env = process.env
 // Codinger was called Codiner until October 2026; the old names (CODINER_*) still work.
@@ -32,6 +35,7 @@ const AVATAR_TYPE = AVATAR ? { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg
 const THEME = existing(desk('AGENT_CSS'))
 
 export const ASK_NAME = desk('ASK_NAME') === '1'
+export const BASE = parseBase(desk('BASE'))
 
 export const agentInfo = (): AgentInfo | undefined =>
   NAME ? { name: NAME, avatar: !!AVATAR, theme: !!THEME } : undefined
@@ -85,8 +89,8 @@ function manifest() {
   const color = desk('AGENT_COLOR') ?? '#1d1c1a'
   return {
     name: NAME ? `Work with ${name}` : name, short_name: name,
-    start_url: '/', scope: '/', display: 'standalone', background_color: color, theme_color: color,
-    icons: AVATAR ? [{ src: '/agent/avatar', sizes: iconSize(AVATAR), type: AVATAR_TYPE, purpose: 'any' }] : [],
+    start_url: `${BASE}/`, scope: `${BASE}/`, display: 'standalone', background_color: color, theme_color: color,
+    icons: AVATAR ? [{ src: `${BASE}/agent/avatar`, sizes: iconSize(AVATAR), type: AVATAR_TYPE, purpose: 'any' }] : [],
   }
 }
 
