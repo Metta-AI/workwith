@@ -1754,14 +1754,20 @@ function serveStatic(p: string, res: http.ServerResponse, base = '') {
   if (missing) file = path.join(DIST, 'index.html')
   if (!fs.existsSync(file)) { res.writeHead(500).end('Run `npm run build` first, or start with --dev.'); return }
   const type = TYPES[path.extname(file)] ?? 'application/octet-stream'
-  if (base && type === 'text/html') {
-    const html = fs.readFileSync(file, 'utf8').replaceAll('"/assets/', `"${base}/assets/`).replace('<head>', `<head><script>window.__base=${JSON.stringify(base + '/')}</script>`)
+  const agent = agentInfo()
+  if ((base || agent) && type === 'text/html') {
+    let html = fs.readFileSync(file, 'utf8')
+    if (base) html = html.replaceAll('"/assets/', `"${base}/assets/`).replace('<head>', `<head><script>window.__base=${JSON.stringify(base + '/')}</script>`)
+    // An agent's desk is named for the agent, on a phone's home screen too (iOS reads this tag).
+    if (agent) html = html.replace('<meta name="apple-mobile-web-app-title" content="Codinger" />', `<meta name="apple-mobile-web-app-title" content="${escapeAttr(agent.name)}" />`)
     res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' }).end(html)
     return
   }
   res.writeHead(200, { 'content-type': type })
   fs.createReadStream(file).pipe(res)
 }
+
+const escapeAttr = (s: string) => s.replace(/[&"<>]/g, (c) => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' })[c]!)
 
 // ---- websocket --------------------------------------------------------------
 
