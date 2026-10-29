@@ -1,6 +1,6 @@
 // Light or dark, an accent (or a colour of your own), the tone of the surfaces,
-// the font and its size. The first load opens this as a welcome; Settings
-// shows the same picks in a tab. Each pick shows at once and is saved.
+// the font and its size. The first load opens this as a welcome, without the critter
+// swatches; Settings shows all the picks in a tab. Each pick shows at once and is saved.
 
 import { useEffect } from 'react'
 import { useEscape } from '../escape.ts'
@@ -47,8 +47,8 @@ export function AppearanceDialog({ welcome, onClose }: { welcome?: boolean; onCl
           <h2>{welcome ? 'Welcome to Codinger' : 'Appearance'}</h2>
           <button className="icon-btn" title="Close" onClick={close}><XIcon size={14} /></button>
         </div>
-        {welcome && <p className="muted appearance-lead">Pick a colour to make it yours. You can change this later in Settings.</p>}
-        <AppearancePanel />
+        {welcome && <p className="muted appearance-lead">Make it easy on your eyes. You can change this later in Settings.</p>}
+        <AppearancePanel swatches={!welcome} />
         <div className="modal-actions">
           <button className="primary" onClick={close}>{welcome ? 'Start' : 'Done'}</button>
         </div>
@@ -58,7 +58,7 @@ export function AppearanceDialog({ welcome, onClose }: { welcome?: boolean; onCl
 }
 
 // The picks themselves: in the welcome above, and in a tab of Settings.
-export function AppearancePanel() {
+export function AppearancePanel({ swatches = true }: { swatches?: boolean }) {
   const st = useStore()
   const a = st.settings.appearance ?? DEFAULT_APPEARANCE
   const set = setAppearance
@@ -67,7 +67,7 @@ export function AppearancePanel() {
 
   return (
     <div className="appearance-panel">
-      <div className="swatches">
+      {swatches && <div className="swatches">
         {ACCENTS.filter((c) => c !== 'custom').map((c) => (
           <button key={c} className={`swatch${a.accent === c ? ' on' : ''}`} onClick={() => set({ accent: c })} title={cap(c)}>
             <Mascot status="idle" fatigue={0} look={{ color: c, ...(a.accent === c ? { hat: 'party' } : {}) }} size={38} />
@@ -81,7 +81,7 @@ export function AppearancePanel() {
           <Mascot status="idle" fatigue={0} body={custom} look={a.accent === 'custom' ? { hat: 'party' } : {}} size={38} />
           <span>{a.accent === 'custom' ? custom : 'Your own'}</span>
         </label>
-      </div>
+      </div>}
       <div className="appearance-row">
         <span className="appearance-label">Mode</span>
         <div className="seg">
