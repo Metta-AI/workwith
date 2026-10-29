@@ -10,6 +10,7 @@
 // (server/index.ts, web/src/authors.ts).
 
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
@@ -26,7 +27,13 @@ const MAX = 1024 * 1024   // a longer file keeps no versions
 const TOOLS = /^(Bash|Write|Edit|MultiEdit|NotebookEdit|Agent|Task)$/   // the tool calls that can change files
 
 const fileOf = (p: string) => path.join(DIR, `${createHash('sha1').update(p).digest('hex').slice(0, 16)}.jsonl`)
-const cache = new Map<string, Version[]>()
+// Codinger's own data and Claude Code's (transcripts that grow with every turn) are never anyone's
+// changes: in a home folder that is a git repository, git shows them as untracked.
+const real = (d: string) => { try { return fs.realpathSync(d) } catch { return d } }
+const SKIP = [DATA, process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude')].map((d) => real(d) + path.sep)
+// By file: its newest version and how many it has. Only that one stays in memory; the rest are
+// read from DATA/changes when blame needs them, so many changing files can't fill the heap.
+const tips = new Map<string, { text: string; n: number }>()
 const seen = new Map<string, string>()   // by file: its mtime and size when Codinger last read it
 
 const run = (args: string[], cwd: string) => new Promise<string | null>((ok) => {
@@ -45,19 +52,21 @@ async function topOf(dir: string): Promise<string | null> {
 }
 
 function versions(p: string): Version[] {
-  let v = cache.get(p)
-  if (v) return v
-  v = []
+  const v: Version[] = []
   try { for (const l of fs.readFileSync(fileOf(p), 'utf8').split('\n')) if (l.trim()) try { v.push(JSON.parse(l)) } catch { /* torn */ } } catch { /* none yet */ }
-  cache.set(p, v)
+  tips.set(p, { text: v.at(-1)?.text ?? '', n: v.length })
   return v
 }
+function tip(p: string): { text: string; n: number } {
+  return tips.get(p) ?? (versions(p), tips.get(p)!)
+}
 function add(p: string, v: Version) {
-  versions(p).push(v)
+  const n = tip(p).n + 1
   fs.appendFileSync(fileOf(p), JSON.stringify(v) + '\n')
+  tips.set(p, { text: v.text, n })
 }
 function forget(p: string) {
-  cache.delete(p)
+  tips.delete(p)
   seen.delete(p)
   fs.rm(fileOf(p), { force: true }, () => {})
 }
@@ -125,6 +134,7 @@ async function look(cwd: string, sid: string, started: number, until = Infinity,
   for (const p of dirty.get(top) ?? []) if (!now.has(p)) forget(p)
   dirty.set(top, now)
   for (const p of now) {
+    if (SKIP.some((d) => p.startsWith(d))) continue
     let s: fs.Stats
     try { s = fs.statSync(p) } catch { continue }
     if (!s.isFile() || s.size > MAX || s.mtimeMs >= until) continue
@@ -132,17 +142,17 @@ async function look(cwd: string, sid: string, started: number, until = Infinity,
     if (seen.get(p) === key) continue
     seen.set(p, key)
     const text = fs.readFileSync(p, 'utf8')
-    const vs = versions(p)
-    if (vs.at(-1)?.text === text) continue
+    const t = tip(p)
+    if (t.n && t.text === text) continue
     const mine = s.mtimeMs >= started - 100
-    const had = vs.length > 0
+    const had = t.n > 0
     if (!had) {
       const base = await run(['show', `HEAD:${path.relative(top, p).split(path.sep).join('/')}`], top)
       add(p, { ts: 0, who: 'base', text: base ?? '' })
     }
     if (mine && p === editReal) {
       const before = undo(text, edit!.edits)
-      if (before != null && before !== vs.at(-1)!.text) add(p, { ts: Date.now(), who: had ? 'you' : 'unknown', text: before })
+      if (before != null && before !== tip(p).text) add(p, { ts: Date.now(), who: had ? 'you' : 'unknown', text: before })
     }
     add(p, { ts: Date.now(), who: mine ? sid : had ? 'you' : 'unknown', text })
   }
