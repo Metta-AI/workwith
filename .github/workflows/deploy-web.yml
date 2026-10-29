@@ -15,6 +15,8 @@ concurrency:
 
 jobs:
   deploy:
+    # Only upstream deploys web.codinger.app; forks (Metta-AI/workwith) skip it.
+    if: github.repository == 'huttj/codinger'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
