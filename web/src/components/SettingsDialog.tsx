@@ -15,14 +15,16 @@ import { XIcon } from './Icons.tsx'
 import { AppearancePanel } from './AppearanceDialog.tsx'
 import { StartContext } from './StartContext.tsx'
 import { CostPanel } from './CostPanel.tsx'
+import { RemotePanel } from './RemotePanel.tsx'
 import { DEFAULT_CACHE_GUARD } from '../../../shared/cache.ts'
 import { KEEP_WARM } from '../../../shared/notes.ts'
+import { disablePush, enablePush, pushSubscribed, pushSupported } from '../push.ts'
 
 const GUARDS = [0, 20_000, 50_000, 100_000, 250_000, 500_000]
 const WARM_HOURS = [0, 1, 2, 4, 6, 8, 12]
 const WARM_MAX = [200_000, 300_000, 500_000, 750_000, 1_000_000]
 const WARM_USAGE = [50, 70, 80, 90, 100]
-const PAGES = [['general', 'General'], ['cost', 'Plan and cost'], ['appearance', 'Appearance'], ['context', 'Start-up context'], ['files', 'Notes files']] as const
+const PAGES = [['general', 'General'], ['cost', 'Plan and cost'], ['appearance', 'Appearance'], ['context', 'Start-up context'], ['files', 'Notes files'], ['remote', 'Remote access']] as const
 export type Page = typeof PAGES[number][0]
 
 type FileRow = { path: string; builtIn: boolean; exists: boolean; versions: number; last: number | null }
@@ -36,11 +38,11 @@ type Blame = { path: string; exists: boolean; text: string; lines: number[]; ver
 const who = (by: By) =>
   by.kind === 'initial' ? 'First seen'
   : by.kind === 'settings' ? 'You, in Settings'
-  : by.kind === 'session' ? `Codiner session "${by.title}"`
+  : by.kind === 'session' ? `Codinger session "${by.title}"`
   : by.kind === 'claude' ? `Claude Code in ${shortPath(by.cwd)}`
-  : 'Outside Codiner'
+  : 'Outside Codinger'
 
-export function SettingsDialog({ onClose, page: first }: { onClose(): void; page?: Page }) {
+export function SettingsDialog({ onClose }: { onClose(): void }) {
   const st = useStore()
   const [files, setFiles] = useState<FileRow[]>([])
   const [sel, setSel] = useState('')
@@ -51,8 +53,9 @@ export function SettingsDialog({ onClose, page: first }: { onClose(): void; page
   const [adding, setAdding] = useState('')
   const tick = sel ? st.fileTick[sel] ?? 0 : 0
 
-  const [page, setPage] = useState<Page>(() => first ?? PAGES.find(([p]) => p === localStorage.getItem('codiner.settingsPage'))?.[0] ?? 'general')
-  const go = (p: Page) => { localStorage.setItem('codiner.settingsPage', p); setPage(p) }
+  // The page is in the page's address (url.ts).
+  const page: Page = PAGES.find(([p]) => p === st.settingsPage)?.[0] ?? 'general'
+  const go = (p: Page) => { localStorage.setItem('codinger.settingsPage', p); state.settingsPage = p; changed() }
   const guard = st.settings.cacheGuard ?? DEFAULT_CACHE_GUARD
   const [stale, setStale] = useState(false)   // the server predates file history: it needs a restart
   const loadFiles = () => api<FileRow[]>('/api/files', 'GET')
@@ -104,6 +107,7 @@ export function SettingsDialog({ onClose, page: first }: { onClose(): void; page
             {PAGES.map(([p, label]) => <button key={p} className={page === p ? 'on' : ''} onClick={() => go(p)}>{label}</button>)}
           </nav>
           {page === 'general' && <section className="settings-page">
+            <PushSetting />
             <label className="settings-check">
               <input type="checkbox" checked={st.showSteps} onChange={(e) => { state.showSteps = e.target.checked; changed() }} />
               Show Claude's in-between messages
@@ -112,9 +116,26 @@ export function SettingsDialog({ onClose, page: first }: { onClose(): void; page
               <input type="checkbox" checked={st.commentButton} onChange={(e) => { state.commentButton = e.target.checked; changed() }} />
               Selecting text shows a Comment button, instead of opening a comment
             </label>
-            <label className="settings-check" title="For work on Codiner itself: a banner offers a server restart">
+            {/* Only a touch screen has it; it is saved in this browser. */}
+            {matchMedia('(pointer: coarse)').matches && <label className="settings-check">
+              <input type="checkbox" checked={st.touchPick} onChange={(e) => { state.touchPick = e.target.checked; changed() }} />
+              While the keyboard is open, hold a finger on message text to pick it for a comment
+            </label>}
+            <label className="settings-check">
+              Updates from GitHub
+              <select value={st.settings.autoUpdate ?? 'ask'} onChange={(e) => void api('/api/settings', 'PUT', { autoUpdate: e.target.value })}>
+                <option value="ask">Ask first</option>
+                <option value="always">Install automatically</option>
+                <option value="never">Never</option>
+              </select>
+            </label>
+            <label className="settings-check" title="For work on Codinger itself: a banner offers a server restart">
               <input type="checkbox" checked={!!st.settings.selfRestart} onChange={(e) => void api('/api/settings', 'PUT', { selfRestart: e.target.checked })} />
-              Offer to restart when Codiner's code changes
+              Offer to restart when Codinger's code changes
+            </label>
+            <label className="settings-check" title="After a crash or a forced stop of the server. A restart from Codinger keeps a working session working anyway.">
+              <input type="checkbox" checked={!!st.settings.resumeCut} onChange={(e) => void api('/api/settings', 'PUT', { resumeCut: e.target.checked })} />
+              Go on with turns that a server stop cut short
             </label>
             <label className="settings-check" title="When the prompt cache expires, the next message re-caches the whole context at full price">
               Ask before re-caching more than
@@ -122,7 +143,7 @@ export function SettingsDialog({ onClose, page: first }: { onClose(): void; page
                 {[...new Set([...GUARDS, guard])].sort((x, y) => x - y).map((g) => <option key={g} value={g}>{g ? `${g / 1000}k tokens` : 'never ask'}</option>)}
               </select>
             </label>
-            <label className="settings-check" data-tip="New sessions get only Codiner's tools. The MCP chip or Claude turns servers on. Current sessions do not change.">
+            <label className="settings-check" data-tip="New sessions get only Codinger's tools, also when a server is on for every new session in the MCP dialog. The MCP chip or Claude turns servers on. When this is off, new sessions start with the servers on for every new session. Current sessions do not change.">
               <input type="checkbox" checked={st.settings.mcpStartOff !== false} onChange={(e) => void api('/api/settings', 'PUT', { mcpStartOff: e.target.checked })} />
               Start new sessions with my MCP servers off
             </label>
@@ -130,9 +151,13 @@ export function SettingsDialog({ onClose, page: first }: { onClose(): void; page
               <input type="checkbox" checked={st.settings.mcpClaude !== false} onChange={(e) => void api('/api/settings', 'PUT', { mcpClaude: e.target.checked })} />
               Let Claude turn on an MCP server when the task needs it
             </label>
-            <label className="settings-check" title="After 20 idle minutes, a call writes notes to the folder's .codiner/notes/, to start a new session from">
+            <label className="settings-check" title="After 20 idle minutes, a call writes notes to the folder's .codinger/notes/, to start a new session from">
               <input type="checkbox" checked={st.settings.notes !== false} onChange={(e) => void api('/api/settings', 'PUT', { notes: e.target.checked })} />
               Write notes on quiet sessions
+            </label>
+            <label className="settings-check" data-tip="Claude may estimate work in agent time and dollars, and saves each estimate with what the work took. Applies when a session starts again.">
+              <input type="checkbox" checked={st.settings.estimates !== false} onChange={(e) => void api('/api/settings', 'PUT', { estimates: e.target.checked })} />
+              Estimates in agent time and cost, measured against the work
             </label>
             <label className="settings-check" title="A short call keeps the 1-hour cache warm at the cache-read price. A later message then does not re-cache it all">
               Keep the cache warm for
@@ -158,12 +183,13 @@ export function SettingsDialog({ onClose, page: first }: { onClose(): void; page
           {page === 'cost' && <section className="settings-page"><CostPanel /></section>}
           {page === 'appearance' && <section className="settings-page"><AppearancePanel /></section>}
           {page === 'context' && <section className="settings-page"><StartContext /></section>}
+          {page === 'remote' && <section className="settings-page"><RemotePanel /></section>}
           {page === 'files' && <div className="files-body">
             <nav className="files-list">
               {files.map((f) => (
                 <div key={f.path} className={`file-row${f.path === sel ? ' on' : ''}`} onClick={() => pick(f.path)} title={f.path}>
-                  <span className="file-name">{f.path.split('/').pop()}</span>
-                  <span className="file-dir muted">{shortPath(f.path.split('/').slice(0, -1).join('/'))}</span>
+                  <span className="file-name">{f.path.split(/[\\/]/).pop()}</span>
+                  <span className="file-dir muted">{shortPath(f.path.replace(/[\\/][^\\/]*$/, ''))}</span>
                   <span className="file-meta muted">{!f.exists ? 'no file yet' : f.last ? `changed ${timeAgo(f.last)}` : ''}</span>
                   {!f.builtIn && <button className="icon-btn file-x" title="Stop tracking" onClick={(e) => { e.stopPropagation(); void untrack(f.path) }}><XIcon size={11} /></button>}
                 </div>
@@ -173,7 +199,7 @@ export function SettingsDialog({ onClose, page: first }: { onClose(): void; page
               </div>
             </nav>
             <section className="file-pane">
-              {stale && <div className="empty">Codiner's server is older than this page, so it has no file history yet. Restart Codiner, then open Settings again.</div>}
+              {stale && <div className="empty">Codinger's server is older than this page, so it has no file history yet. Restart Codinger, then open Settings again.</div>}
               {blame && <>
                 <div className="file-tabs">
                   {(['read', 'edit', 'history'] as const).map((t) => <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</button>)}
@@ -195,6 +221,30 @@ export function SettingsDialog({ onClose, page: first }: { onClose(): void; page
       </div>
     </div>
   )
+}
+
+// Push notifications, for this browser only: the hub sends them, so a machine's own page
+// needs the machine connected to web.codinger.app.
+function PushSetting() {
+  const st = useStore()
+  const [on, setOn] = useState<boolean | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  useEffect(() => { void pushSubscribed().then(setOn) }, [])
+  if (!pushSupported()) return null
+  const reachable = st.web || !!st.self
+  const toggle = async (want: boolean) => {
+    setBusy(true); setErr(null)
+    try { if (want) await enablePush(); else await disablePush(); setOn(want) } catch (e) { setErr(e instanceof Error ? e.message : String(e)) } finally { setBusy(false) }
+  }
+  return <>
+    <label className="settings-check">
+      <input type="checkbox" checked={!!on} disabled={busy || on === null || (!on && !reachable)} onChange={(e) => void toggle(e.target.checked)} />
+      Notify me in this browser when a session finishes, asks something, or needs a permission
+    </label>
+    {!reachable && !on && <div className="muted">Connect this machine to web.codinger.app in Remote access first: it sends the notifications.</div>}
+    {err && <div className="notice error">{err}</div>}
+  </>
 }
 
 function Who({ by, open }: { by: By; open(by: By): void }) {

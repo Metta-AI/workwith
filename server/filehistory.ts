@@ -1,6 +1,6 @@
 // Where the notes you and Claude keep came from. Each tracked file (AGENTS.md,
 // your global CLAUDE.md, the lead's LEAD_NOTES.md, and any you add in Settings)
-// keeps every version, with who made it: you in Settings, a Codiner session at
+// keeps every version, with who made it: you in Settings, a Codinger session at
 // the message where Claude edited it, a Claude Code session elsewhere (found
 // in its transcript), or someone outside. Blame per line comes from diffing the
 // versions in order.
@@ -66,7 +66,7 @@ export function touches(name: string, input: any, p: string): boolean {
   return false
 }
 
-// A Claude Code session (any, Codiner's or a terminal's) that touched the file in
+// A Claude Code session (any, Codinger's or a terminal's) that touched the file in
 // the last few minutes, from the tails of the transcripts written lately.
 function claudeEditor(p: string): { csid: string; cwd: string; toolUseId: string } | null {
   const since = Date.now() - 3 * 60_000
@@ -113,7 +113,7 @@ export function initFileHistory(o: { files(): string[]; sessions(): Session[]; c
   sessions = o.sessions
   changed = o.changed
   for (const p of tracked()) record(p, { kind: 'initial' })
-  // Edits by Codiner sessions are recorded as they happen (noteEdit); this catches the rest.
+  // Edits by Codinger sessions are recorded as they happen (noteEdit); this catches the rest.
   const seen = new Map<string, string>()
   setInterval(() => {
     for (const p of tracked()) {
@@ -135,7 +135,7 @@ function attribute(p: string): By {
   return s && seq != null ? { kind: 'session', sid: s.sid, title: s.title, seq } : { kind: 'claude', csid: ed.csid, cwd: ed.cwd }
 }
 
-// A Codiner session's tool call finished: if it touched a tracked file, record it now.
+// A Codinger session's tool call finished: if it touched a tracked file, record it now.
 export function noteEdit(name: string, input: any, by: By) {
   for (const p of tracked()) if (touches(name, input, p)) record(p, by)
 }
@@ -143,7 +143,7 @@ export function noteEdit(name: string, input: any, by: By) {
 // ---- blame ----------------------------------------------------------------------
 
 // For each line of b, the index of the line of a it is unchanged from, if any (LCS).
-function keep(a: string[], b: string[]): (number | null)[] {
+export function keep(a: string[], b: string[]): (number | null)[] {
   const n = a.length, m = b.length
   if (n * m > 4_000_000) return b.map(() => null)
   const dp = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1))

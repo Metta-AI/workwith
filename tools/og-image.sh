@@ -1,5 +1,5 @@
 #!/bin/sh
-# Renders site/og.png, the preview image for links to codiner.app, from the page
+# Renders site/og.png, the preview image for links to codinger.app, from the page
 # itself (its #og layout). Run it after you change the top of the page.
 cd "$(dirname "$0")/.."
 CHROME="${CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"

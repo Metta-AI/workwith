@@ -5,6 +5,7 @@ import { useMemo } from 'react'
 import type { Event, Part } from '../../shared/types.ts'
 import { itemsOf, type Item } from '../../shared/blocks.ts'
 import { draftsOf, hasContent, inboxOf, othersLive, state, useStore } from './store.ts'
+import { reviewDone } from './review.ts'
 
 export type ItemStatus =
   | 'open'        // in Claude's latest turn, nothing done yet
@@ -29,20 +30,25 @@ export function foldItems(events: Event[]): ItemFold {
       else if (p.kind === 'note' && p.itemKey) f.replies.set(p.itemKey, p)
       else if (p.kind === 'dismiss') for (const i of p.items) f.dismissed.add(i.key)
       else if (p.kind === 'done') for (const i of p.items) f.done.add(i.key)
+      // A review the agent asked for (<review>): your verdicts on it are the reply.
+      else if (p.kind === 'review') for (const v of p.files) if (/:r\d+$/.test(v.group)) f.replies.set(v.group, p)
     }
   }
   return f
 }
 
-export function draftStatus(sid: string, key: string): ItemStatus | null {
+// critical: only a comment with text counts as a reply to the item, not a reaction.
+export function draftStatus(sid: string, key: string, critical = false): ItemStatus | null {
   // Set aside or done wins over a reply, which can come first (a reaction in the item).
   for (const d of draftsOf(sid)) {
     if (d.kind === 'dismiss' && d.key === key) return 'dismissing'
     if (d.kind === 'done' && d.key === key) return 'completing'
   }
   for (const d of draftsOf(sid)) {
+    // A review is drafted when you decided on it or on each of its files (review.ts).
+    if (d.kind === 'verdict' && d.group === key && reviewDone(sid, key)) return 'drafted'
     if (d.kind === 'answer' && d.askKey === key && hasContent(d)) return 'drafted'
-    if (d.kind === 'note' && d.itemKey === key && hasContent(d)) return 'drafted'
+    if (d.kind === 'note' && d.itemKey === key && hasContent(d) && (!critical || (!d.reaction && /[\p{L}\p{N}]/u.test(d.text)))) return 'drafted'
   }
   // So does an answer someone else at the desk is writing now.
   for (const l of othersLive(state.sessions.find((x) => x.id === sid))) for (const p of l.parts) {
@@ -54,7 +60,8 @@ export function draftStatus(sid: string, key: string): ItemStatus | null {
 }
 
 export function trackItems(sid: string, events: Event[], fold: ItemFold): TrackedItem[] {
-  const lastUser = events.findLastIndex((e) => e.t === 'user')
+  // Autopilot's "go on" and messages from other sessions leave the questions before them open, for you to answer later.
+  const lastUser = events.findLastIndex((e) => e.t === 'user' && e.from !== 'autopilot' && e.from !== 'mail')
   const out: TrackedItem[] = []
   events.forEach((e, idx) => {
     if (e.t !== 'assistant' || e.synthetic) return
@@ -64,11 +71,13 @@ export function trackItems(sid: string, events: Event[], fold: ItemFold): Tracke
       for (const it of itemsOf(b.text)) {
         const key = `${msg}:${it.id}`
         const reply = fold.replies.get(key)
+        const critical = it.kind === 'consider' && it.critical
         const status: ItemStatus = fold.done.has(key) ? 'completed'
           : reply ? 'answered'
-          : fold.dismissed.has(key) ? 'dismissed'
+          // A reply drafted after the dismissal went shows as one.
+          : fold.dismissed.has(key) ? draftStatus(sid, key, critical) ?? 'dismissed'
           : idx < lastUser ? 'skipped'
-          : draftStatus(sid, key) ?? 'open'
+          : draftStatus(sid, key, critical) ?? 'open'
         out.push({ ...it, key, msg, status, reply })
       }
     })
@@ -97,6 +106,7 @@ export function revealItem(key: string) {
   const el = document.querySelector<HTMLElement>(`[data-item="${CSS.escape(key)}"]`)
   if (!el) return
   for (let d = el.closest('details'); d; d = d.parentElement?.closest('details') ?? null) d.open = true
+  if (el.matches('.folded')) el.querySelector<HTMLButtonElement>('.fold-btn')?.click()
   el.scrollIntoView({ block: 'center', behavior: 'smooth' })
   el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash')
 }

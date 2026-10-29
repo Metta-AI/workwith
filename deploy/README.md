@@ -1,16 +1,24 @@
-# Codiner for agent hosts ("work with <agent>")
+# Codinger as an agent's desk ("work with <agent>")
 
-One Codiner per agent EC2 host, running as the agent's user (`cubid`) in its home, on
-127.0.0.1:4545. Caddy serves it at `workwith.<agent>.example.com` (DNS-only A record
-to the tailnet IP), lets only guardians in by Tailscale login, and passes
-`Tailscale-User-Login` on, so Claude knows who is writing (`CODINER_USER_HEADER`).
+One Codinger per agent host, running as the agent's user in its home, on 127.0.0.1. A
+reverse proxy in front of it signs people in and names them in a header, so Claude knows
+who is writing (`CODINGER_USER_HEADER`). With `CODINGER_AGENT_NAME` set, the page is that
+agent's desk: its name, face and colours, an installable app, and replies signed by person.
+`server/agent.ts` lists every setting.
 
-Per host, once:
-1. Node 24 in /opt/node (official tarball, sha256 checked).
-2. Build `dist/` on the laptop (`npm run build`), then
-   `rsync -az --delete --exclude node_modules --exclude .git ./ ubuntu@<host>:/opt/codiner/`
-   and `npm ci --omit=dev` there.
-3. `<agent>/AGENTS.md` → `~cubid/.codiner/AGENTS.md` (the "work with" framing).
-4. `deploy/install.sh <agent> <host>` (systemd unit + Caddy site; needs sudo).
+Agent hosts at Softmax are set up by agents-toolkit (private, Metta-AI/agents-toolkit): it
+builds a tagged release into `/opt/codinger/releases/<tag>`, writes the settings and the
+systemd unit, adds the Caddy site, and goes back to the last release if the new one fails
+its health check. The files here are for setting up one host by hand.
 
-Update: build, rsync, then `sudo systemctl restart codiner-workwith`.
+By hand, once per host:
+1. Node 24 in `/opt/node`, and this repository built (`npm ci && npm run build`) in
+   `/opt/codinger`.
+2. A folder with `codinger.env` (the settings; see `server/agent.ts`), `caddy-site` (the
+   proxy's site for this host) and `AGENTS.md` (the "work with" framing).
+3. `deploy/install.sh <host> <folder> <agent user> [env file to source]`: the systemd unit,
+   the Caddy site, and the AGENTS.md, over SSH with sudo.
+
+Update: build in `/opt/codinger`, then `sudo systemctl restart codinger-workwith`.
+
+`butterfly/` runs a named agent on a laptop behind a Cloudflare quick tunnel, for a demo.

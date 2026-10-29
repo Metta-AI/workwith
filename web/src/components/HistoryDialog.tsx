@@ -1,10 +1,10 @@
 // Every Claude Code conversation on this machine (terminal ones included),
-// newest first. Resuming brings one into Codiner with its transcript.
+// newest first. Resuming brings one into Codinger with its transcript.
 
 import { useEffect, useState } from 'react'
 import { useEscape } from '../escape.ts'
 import type { HistoryItem, SessionMeta } from '../../../shared/types.ts'
-import { api, select } from '../store.ts'
+import { api, currentMachine, globalId, select, urlOf } from '../store.ts'
 import { timeAgo } from '../util.ts'
 import { shortPath } from './DirPicker.tsx'
 
@@ -17,17 +17,18 @@ export function HistoryDialog({ onClose }: { onClose(): void }) {
 
   useEffect(() => {
     const t = setTimeout(() => {
-      void fetch(`/api/history?q=${encodeURIComponent(q)}`).then((r) => r.json()).then(setItems).catch((e) => setErr(String(e)))
+      void fetch(urlOf(`/api/history?q=${encodeURIComponent(q)}`)).then((r) => r.json()).then(setItems).catch((e) => setErr(String(e)))
     }, q ? 180 : 0)
     return () => clearTimeout(t)
   }, [q])
 
   const open = async (h: HistoryItem) => {
-    if (h.codinerId) { select(h.codinerId); onClose(); return }
+    if (h.codingerId) { select(globalId(currentMachine(), h.codingerId)); onClose(); return }
     setBusy(h.id); setErr(null)
     try {
-      const m = await api<SessionMeta>(`/api/history/${h.id}/resume`)
-      select(m.id)
+      const machine = currentMachine()
+      const m = await api<SessionMeta>(`/api/history/${h.id}/resume`, 'POST', undefined, machine)
+      select(globalId(machine, m.id))
       onClose()
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)) } finally { setBusy(null) }
   }
@@ -45,7 +46,7 @@ export function HistoryDialog({ onClose }: { onClose(): void }) {
             <button key={h.id} className="history-item" disabled={busy !== null} onClick={() => void open(h)}>
               <div className="history-top">
                 <span className="history-title">{h.title}</span>
-                <span className="muted">{busy === h.id ? 'Opening…' : h.codinerId ? 'in Codiner' : timeAgo(h.mtime)}</span>
+                <span className="muted">{busy === h.id ? 'Opening…' : h.codingerId ? 'in Codinger' : timeAgo(h.mtime)}</span>
               </div>
               <div className="muted mono history-dir">{shortPath(h.cwd)}</div>
               {(h.lastPrompt || h.firstPrompt) && <div className="history-prompt">{(h.lastPrompt || h.firstPrompt).split('\n')[0]}</div>}

@@ -1,4 +1,4 @@
-// How Codiner looks: light or dark, an accent colour, the tone of its surfaces,
+// How Codinger looks: light or dark, an accent colour, the tone of its surfaces,
 // the font and its size, and whether critters move. Kept in the server's
 // settings, so every browser shares it; web/src/appearance.ts applies it,
 // styles.css holds the colours.

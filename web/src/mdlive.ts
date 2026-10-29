@@ -3,9 +3,14 @@
 // big) and the markers (**, _, `, #…) show only while the caret is in that
 // span or on that line. The field rebuilds its DOM from the text after each
 // change and puts the caret back at the same character, so positions here are
-// offsets into the text, where an image counts as its whole image link.
+// offsets into the text, where an image counts as its whole image link. A file
+// (shared/files.ts) is one pill the same way: it cannot be edited, only removed or moved.
+// So is a long paste (shared/pastes.ts); a click on it shows its text.
 
 import { imageToken, splitImages } from '../../shared/images.ts'
+import { fileToken, splitFiles } from '../../shared/files.ts'
+import { pasteLabel, pasteToken, splitPastes } from '../../shared/pastes.ts'
+import { media } from './store.ts'
 
 // ---- text ↔ DOM ---------------------------------------------------------------
 
@@ -18,10 +23,91 @@ export function imgNode(src: string, url?: string): HTMLImageElement {
   return img
 }
 
+const CLIP = '<svg class="icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 7.5l-5.3 5.3a3.2 3.2 0 01-4.5-4.5L8.6 2.9a2.1 2.1 0 013 3L6.3 11.2a1 1 0 01-1.5-1.5L9.5 5" /></svg>'
+
+export function fileNode(name: string): HTMLElement {
+  const s = document.createElement('span')
+  s.className = 'ri-file'
+  s.contentEditable = 'false'
+  s.draggable = true
+  s.dataset.file = name
+  s.innerHTML = CLIP
+  const t = document.createElement('span')
+  t.className = 'ri-file-name'
+  t.textContent = name
+  const x = document.createElement('span')
+  x.className = 'ri-file-x'
+  x.setAttribute('role', 'button')
+  x.setAttribute('aria-label', `Remove ${name}`)
+  x.textContent = '\u00d7'
+  s.append(t, x)
+  return s
+}
+
+// A file on its way: a pill with a spinner and no text, until the upload is done (Inputs.tsx).
+export function uploadNode(name: string): HTMLElement {
+  const s = fileNode(name)
+  delete s.dataset.file
+  s.draggable = false
+  s.classList.add('loading')
+  s.dataset.uploading = name
+  s.firstElementChild!.outerHTML = '<span class="ri-spin" aria-hidden="true"></span>'
+  s.querySelector('.ri-file-x')!.setAttribute('aria-label', `Stop the upload of ${name}`)
+  return s
+}
+
+const PASTE = '<svg class="icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h5l3 3v9H4z" /><path d="M9 2v3h3M6 8.5h4M6 11h4" /></svg>'
+
+// The text of each paste pill.
+export const pasteText = new WeakMap<HTMLElement, string>()
+
+export function pasteNode(text: string): HTMLElement {
+  const s = fileNode(pasteLabel(text))
+  delete s.dataset.file
+  s.classList.add('ri-paste')
+  s.dataset.paste = ''
+  s.firstElementChild!.outerHTML = PASTE
+  s.querySelector('.ri-file-x')!.setAttribute('aria-label', 'Remove the pasted text')
+  pasteText.set(s, text)
+  return s
+}
+
+// Chrome cannot put the caret before a pill at the start of a line: it puts it at
+// the end of the line above, and typing goes after the pill. A zero-width space
+// before the pill (a gap) gives the caret a place there. A gap is not text.
+const ZW = '\u200b'
+const gaps = new WeakSet<Node>()
+function gapNode(): Text {
+  const t = document.createTextNode(ZW)
+  gaps.add(t)
+  return t
+}
+// The text of a text node, up to a DOM offset.
+function textIn(t: Node, end?: number): string {
+  const s = (t.textContent ?? '').slice(0, end)
+  return gaps.has(t) ? s.replaceAll(ZW, '') : s
+}
+// The DOM offset in a text node for k characters of its text: in a gap, after its zero-width space.
+function domOffset(t: Node, k: number): number {
+  if (!gaps.has(t)) return k
+  const s = t.textContent ?? ''
+  let i = 0
+  for (let c = 0; i < s.length && (c < k || s[i] === ZW); i++) if (s[i] !== ZW) c++
+  return i
+}
+
+// An image, a file pill, an upload pill or a paste pill: one unit of the text.
+const isPill = (n: Node): n is HTMLElement => n instanceof HTMLElement && (n.dataset.file != null || n.dataset.paste != null || n.dataset.uploading != null)
+const isAtom = (n: Node): n is HTMLElement => n instanceof HTMLImageElement || isPill(n)
+
+// The text a pill stands for. An upload pill stands for no text yet.
+export const pillText = (n: HTMLElement) => n.dataset.paste != null ? pasteToken(pasteText.get(n) ?? '') : n.dataset.file != null ? fileToken(n.dataset.file) : ''
+
 // The text a node stands for.
 function textOf(n: Node, last: boolean): string {
-  if (n.nodeType === Node.TEXT_NODE) return n.textContent ?? ''
+  if (n.nodeType === Node.TEXT_NODE) return textIn(n)
   if (n instanceof HTMLImageElement) return n.dataset.url ? imageToken(n.dataset.url) : ''
+  if (isPill(n)) return pillText(n)
   // The browser keeps a <br> at the very end so a final newline shows; it is not text.
   if (n.nodeName === 'BR') return last ? '' : '\n'
   let out = ''
@@ -50,6 +136,7 @@ const INLINE: [RegExp, string, number, number][] = [
   [/\*\*[^*\n]+?\*\*/y, 'md-strong', 2, 2],
   [/__[^_\n]+?__/y, 'md-strong', 2, 2],
   [/~~[^~\n]+?~~/y, 'md-strike', 2, 2],
+  [/==(?=\S)[^=\n]*?\S==(?!=)/y, 'md-hl', 2, 2],
   [/\*[^*\s][^*\n]*?\*(?!\*)/y, 'md-em', 1, 1],
   [/_[^_\s][^_\n]*?_(?![\w])/y, 'md-em', 1, 1],
   [/\[[^\]\n]+\]\([^)\s]*\)/y, 'md-link', 1, 0],
@@ -105,7 +192,7 @@ function line(text: string, list: boolean): { nodes: Node[]; list: boolean } {
   if ((m = /^(\s*)([-*+] )(.*)$/.exec(text)))
     return { nodes: [hang('md-x md-li', m[1].length + 2, ...(m[1] ? [cols('', m[1])] : []), cols('md-bullet md-ul', m[2]), ...inline(m[3]))], list: true }
   if ((m = /^(\s*)(\d+[.)] )(.*)$/.exec(text)))
-    return { nodes: [hang('md-li', m[1].length + m[2].length, ...(m[1] ? [cols('', m[1])] : []), cols('md-bullet', m[2]), ...inline(m[3]))], list: true }
+    return { nodes: [hang('md-li', m[1].length + m[2].length, ...(m[1] ? [cols('', m[1])] : []), cols('md-bullet md-ol', m[2]), ...inline(m[3]))], list: true }
   if (list && (m = /^([ \t]+)(\S.*)$/.exec(text))) return { nodes: [hang('md-cont', m[1].length, cols('', m[1]), ...inline(m[2]))], list: true }
   if ((m = /^(> ?)(.*)$/.exec(text))) return { nodes: [span('md-x md-line md-quote', mark(m[1], true), ...inline(m[2]))], list: false }
   return { nodes: inline(text), list: false }
@@ -113,15 +200,26 @@ function line(text: string, list: boolean): { nodes: Node[]; list: boolean } {
 
 export function render(el: HTMLElement, value: string) {
   const nodes: Node[] = []
-  for (const r of splitImages(value)) {
-    if ('url' in r) { nodes.push(imgNode(r.url, r.url)); continue }
-    let list = false
-    r.text.split('\n').forEach((l, i) => {
-      if (i) nodes.push(document.createTextNode('\n'))
-      const out = line(l, list)
-      nodes.push(...out.nodes)
-      list = out.list
-    })
+  const pill = (n: HTMLElement) => {
+    const prev = nodes.at(-1)
+    if (!prev || isAtom(prev) || (prev.nodeType === Node.TEXT_NODE && prev.textContent!.endsWith('\n'))) nodes.push(gapNode())
+    nodes.push(n)
+  }
+  for (const c of splitPastes(value)) {
+    if ('paste' in c) { pill(pasteNode(c.paste)); continue }
+    for (const r of splitImages(c.text)) {
+      if ('url' in r) { nodes.push(imgNode(media(r.url), r.url)); continue }
+      for (const f of splitFiles(r.text)) {
+        if ('file' in f) { pill(fileNode(f.file)); continue }
+        let list = false
+        f.text.split('\n').forEach((l, i) => {
+          if (i) nodes.push(document.createTextNode('\n'))
+          const out = line(l, list)
+          nodes.push(...out.nodes)
+          list = out.list
+        })
+      }
+    }
   }
   // A final newline needs something after it to show as a line.
   if (value.endsWith('\n')) nodes.push(document.createElement('br'))
@@ -142,17 +240,21 @@ function offsetOf(el: HTMLElement, node: Node, off: number): number {
       return true
     }
     if (p.nodeType === Node.TEXT_NODE) {
-      if (p === node) { found = n + off; return true }
-      n += p.textContent?.length ?? 0
+      if (p === node) { found = n + textIn(p, off).length; return true }
+      n += textIn(p).length
       return false
     }
-    if (p !== el && (p instanceof HTMLImageElement || p.nodeName === 'BR')) { n += textOf(p, false).length; return false }
+    if (p !== el && (isAtom(p) || p.nodeName === 'BR')) { if (p.contains(node)) { found = n; return true } n += textOf(p, false).length; return false }
     for (const k of p.childNodes) if (walk(k)) return true
     return false
   }
   walk(el)
   return found < 0 ? n : found
 }
+
+// The text offset of a range's start (a drop point), or of a node (a pill).
+export const rangeOffset = (el: HTMLElement, r: Range) => offsetOf(el, r.startContainer, r.startOffset)
+export const nodeOffset = (el: HTMLElement, n: Node) => offsetOf(el, n.parentNode!, [...n.parentNode!.childNodes].indexOf(n as ChildNode))
 
 export function selectionOffsets(el: HTMLElement): [number, number] | null {
   const s = getSelection()
@@ -168,16 +270,16 @@ function positionAt(el: HTMLElement, target: number): [Node, number] {
   let best: [Node, number] | null = null
   const walk = (p: Node): boolean => {
     if (p.nodeType === Node.TEXT_NODE) {
-      const len = p.textContent?.length ?? 0
+      const len = textIn(p).length
       if (target >= n && target <= n + len) {
-        best = [p, target - n]
+        best = [p, domOffset(p, target - n)]
         // Prefer the start of the next text over the end of this one, unless this is the last.
         if (target < n + len) return true
       }
       n += len
       return false
     }
-    if (p !== el && (p instanceof HTMLImageElement || p.nodeName === 'BR')) {
+    if (p !== el && (isAtom(p) || p.nodeName === 'BR')) {
       const len = textOf(p, false).length
       if (target <= n && !best) { best = [p.parentNode!, [...p.parentNode!.childNodes].indexOf(p as ChildNode)]; return true }
       n += len
@@ -207,11 +309,82 @@ export function select(el: HTMLElement, start: number, end = start) {
   s.addRange(rangeAt(el, start, end))
 }
 
+// The image just before or after a collapsed caret, and on which side of it the caret is.
+function imageBesideCaret(el: HTMLElement): [HTMLImageElement, 'after' | 'before'] | null {
+  const s = getSelection()
+  if (!s?.rangeCount || !s.isCollapsed || !el.contains(s.anchorNode)) return null
+  const n = s.anchorNode!, off = s.anchorOffset
+  const text = n.nodeType === Node.TEXT_NODE
+  const prev = text ? (off === 0 ? n.previousSibling : null) : n.childNodes[off - 1]
+  const next = text ? (off === n.textContent?.length ? n.nextSibling : null) : n.childNodes[off]
+  if (prev instanceof HTMLImageElement) return [prev, 'after']
+  if (next instanceof HTMLImageElement) return [next, 'before']
+  return null
+}
+
+const fontMetrics = new Map<string, { ascent: number; descent: number; x: number }>()
+function metricsOf(font: string) {
+  let m = fontMetrics.get(font)
+  if (!m) {
+    const ctx = document.createElement('canvas').getContext('2d')!
+    ctx.font = font
+    const t = ctx.measureText('x')
+    m = { ascent: t.fontBoundingBoxAscent, descent: t.fontBoundingBoxDescent, x: t.actualBoundingBoxAscent }
+    fontMetrics.set(font, m)
+  }
+  return m
+}
+
+// Beside an image the browser draws the caret as tall as the whole line. There,
+// hide it (.ri-hide-caret) and show `fake` instead: the text's height, on the
+// text's baseline, blinking the same way.
+export function imageCaret(el: HTMLElement, fake: HTMLElement) {
+  const at = document.activeElement === el ? imageBesideCaret(el) : null
+  el.classList.toggle('ri-hide-caret', !!at)
+  fake.hidden = !at
+  if (!at) return
+  const [img, side] = at
+  const r = img.getBoundingClientRect(), st = getComputedStyle(img)
+  const m = metricsOf(getComputedStyle(img.parentElement!).font)
+  // vertical-align: middle puts the middle of the image's margin box half an x-height above the baseline.
+  const baseline = (r.top - parseFloat(st.marginTop) + r.bottom + parseFloat(st.marginBottom)) / 2 + m.x / 2
+  const box = fake.offsetParent!.getBoundingClientRect(), field = el.getBoundingClientRect()
+  fake.hidden = baseline < field.top || baseline > field.bottom
+  fake.style.left = `${(side === 'after' ? r.right : r.left - 1) - box.left}px`
+  fake.style.top = `${baseline - m.ascent - box.top}px`
+  fake.style.height = `${m.ascent + m.descent}px`
+  // A caret that moves shows at once, then blinks.
+  for (const a of fake.getAnimations()) a.currentTime = 0
+}
+
+// The caret, or the moving end of a selection (Shift with an arrow), before the
+// zero-width space of a gap moves after it, so it does not stop there twice.
+// The left arrow and Backspace in a gap act from before it, so they go past the
+// zero-width space at once.
+const inGap = (n: Node | null): n is Text => !!n && gaps.has(n) && n.textContent!.startsWith(ZW)
+export function gapKey(e: KeyboardEvent) {
+  const s = getSelection()
+  if (!s || !inGap(s.focusNode) || s.focusOffset !== 1) return
+  if (e.key === 'ArrowLeft' && e.shiftKey) s.extend(s.focusNode, 0)
+  else if ((e.key === 'ArrowLeft' || e.key === 'Backspace') && s.isCollapsed) s.collapse(s.focusNode, 0)
+}
+
 // A caret at the end of a list marker (or its indent) is drawn inside that
 // fixed-width box, short of the text: put it after the box.
 export function snapCaret(el: HTMLElement) {
   const s = getSelection()
-  if (!s?.rangeCount || !s.isCollapsed) return
+  if (!s?.rangeCount) return
+  // Just before a gap (at the end of the text before it, or between nodes) is the same place too.
+  const f = s.focusNode, o = s.focusOffset
+  const gap = inGap(f) && o === 0 ? f
+    : f?.nodeType === Node.TEXT_NODE && o === f.textContent!.length ? f.nextSibling
+    : f && f.nodeType !== Node.TEXT_NODE ? f.childNodes[o] : null
+  if (inGap(gap) && !(f === gap && o === 1)) {
+    if (s.isCollapsed) s.collapse(gap, 1)
+    else s.extend(gap, 1)
+    return
+  }
+  if (!s.isCollapsed) return
   const n = s.anchorNode
   if (n?.nodeType !== Node.TEXT_NODE || s.anchorOffset !== n.textContent?.length) return
   const box = n.parentElement
@@ -252,24 +425,22 @@ export function activate(el: HTMLElement) {
 
 // ---- markdown keys ----------------------------------------------------------------
 
-// Cmd+B, I, E, Shift+X and K wrap the selection, or unwrap it (markers inside
+// Cmd+B, I, E and Shift+X wrap the selection, or unwrap it (markers inside
 // or just outside it count); with nothing selected, the caret lands inside.
-const WRAP: Record<string, [string, string]> = { b: ['**', '**'], i: ['_', '_'], e: ['`', '`'], x: ['~~', '~~'], k: ['[', ']()'] }
+// Cmd+K is not here: it opens the palette (Palette.tsx).
+const WRAP: Record<string, [string, string]> = { b: ['**', '**'], i: ['_', '_'], e: ['`', '`'], x: ['~~', '~~'] }
 export function wrapKey(e: { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }, value: string, s: number, t: number): { value: string; start: number; end: number } | null {
   if (!(e.metaKey || e.ctrlKey) || e.altKey) return null
   const k = e.key.toLowerCase()
   if (!WRAP[k] || (k === 'x') !== e.shiftKey) return null
   const [a, b] = WRAP[k]
-  if (k !== 'k') {
-    if (value.slice(s - a.length, s) === a && value.slice(t, t + b.length) === b)
-      return { value: value.slice(0, s - a.length) + value.slice(s, t) + value.slice(t + b.length), start: s - a.length, end: t - a.length }
-    const sel = value.slice(s, t)
-    if (sel.length >= a.length + b.length && sel.startsWith(a) && sel.endsWith(b))
-      return { value: value.slice(0, s) + sel.slice(a.length, sel.length - b.length) + value.slice(t), start: s, end: t - a.length - b.length }
-  }
+  if (value.slice(s - a.length, s) === a && value.slice(t, t + b.length) === b)
+    return { value: value.slice(0, s - a.length) + value.slice(s, t) + value.slice(t + b.length), start: s - a.length, end: t - a.length }
+  const sel = value.slice(s, t)
+  if (sel.length >= a.length + b.length && sel.startsWith(a) && sel.endsWith(b))
+    return { value: value.slice(0, s) + sel.slice(a.length, sel.length - b.length) + value.slice(t), start: s, end: t - a.length - b.length }
   const v = value.slice(0, s) + a + value.slice(s, t) + b + value.slice(t)
-  // A link puts the caret where the URL goes.
-  return k === 'k' ? { value: v, start: t + a.length + b.length - 1, end: t + a.length + b.length - 1 } : { value: v, start: s + a.length, end: t + a.length }
+  return { value: v, start: s + a.length, end: t + a.length }
 }
 
 // Enter, done here so the browser adds no extra line: in a list item it starts

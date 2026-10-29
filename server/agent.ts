@@ -1,17 +1,19 @@
-// Codiner as one agent's desk, on the agent's own host behind a proxy that signs
+// Codinger as one agent's desk, on the agent's own host behind a proxy that signs
 // people in (deploy/README.md). All of it is off unless the environment asks:
 //
-//   CODINER_AGENT_NAME     the agent's name: the sidebar, the tab, "Message Synth"
-//   CODINER_AGENT_AVATAR   an image file: its face in the sidebar
-//   CODINER_AGENT_CSS      a CSS file that sets its colours (no theme prompt then)
-//   CODINER_AGENT_COLOR    the colour of the installed app's title bar, e.g. #0f4a44
-//   CODINER_USER_HEADER    the header the proxy names the signed-in person in
-//   CODINER_PEOPLE         names to show: "ada@example.com=Ada,grace@example.com=Grace"
-//                          (otherwise the login before the @, capitalised)
-//   CODINER_ASK_NAME       1: a browser that the proxy names nobody in asks its person for a
-//                          name and keeps it (cookie codiner.name). Nothing checks that name:
-//                          only for a page that people reach without a sign-in, e.g. a tunnel
-//   CODINER_HOSTS          (server/index.ts) may hold "*.trycloudflare.com" for such a tunnel
+//   CODINGER_AGENT_NAME     the agent's name: the sidebar, the tab, "Message Ada"
+//   CODINGER_AGENT_AVATAR   an image file: its face in the sidebar
+//   CODINGER_AGENT_CSS      a CSS file that sets its colours (no theme prompt then)
+//   CODINGER_AGENT_COLOR    the colour of the installed app's title bar, e.g. #0f4a44
+//   CODINGER_USER_HEADER    the header the proxy names the signed-in person in
+//   CODINGER_PEOPLE         names to show: "ada@example.com=Ada,grace@example.com=Grace"
+//                           (otherwise the login before the @, capitalised)
+//   CODINGER_ASK_NAME       1: a browser that the proxy names nobody in asks its person for a
+//                           name and keeps it (cookie codinger.name). Nothing checks that name:
+//                           only for a page that people reach without a sign-in, e.g. a tunnel
+//   CODINGER_BILLING        api: show API spend, not plan limits (Bedrock and Vertex need not say)
+//   CODINGER_NO_SHELL       (server/index.ts) 1: no shell commands, for a page open to strangers
+//   CODINGER_HOSTS          (server/index.ts) may hold "*.trycloudflare.com" for such a tunnel
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -19,24 +21,28 @@ import type http from 'node:http'
 import type { AgentInfo, Person } from '../shared/types.ts'
 
 const env = process.env
-const AVATAR = env.CODINER_AGENT_AVATAR && fs.existsSync(env.CODINER_AGENT_AVATAR) ? env.CODINER_AGENT_AVATAR : null
+// Codinger was called Codiner until October 2026; the old names (CODINER_*) still work.
+export const desk = (key: string): string | undefined => env[`CODINGER_${key}`] ?? env[`CODINER_${key}`]
+const existing = (file: string | undefined) => file && fs.existsSync(file) ? file : null
+const NAME = desk('AGENT_NAME')
+const AVATAR = existing(desk('AGENT_AVATAR'))
 const AVATAR_TYPE = AVATAR ? { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml' }[path.extname(AVATAR).toLowerCase()] ?? 'application/octet-stream' : ''
-const THEME = env.CODINER_AGENT_CSS && fs.existsSync(env.CODINER_AGENT_CSS) ? env.CODINER_AGENT_CSS : null
+const THEME = existing(desk('AGENT_CSS'))
 
-export const ASK_NAME = env.CODINER_ASK_NAME === '1'
+export const ASK_NAME = desk('ASK_NAME') === '1'
 
 export const agentInfo = (): AgentInfo | undefined =>
-  env.CODINER_AGENT_NAME ? { name: env.CODINER_AGENT_NAME, avatar: !!AVATAR, theme: !!THEME } : undefined
+  NAME ? { name: NAME, avatar: !!AVATAR, theme: !!THEME } : undefined
 
 // Claude Code on Bedrock or Vertex bills each token; there is no plan with limits to show.
 export const billing = (): 'api' | 'plan' =>
-  env.CLAUDE_CODE_USE_BEDROCK || env.CLAUDE_CODE_USE_VERTEX || env.CODINER_BILLING === 'api' ? 'api' : 'plan'
+  env.CLAUDE_CODE_USE_BEDROCK || env.CLAUDE_CODE_USE_VERTEX || desk('BILLING') === 'api' ? 'api' : 'plan'
 
-const NAMES = new Map((env.CODINER_PEOPLE ?? '').split(',').flatMap((x) => {
+const NAMES = new Map((desk('PEOPLE') ?? '').split(',').flatMap((x) => {
   const at = x.indexOf('=')
   return at > 0 ? [[x.slice(0, at).trim().toLowerCase(), x.slice(at + 1).trim()] as [string, string]] : []
 }))
-const HEADER = env.CODINER_USER_HEADER?.toLowerCase()
+const HEADER = desk('USER_HEADER')?.toLowerCase()
 
 export function nameOf(login: string): string {
   const named = NAMES.get(login.toLowerCase())
@@ -45,8 +51,8 @@ export function nameOf(login: string): string {
   return local ? local[0].toUpperCase() + local.slice(1) : login
 }
 
-// The person behind a request, as the proxy names them; null when Codiner can't tell.
-// The proxy's word comes first; a name the browser gave (CODINER_ASK_NAME) only fills in.
+// The person behind a request, as the proxy names them; null when Codinger can't tell.
+// The proxy's word comes first; a name the browser gave (CODINGER_ASK_NAME) only fills in.
 export function personOf(req: http.IncomingMessage): Person | null {
   const raw = HEADER ? req.headers[HEADER] : undefined
   const login = (Array.isArray(raw) ? raw[0] : raw)?.trim()
@@ -55,7 +61,7 @@ export function personOf(req: http.IncomingMessage): Person | null {
 }
 
 function guestOf(req: http.IncomingMessage): Person | null {
-  const m = /(?:^|;\s*)codiner\.name=([^;]*)/.exec(req.headers.cookie ?? '')
+  const m = /(?:^|;\s*)codinger\.name=([^;]*)/.exec(req.headers.cookie ?? '') ?? /(?:^|;\s*)codiner\.name=([^;]*)/.exec(req.headers.cookie ?? '')
   let name = ''
   try { name = m ? decodeURIComponent(m[1]) : '' } catch { /* a broken cookie: no name */ }
   name = name.replace(/[\p{C}]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 40)
@@ -73,10 +79,10 @@ function iconSize(file: string): string {
 
 // What makes the page installable as an app: the agent's name and its face as the icon.
 function manifest() {
-  const name = env.CODINER_AGENT_NAME ?? 'Codiner'
-  const color = env.CODINER_AGENT_COLOR ?? '#1d1c1a'
+  const name = NAME ?? 'Codinger'
+  const color = desk('AGENT_COLOR') ?? '#1d1c1a'
   return {
-    name: env.CODINER_AGENT_NAME ? `Work with ${name}` : name, short_name: name,
+    name: NAME ? `Work with ${name}` : name, short_name: name,
     start_url: '/', scope: '/', display: 'standalone', background_color: color, theme_color: color,
     icons: AVATAR ? [{ src: '/agent/avatar', sizes: iconSize(AVATAR), type: AVATAR_TYPE, purpose: 'any' }] : [],
   }

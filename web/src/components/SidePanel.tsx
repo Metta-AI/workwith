@@ -1,0 +1,46 @@
+// The panel beside a session, one tab at a time: its questions and items (Issues, AttentionPanel.tsx),
+// what its agent showed (Artifacts, Artifacts.tsx), and its files (Files, FileBrowser.tsx).
+// wide: it takes the conversation's place too, because you asked or because the two do not fit
+// side by side (auto). A tab you opened stays mounted, so it keeps its place when you come back.
+
+import { useState } from 'react'
+import { type PanelTab } from '../store.ts'
+import { useItems } from '../items.ts'
+import { ArtifactIcon, ArtifactPane, NarrowIcon, WideIcon } from './Artifacts.tsx'
+import { AttentionPanel, ItemCount } from './AttentionPanel.tsx'
+import { FileBrowser } from './FileBrowser.tsx'
+import { useReview } from './Review.tsx'
+import { FolderIcon, PanelIcon, XIcon } from './Icons.tsx'
+import type { SessionMeta } from '../../../shared/types.ts'
+
+const LABEL: Record<PanelTab, string> = { preview: 'Artifacts', files: 'Files', items: 'Issues' }
+const ICON: Record<PanelTab, React.ReactNode> = { preview: <ArtifactIcon size={13} />, files: <FolderIcon size={13} />, items: <PanelIcon size={13} /> }
+
+// full: the session's width, which the panel takes when wide.
+type Props = { m: SessionMeta; tab: PanelTab; tabs: PanelTab[]; width: number; full: number; wide: boolean; auto: boolean; onTab(t: PanelTab): void; onWide(): void; onHide(): void }
+
+export function SidePanel({ m, tab, tabs, width, full, wide, auto, onTab, onWide, onHide }: Props) {
+  const [seen, setSeen] = useState<Set<PanelTab>>(() => new Set([tab]))
+  if (!seen.has(tab)) setSeen(new Set([...seen, tab]))
+  const waiting = useItems(m.id).filter((i) => i.status === 'open')
+  const left = useReview(m).n.left
+  return (
+    <aside className={`side-panel${wide ? ' wide' : ''}`} style={wide ? undefined : { width }} data-pid="side-panel">
+      <div className="panel-tabs" role="tablist">
+        {tabs.map((t) => (
+          <button key={t} role="tab" aria-selected={t === tab} className={`panel-tab${t === tab ? ' on' : ''}`} data-pid={`panel-tab-${t}`} onClick={() => onTab(t)}>
+            {ICON[t]}<span>{LABEL[t]}</span>{t === 'items' && waiting.length > 0 && <ItemCount items={waiting} />}{t === 'files' && left > 0 && <span className="count rv-count">{left}</span>}
+          </button>
+        ))}
+        <span className="grow" />
+        {!auto && <button className="icon-btn" data-tip={wide ? 'Show the conversation' : 'Use the full width'} onClick={onWide}>{wide ? <NarrowIcon size={14} /> : <WideIcon size={14} />}</button>}
+        <button className="icon-btn" data-tip="Hide" onClick={onHide}><XIcon size={13} /></button>
+      </div>
+      {tabs.filter((t) => seen.has(t)).map((t) => (
+        <div key={t} className="panel-body" hidden={t !== tab}>
+          {t === 'preview' ? <ArtifactPane sid={m.id} /> : t === 'files' ? <FileBrowser m={m} width={wide ? full : width} /> : <AttentionPanel sid={m.id} />}
+        </div>
+      ))}
+    </aside>
+  )
+}

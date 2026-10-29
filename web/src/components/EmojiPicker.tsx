@@ -40,12 +40,13 @@ export function EmojiPicker({ onPick, onClose }: { onPick(e: string): void; onCl
   const flat = [...shown, ...groups.flatMap(([, es]) => es.map((e) => e.emoji))]
   const COLS = 8
   const btn = (e: string, i: number) => (
-    <button key={`${i}${e}`} className={i === at ? 'on' : ''} title={list.find((x) => x.emoji === e)?.name ?? ''} onClick={() => onPick(e)}
+    <button key={`${i}${e}`} className={i === at ? 'on' : ''} onClick={() => onPick(e)}
       ref={i === at ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}>{e}</button>
   )
   return (
     <div className="emoji-picker" ref={box} style={up ? { top: 'auto', bottom: 'calc(100% + 4px)' } : undefined} onMouseDown={(e) => { if (e.target !== e.currentTarget.querySelector('input')) e.preventDefault() }}>
-      <input autoFocus placeholder="Search emoji" value={q} onChange={(e) => { setQ(e.target.value); setAt(-1) }} onKeyDown={(e) => {
+      {/* Not on a touch screen, where the keyboard would come up and move the emoji under the finger. */}
+      <input autoFocus={!matchMedia('(pointer: coarse)').matches} placeholder="Search emoji" value={q} onChange={(e) => { setQ(e.target.value); setAt(-1) }} onKeyDown={(e) => {
         const grid = at >= 0
         if (e.key === 'ArrowDown') { e.preventDefault(); setAt((i) => i < 0 ? 0 : Math.min(flat.length - 1, i + COLS)) }
         else if (e.key === 'ArrowUp' && grid) { e.preventDefault(); setAt((i) => i - COLS < 0 ? -1 : i - COLS) }

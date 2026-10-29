@@ -1,4 +1,4 @@
-/* The live copy of a Codiner reply (demo.js). Colours follow web/src/styles.css. */
+/* The live copy of a Codinger reply (demo.js). Colours follow web/src/styles.css. */
 :root {
   --d-warn: #d4a72c; --d-ok: #3fb950; --d-blue: #4c8dff; --d-bad: #e5534b; --d-hl-focus: rgba(255, 170, 0, .62);
   --sx-kw: #a626a4; --sx-str: #50a14f; --sx-num: #986801; --sx-com: #a0a1a7; --sx-fn: #4078f2;

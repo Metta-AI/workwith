@@ -1,7 +1,7 @@
 // How much of your plan's usage limits a token costs, learned by watching.
 // Claude Code reports the limits only as percentages used (rate_limit_event),
 // never in tokens. So the meter adds up what every Claude Code conversation on
-// this machine spends (Codiner's and the terminal's: all write transcripts to
+// this machine spends (Codinger's and the terminal's: all write transcripts to
 // ~/.claude/projects) between two reports, and compares that with how far the
 // percentages moved. Everything it sees goes to meter.jsonl, to check later how
 // steady the estimate is (GET /api/meter).
@@ -76,7 +76,7 @@ function files(dir: string, depth: number, out: string[]) {
 // from their end; new files from their start.
 export function poll() {
   const all: string[] = []
-  files(PROJECTS, 3, all)
+  files(PROJECTS, 6, all)   // workflow agents: <project>/<session>/subagents/workflows/<run>/agent-….jsonl
   if (!started) {
     started = true
     load()
@@ -141,6 +141,15 @@ export function limit(u: Usage) {
   samples.push(s)
   samples = samples.filter((x) => Date.now() - x.t < KEEP)
   log({ ...s, cum: usd(s.cum), k: 'limit', status: u.status })
+}
+
+// The last report saved, so after a restart the limits show before a session sends the next one.
+// Not one older than the 5-hour window, nor a 5-hour share whose window has reset since.
+export function last(): Usage {
+  const s = samples.at(-1)
+  if (!s || Date.now() - s.t > 5 * 3600_000) return {}
+  const live = s.resetsAt == null || s.resetsAt * 1000 > Date.now()
+  return { fiveHour: live ? s.five : undefined, sevenDay: s.seven, resetsAt: live ? s.resetsAt : undefined }
 }
 
 // Consecutive reports in one run, with spend between them and the percentage

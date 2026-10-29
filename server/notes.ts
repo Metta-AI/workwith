@@ -1,8 +1,8 @@
-// Rolling notes and keep-warm. While a session waits for you, Codiner makes a few
+// Rolling notes and keep-warm. While a session waits for you, Codinger makes a few
 // one-off calls on its conversation (Session.forkCommand: forked and not saved,
 // so the conversation stays as it is). Each call reads the prompt cache, which
 // keeps it warm for another TTL. The first call in a spell of quiet also brings
-// the notes in .codiner/notes/<id>.md up to date, to start a new session from.
+// the notes in .codinger/notes/<id>.md up to date, to start a new session from.
 // The worker keeps those notes itself as it works (server/prompts.ts); this call
 // fills the gaps with edits, so it neither undoes the worker's nor yours, and when
 // the worker kept up it costs little more than a keep-alive call.
@@ -24,6 +24,7 @@ import type { SessionMeta, Settings, Usage } from '../shared/types.ts'
 import { DEFAULT_CACHE_GUARD } from '../shared/cache.ts'
 import { KEEP_WARM, notesFile } from '../shared/notes.ts'
 import { spend } from './meter.ts'
+import { offTranscript } from './usage.ts'
 import { addSpend, coldCost, costOf, priceOf, warmCost } from '../shared/prices.ts'
 import { DATA } from './store.ts'
 import { NOTES_SECTIONS } from './prompts.ts'
@@ -38,9 +39,9 @@ const NOTES_MIN = 20_000         // less context than this is not worth notes
 const TIMEOUT = 5 * 60_000
 const LOG = path.join(DATA, 'notes.jsonl')
 
-const PING = `[Codiner, automatic] A keep-alive call from Codiner, not a message from the user. Your reply is not added to the conversation. Do not use any tools. Reply with the single word: ok`
+const PING = `[Codinger, automatic] A keep-alive call from Codinger, not a message from the user. Your reply is not added to the conversation. Do not use any tools. Reply with the single word: ok`
 
-const REQUEST = `[Codiner, automatic] A request from Codiner, not a message from the user. Your reply is not added to the conversation. Do not use any tools.`
+const REQUEST = `[Codinger, automatic] A request from Codinger, not a message from the user. Your reply is not added to the conversation. Do not use any tools.`
 const KEEP = `Keep exact names: files, identifiers, commands, numbers. Leave out what the repository already records, such as the code itself and git history. Keep them compact: at most about 3,000 words, and most sessions need far fewer.`
 
 // No notes yet: all of them. Notes already: only edits, since you or the worker may have written them.
@@ -82,9 +83,11 @@ const log = (x: object) => fs.appendFile(LOG, JSON.stringify({ t: Date.now(), ..
 // ---- the notes file --------------------------------------------------------
 
 export const notesPath = (m: SessionMeta) => path.join(m.cwd, notesFile(m.id))
-const HEAD = /^# .*\n\n<!-- codiner notes .*-->\n\n/
+// Codinger was called Codiner until October 2026: notes from then are in .codiner/notes/.
+const oldNotesPath = (m: SessionMeta) => path.join(m.cwd, '.codiner', 'notes', `${m.id}.md`)
+const HEAD = /^# .*\n\n<!-- coding?er notes .*-->\n\n/
 
-// The notes' folder, kept out of git: the worker may write the file before Codiner does.
+// The notes' folder, kept out of git: the worker may write the file before Codinger does.
 export function notesDir(m: SessionMeta): string {
   const dir = path.dirname(notesPath(m))
   try {
@@ -92,18 +95,22 @@ export function notesDir(m: SessionMeta): string {
     // Notes are yours, not the repository's: keep them out of git unless you say otherwise.
     const ignore = path.join(dir, '.gitignore')
     if (!fs.existsSync(ignore)) fs.writeFileSync(ignore, '*\n')
+    if (!fs.existsSync(notesPath(m)) && fs.existsSync(oldNotesPath(m))) fs.renameSync(oldNotesPath(m), notesPath(m))
   } catch { /* a directory we cannot write to: no notes there */ }
   return dir
 }
 
 export function readNotes(m: SessionMeta): string | null {
-  try { return fs.readFileSync(notesPath(m), 'utf8').replace(HEAD, '').trim() || null } catch { return null }
+  for (const file of [notesPath(m), oldNotesPath(m)]) {
+    try { return fs.readFileSync(file, 'utf8').replace(HEAD, '').trim() || null } catch { /* not there */ }
+  }
+  return null
 }
 
 function saveNotes(m: SessionMeta, body: string) {
   const file = notesPath(m)
   notesDir(m)
-  const head = `# ${m.title}\n\n<!-- codiner notes · session ${m.id} · ${new Date().toISOString()} · from ${k(m.context.used)} tokens of context -->\n\n`
+  const head = `# ${m.title}\n\n<!-- codinger notes · session ${m.id} · ${new Date().toISOString()} · from ${k(m.context.used)} tokens of context -->\n\n`
   fs.writeFileSync(file, head + body.trim() + '\n')
 }
 
@@ -238,7 +245,7 @@ async function call(s: Session, kind: 'notes' | 'ping') {
   const { cmd, args, cwd, env } = s.forkCommand()
   let out = '', err = ''
   const code = await new Promise<number | null>((resolve) => {
-    const p = spawn(cmd, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
+    const p = spawn(cmd, args, { cwd, env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
     const timer = setTimeout(() => p.kill('SIGTERM'), TIMEOUT)
     p.stdout.setEncoding('utf8').on('data', (d: string) => { out += d })
     p.stderr.setEncoding('utf8').on('data', (d: string) => { err = (err + d).slice(-1000) })
@@ -258,6 +265,7 @@ async function call(s: Session, kind: 'notes' | 'ping') {
     n.spent = (n.spent ?? 0) + costOf(u, model)
     addSpend(m, costOf(u, model), true)
     spend(u, model)
+    offTranscript(m.claudeSessionId, m.cwd, u, model)
     n.calls = (n.calls ?? 0) + 1
     // The call read the cache (or wrote it): its clock starts again at this call.
     if (m.cache) m.cache.at = Math.max(m.cache.at, started)

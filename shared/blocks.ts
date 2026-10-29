@@ -8,6 +8,10 @@
 //   <run title="…"> … </run>            a command for the user to run; the UI offers a button
 //   <draft id="…" title="…"> … </draft> text for the user to edit and send back (a commit
 //                                       message, an email); an item, answered like an <ask>
+//   <review title="…"> … </review>      files the agent asks you to approve or reject, one
+//                                       path on each line (the Files tab, web/src/review.ts)
+//
+//   <autopilot-stop reason="…"/>       Claude ends autopilot (server/autopilot.ts); not shown
 //
 // Markdown works inside, and sections nest. Lines inside code fences are left
 // alone. A section still open at the end (a reply still streaming) holds what
@@ -16,14 +20,15 @@
 
 import { parseAskBody, parseAsks, type Ask } from './asks.ts'
 
-export type SectionKind = 'answer' | 'details' | 'consider' | 'ask' | 'run' | 'draft'
+export type SectionKind = 'answer' | 'details' | 'consider' | 'ask' | 'run' | 'draft' | 'review'
 export type Section = { kind: SectionKind; title: string; attrs: Record<string, string>; body: Segment[]; closed: boolean }
 export type Segment = { text: string } | Section
 
-const TAGS = 'answer|details|consider|ask|run|draft'
+const TAGS = 'answer|details|consider|ask|run|draft|review'
 const OPEN = new RegExp(`^\\s*<(${TAGS})((?:\\s+[\\w-]+(?:\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]+))?)*)\\s*>(.*)$`)
 const CLOSE = new RegExp(`^(.*?)</(${TAGS})>\\s*$`)
 const LEGACY = /^:::\s*(summary|more|consider)\b\s*(.*)$/
+const STOP = /^\s*<autopilot-stop((?:\s+[\w-]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>/]+))?)*)\s*\/?>\s*(?:<\/autopilot-stop>\s*)?$/
 const LEGACY_KIND: Record<string, SectionKind> = { summary: 'answer', more: 'details', consider: 'consider' }
 
 function attrsOf(s: string): Record<string, string> {
@@ -55,6 +60,7 @@ export function segmentsOf(text: string): Segment[] {
     }
     if (fence) { buf.push(line); continue }
     let m: RegExpExecArray | null
+    if (STOP.test(line)) continue
     if ((m = OPEN.exec(line))) {
       open(m[1] as SectionKind, attrsOf(m[2]))
       let rest = m[3]
@@ -87,6 +93,19 @@ export function segmentsOf(text: string): Segment[] {
   return root
 }
 
+// Claude's reason to end autopilot, when the text has an <autopilot-stop> line
+// outside code fences ('' without a reason); null when it has none.
+export function autopilotStop(text: string): string | null {
+  let fence = ''
+  for (const line of text.split('\n')) {
+    const f = /^\s*(`{3,}|~{3,})/.exec(line)?.[1]
+    if (f && (!fence || (f[0] === fence[0] && f.length >= fence.length && !line.trim().slice(f.length)))) { fence = fence ? '' : f; continue }
+    const m = fence ? null : STOP.exec(line)
+    if (m) return attrsOf(m[1]).reason?.trim() ?? ''
+  }
+  return null
+}
+
 // An <ask> section as an Ask. `index` counts the asks before it in the message.
 export function askOf(sec: Section, index: number): Ask {
   const body = sec.body.map((s) => ('text' in s ? s.text : '')).join('\n')
@@ -107,17 +126,50 @@ export function commandOf(sec: Section): string {
   return (/^(`{3,}|~{3,})[^\n]*\n([\s\S]*?)\n\1\s*$/.exec(body)?.[2] ?? body).trim()
 }
 
+// A <review> section holds the agent's text (what changed, its state, what to test, what it needs from
+// you) and its files: each line that is only a path (maybe in a list, in backticks, with :line).
+const PATH_LINE = /^\s*(?:[-*+]\s+)?`?([^\s`]+?)`?(?::\d+(?:[-:]\d+)?)?\s*$/
+const isPath = (p: string) => /[\\/]/.test(p) || /\.[A-Za-z0-9]{1,8}$/.test(p)
+const bodyOf = (sec: Section) => sec.body.map((s) => ('text' in s ? s.text : '')).join('\n')
+
+export function reviewFilesOf(sec: Section): string[] {
+  const out: string[] = []
+  for (const line of bodyOf(sec).split('\n')) {
+    const p = PATH_LINE.exec(line)?.[1]
+    if (p && isPath(p) && !out.includes(p)) out.push(p)
+  }
+  return out
+}
+
+// The text of a <review> section without its lines of paths. Each line of it is a paragraph of its
+// own (the agent writes them one under the other), outside code blocks and lists.
+const paragraphs = (t: string) => t.split(/(^```[\s\S]*?^```)/m).map((x, i) => i % 2 ? x : x.replace(/([^\n])\n(?![\n\s]|[-*+] |[>#|]|\d+\. )/g, '$1\n\n')).join('')
+export const reviewTextOf = (sec: Section): string =>
+  paragraphs(bodyOf(sec).split('\n').filter((l) => { const p = PATH_LINE.exec(l)?.[1]; return !(p && isPath(p)) }).join('\n').replace(/^\s+|\s+$/g, ''))
+
+// The <review> sections of a message, in order.
+export function reviewsOf(text: string): { title: string; text: string; files: string[] }[] {
+  const out: { title: string; text: string; files: string[] }[] = []
+  const walk = (segs: Segment[]) => { for (const s of segs) if (!('text' in s)) { if (s.kind === 'review') out.push({ title: s.title, text: reviewTextOf(s), files: reviewFilesOf(s) }); else walk(s.body) } }
+  walk(segmentsOf(text))
+  return out
+}
+
 // Things in a message that want a response: questions and items to consider.
 // Ids match what the UI renders: asks by their id (or q1, q2…), items c1, c2…
 // done: the item is something to do, so it can be marked done (`done`, or it holds a <run>).
+// critical: the agent marked the item a big deal (`critical`), shown in red.
 // parent: the item to consider it sits in, if any.
-export type Item = ({ kind: 'ask'; id: string; label: string; ask: Ask } | { kind: 'consider'; id: string; label: string; done: boolean }) & { parent?: string }
+// A <review> is an item too (r1, r2…): it waits for your decision (web/src/review.ts).
+export type Item = ({ kind: 'ask'; id: string; label: string; ask: Ask } | { kind: 'consider'; id: string; label: string; done: boolean; critical: boolean } | { kind: 'review'; id: string; label: string }) & { parent?: string }
+
+export const isCritical = (sec: Section): boolean => 'critical' in sec.attrs
 
 export const isTask = (sec: Section): boolean => 'done' in sec.attrs || sec.body.some((s) => !('text' in s) && (s.kind === 'run' || isTask(s)))
 
 export function itemsOf(text: string): Item[] {
   const out: Item[] = []
-  let asks = 0, considers = 0, drafts = 0
+  let asks = 0, considers = 0, drafts = 0, reviews = 0
   const walk = (segs: Segment[], parent?: string) => {
     const under = parent ? { parent } : {}
     for (const s of segs) {
@@ -130,8 +182,10 @@ export function itemsOf(text: string): Item[] {
         out.push({ kind: 'ask', id: a.id, label: a.question.split('\n')[0], ask: a, ...under })
       } else if (s.kind === 'consider') {
         const id = `c${++considers}`
-        out.push({ kind: 'consider', id, label: s.title || 'Item', done: isTask(s), ...under })
+        out.push({ kind: 'consider', id, label: s.title || 'Item', done: isTask(s), critical: isCritical(s), ...under })
         walk(s.body, id)
+      } else if (s.kind === 'review') {
+        out.push({ kind: 'review', id: `r${++reviews}`, label: s.title || 'Review', ...under })
       } else walk(s.body, parent)
     }
   }

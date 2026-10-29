@@ -7,20 +7,24 @@
 // has arrived.
 
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import type { Token, Tokens } from 'marked'
 import DOMPurify from 'dompurify'
 import { parseAskBody, type Ask } from '../../../shared/asks.ts'
-import { askOf, commandOf, draftOf, isTask, segmentsOf, type Segment } from '../../../shared/blocks.ts'
+import { askOf, commandOf, draftOf, isCritical, isTask, reviewFilesOf, reviewTextOf, segmentsOf, type Segment } from '../../../shared/blocks.ts'
 import type { Anchor, Person } from '../../../shared/types.ts'
-import { marked, renderInline, renderText } from '../util.ts'
-import { anchorFromRange, rangesFor, setHighlights } from '../anchoring.ts'
+import { holdKeyboard, marked, renderInline, renderText, served } from '../util.ts'
+import { anchorFromRange, mediaIn, passageQuote, rangesFor, setHighlights } from '../anchoring.ts'
 import { render as renderLive } from '../mdlive.ts'
 import { Who } from './Who.tsx'
-import { addDraft, api, changed, dismissItem, draftsOf, markDone, othersLive, removeDraft, setDoneText, state, uid, undismissItem, updateDraft, useStore, type AnswerDraft, type DoneDraft, type NoteDraft } from '../store.ts'
+import { addDraft, api, changed, LOCAL, machineOf, dismissItem, draftsOf, markDone, othersLive, removeDraft, reviveItem, setDoneText, state, uid, undismissItem, updateDraft, useStore, type AnswerDraft, type DoneDraft, type NoteDraft } from '../store.ts'
 import type { TrackedItem } from '../items.ts'
-import { RichInput, Thumbs } from './Inputs.tsx'
-import { CheckIcon, CommentIcon, TerminalIcon, UndoIcon, XIcon } from './Icons.tsx'
+import { focusField, RichInput, Thumbs } from './Inputs.tsx'
+import { CheckIcon, ChevronIcon, CommentIcon, TerminalIcon, UndoIcon, XIcon } from './Icons.tsx'
 import { EmojiPicker } from './EmojiPicker.tsx'
+import { openFile } from './FileBrowser.tsx'
+import { ReviewCard } from './Review.tsx'
+import { ArtifactFrame } from './Artifacts.tsx'
 import { focusPassage, onPassage } from './Margin.tsx'
 import { lastEmoji, topEmoji, usedEmoji } from '../emoji.ts'
 import { highlight } from '../highlight.ts'
@@ -29,26 +33,51 @@ import { highlight } from '../highlight.ts'
 const Done = ({ status }: { status: string }) =>
   status === 'answered' ? <span className="item-done ok" title="Answered"><CheckIcon size={13} /></span>
   : status === 'completed' ? <span className="item-done ok" title="Done"><CheckIcon size={13} /></span>
-  : status === 'dismissed' ? <span className="item-done" title="Dismissed"><XIcon size={12} /></span>
+  // A word, not an X, which would read as the Dismiss button.
+  : status === 'dismissed' ? <span className="item-aside muted">Dismissed</span>
   : null
 
-type SectionPiece = { kind: 'answer' | 'details' | 'consider'; title: string; id: string; pieces: Piece[]; block: number; closed: boolean; task: boolean }
+// A set-aside item folds to its title. Opened (the chevron, or a click on the
+// title), it works as an open one, and using it takes the dismissal back.
+function useFold(status: string, compact?: boolean) {
+  const aside = status === 'dismissing' || status === 'dismissed'
+  const [unfolded, setUnfolded] = useState(false)
+  const folded = aside && !unfolded
+  const toggle = () => setUnfolded(!unfolded)
+  return {
+    aside, folded,
+    // In the side panel it stays as it is, without a chevron.
+    cls: aside && !compact ? (folded ? ' folded' : ' unfolded') : '',
+    chevron: aside && <button className={`icon-btn fold-btn${folded ? '' : ' on'}`} title={folded ? 'Show' : 'Hide'} onClick={toggle}><ChevronIcon size={12} className="chevron" /></button>,
+    // Not at the end of a selection, which opens a comment.
+    onTitle: () => { if (aside && getSelection()?.isCollapsed !== false) toggle() },
+  }
+}
+
+// The mark on a set-aside item: Undo until it is sent.
+const AsideMark = ({ sid, itemKey, status }: { sid: string; itemKey: string; status: string }) =>
+  status === 'dismissing' ? <button className="icon-btn pop-in" title="Undo" onClick={() => undismissItem(sid, itemKey)}><UndoIcon size={14} /></button> : <Done status={status} />
+
+type SectionPiece = { kind: 'answer' | 'details' | 'consider'; title: string; id: string; pieces: Piece[]; block: number; closed: boolean; task: boolean; critical: boolean }
 type Piece =
   | { kind: 'html'; html: string; block: number }
+  | { kind: 'artifact'; name: string; v?: number; block: number }
   | { kind: 'ask'; ask: Ask; block: number }
   | { kind: 'run'; title: string; command: string; block: number; closed: boolean }
+  | { kind: 'review'; title: string; files: string[]; n: number; block: number; pieces: Piece[] }
   | SectionPiece
 
 function piecesOf(text: string): Piece[] {
   // Block numbers run through the whole message; without sections they are the token indices.
-  let base = 0, asks = 0, considers = 0, drafts = 0
+  let base = 0, asks = 0, considers = 0, drafts = 0, reviews = 0
   const walk = (segs: Segment[]): Piece[] => segs.flatMap((s): Piece[] => {
     if (!('text' in s)) {
       if (s.kind === 'ask') return [{ kind: 'ask', block: base++, ask: askOf(s, asks++) }]
       if (s.kind === 'draft') return [{ kind: 'ask', block: base++, ask: draftOf(s, drafts++) }]
       if (s.kind === 'run') return [{ kind: 'run', block: base++, title: s.title, command: commandOf(s), closed: s.closed }]
+      if (s.kind === 'review') return [{ kind: 'review', block: base++, title: s.title, files: reviewFilesOf(s), n: ++reviews, pieces: walk([{ text: reviewTextOf(s) }]) }]
       const id = s.kind === 'consider' ? `c${++considers}` : ''
-      return [{ kind: s.kind, title: s.title, id, block: base++, closed: s.closed, task: s.kind === 'consider' && isTask(s), pieces: walk(s.body) }]
+      return [{ kind: s.kind, title: s.title, id, block: base++, closed: s.closed, task: s.kind === 'consider' && isTask(s), critical: s.kind === 'consider' && isCritical(s), pieces: walk(s.body) }]
     }
     const tokens = marked.lexer(s.text)
     // marked.parse would run the extensions' token pass (code highlighting); lexer + parser don't.
@@ -61,8 +90,15 @@ function piecesOf(text: string): Piece[] {
         out.push({ kind: 'ask', block: base + i, ask: parseAskBody(c.lang ?? '', c.text, asks++) })
         return
       }
+      // A paragraph of only ![caption](artifact:<name>@<n>): the artifact at that version, as the pane shows it.
+      const img = t.type === 'paragraph' && (t as Tokens.Paragraph).tokens.length === 1 ? (t as Tokens.Paragraph).tokens[0] : undefined
+      const art = img?.type === 'image' && /^artifact:([\w.-]+)(?:@(\d+))?$/.exec((img as Tokens.Image).href)
+      if (art) {
+        out.push({ kind: 'artifact', block: base + i, name: art[1], v: art[2] ? Number(art[2]) : undefined })
+        return
+      }
       const list = Object.assign([t], { links: tokens.links })
-      out.push({ kind: 'html', block: base + i, html: DOMPurify.sanitize(marked.parser(list) as string) })
+      out.push({ kind: 'html', block: base + i, html: served(DOMPurify.sanitize(marked.parser(list) as string)) })
     })
     base += tokens.length
     return out
@@ -103,22 +139,35 @@ export const AssistantMessage = memo(function AssistantMessage({ sid, msg, text,
     return () => { setHighlights(`d:${sid}:${msg}`, 'draft', []); setHighlights(`s:${sid}:${msg}`, 'sent', []); setHighlights(`o:${sid}:${msg}`, 'others', []) }
   }, [noteKey, sentKey, pieces, sid, msg, live])
   useCodeCopy(root, live)
+  useBlockCopy(root, pieces, live)
+  useReveal(root, sid, pieces, live)
 
   return (
     <div className={`assistant-text md${live ? ' streaming' : ''}`} ref={root} {...(live ? {} : { 'data-msg': msg, 'data-sid': sid })}>
       <Pieces c={{ sid, msg, items, live }} pieces={pieces} />
-      {!live && <LeftRail sid={sid} root={root} reacts={reacts} drafted={drafted} />}
+      {!live && !state.share && <LeftRail sid={sid} root={root} reacts={reacts} drafted={drafted} />}
     </div>
   )
 })
 
 // The middle of an element's first line of text, from the top of the message:
-// reactions and the reaction button sit centred on it.
+// reactions and the reaction button sit centred on it. On an image or a video,
+// level with its top, where a first line would be.
 function lineMid(r: Range | null, root: HTMLElement): number | null {
   const box = r?.getClientRects()[0]
-  return box ? Math.round(box.top + box.height / 2 - root.getBoundingClientRect().top) : null
+  const h = box && (mediaIn(r!) ? Math.min(box.height, 24) : box.height)
+  return box ? Math.round(box.top + h! / 2 - root.getBoundingClientRect().top) : null
 }
 const contentsOf = (el: HTMLElement) => { const r = document.createRange(); r.selectNodeContents(el); return r }
+// The outermost closed <details> that hides a passage, if any (its summary shows).
+function closedAround(anchor: Anchor, root: HTMLElement): HTMLDetailsElement | null {
+  const n = rangesFor(anchor, root)[0]?.startContainer
+  const at = n?.nodeType === 1 ? n as Element : n?.parentElement
+  let out: HTMLDetailsElement | null = null
+  for (let d = at?.closest('details'); d && root.contains(d); d = d.parentElement?.closest('details'))
+    if (!d.open && !d.querySelector(':scope > summary')?.contains(at!)) out = d
+  return out
+}
 
 // Reactions sit at the left of their passage, one mark per passage; marks on
 // one line form a row, the line's own (whole-paragraph) reaction nearest the
@@ -127,19 +176,25 @@ const contentsOf = (el: HTMLElement) => { const r = document.createRange(); r.se
 // moves. Hovering a mark shows its passage; clicking one (or a selection's
 // highlight) opens the comment card for that passage, where its reactions can
 // be added to or taken off. A reaction inside an item to consider counts as a
-// reply to it.
-type RailItem = { key: string; anchor: Anchor; quote: string; whole: boolean; emoji: string[]; drafts: NoteDraft[] }
+// reply to it. Marks for passages in a closed <details> clump into one mark on
+// its summary; a click on it opens the details.
+type RailItem = { key: string; anchor: Anchor; quote: string; whole: boolean; emoji: string[]; drafts: NoteDraft[]; folded?: boolean }
 const keyOf = (a: Anchor) => JSON.stringify(a)
+// A passage to react to: a whole paragraph or list item, or a selection. A held
+// press (or a drag up) on its button or mark opens its row of emoji.
+type Pick = { id: string; anchor: Anchor; quote: string; whole: boolean }
+const pickOf = (anchor: Anchor, quote: string, whole: boolean): Pick => ({ id: `${whole ? 'w' : 's'}${keyOf(anchor)}`, anchor, quote, whole })
 
 function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.RefObject<HTMLDivElement | null>; reacts: Reaction[]; drafted: NoteDraft[] }) {
   const [rows, setRows] = useState<{ top: number; items: RailItem[] }[]>([])
   const [target, setTarget] = useState<{ el: HTMLElement; key: string; anchor: Anchor; top: number } | null>(null)
-  const [row, setRow] = useState(false)
-  const [search, setSearch] = useState(false)
+  // The passage (Pick.id) whose row of emoji, or emoji search, is open.
+  const [row, setRow] = useState<string | null>(null)
+  const [search, setSearch] = useState<string | null>(null)
   const busy = useRef(false)
   // From the press on, so a drag up to the row doesn't pass the target to the line above.
   const pressing = useRef(false)
-  busy.current = row || search || pressing.current
+  busy.current = !!row || !!search || pressing.current
   const targetRef = useRef(target)
   targetRef.current = target
 
@@ -147,11 +202,12 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
   const items = (() => {
     const by = new Map<string, RailItem>()
     const add = (anchor: Anchor, emoji: string, whole: boolean, quote: string, draft?: NoteDraft) => {
-      const k = keyOf(anchor)
-      const it = by.get(k) ?? { key: k, anchor, quote, whole, emoji: [], drafts: [] }
+      // A passage's whole-line reactions and its selection reactions are two marks.
+      const k = keyOf(anchor), id = pickOf(anchor, quote, whole).id
+      const it = by.get(id) ?? { key: k, anchor, quote, whole, emoji: [], drafts: [] }
       if (!it.emoji.includes(emoji)) it.emoji.push(emoji)
       if (draft) it.drafts.push(draft)
-      by.set(k, it)
+      by.set(id, it)
     }
     for (const r of reacts) add(r.anchor, r.emoji, r.whole, r.quote)
     for (const d of drafted) add(d.anchor, d.text.trim(), !!d.whole, d.quote, d)
@@ -162,8 +218,9 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     if (!el) return
     const at = new Map<number, RailItem[]>()
     for (const it of items) {
-      const top = lineMid(rangesFor(it.anchor, el)[0] ?? null, el)
-      if (top != null) at.set(top, [...(at.get(top) ?? []), it])
+      const shut = closedAround(it.anchor, el)
+      const top = lineMid(shut ? contentsOf(shut.querySelector('summary')!) : rangesFor(it.anchor, el)[0] ?? null, el)
+      if (top != null) at.set(top, [...(at.get(top) ?? []), shut ? { ...it, folded: true } : it])
     }
     const next = [...at].map(([top, its]) => ({ top, items: its.sort((a, b) => Number(b.whole) - Number(a.whole)) }))
     setRows((prev) => JSON.stringify(prev) === JSON.stringify(next) ? prev : next)
@@ -179,6 +236,15 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     const el = root.current, pane = el?.closest('.transcript')
     if (!el || !pane) return
     const min = pane.getBoundingClientRect().left + 4
+    // Rows on lines closer together than a row is high (an item's title and the line under it) would overlap:
+    // each such row moves down (--nudge) until it is 2px below the row above it.
+    let below = -Infinity
+    for (const r of [...el.querySelectorAll<HTMLElement>(':scope > .rail-row')].sort((a, b) => a.offsetTop - b.offsetTop)) {
+      r.style.removeProperty('--nudge')
+      const top = r.offsetTop - r.offsetHeight / 2
+      if (top < below) r.style.setProperty('--nudge', `${below - top}px`)
+      below = Math.max(top, below) + r.offsetHeight + 2
+    }
     for (const r of el.querySelectorAll<HTMLElement>(':scope > .rail-row')) {
       r.style.removeProperty('--pile')
       for (const e of r.querySelectorAll<HTMLElement>('.em, .react-mark, .ack-btn')) { e.style.removeProperty('--y'); e.style.removeProperty('--fan') }
@@ -202,9 +268,13 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
   pileRef.current = pile
   useLayoutEffect(pile)
   useEffect(() => {
-    const ro = new ResizeObserver(() => { placeRef.current(); pileRef.current() })
-    if (root.current) ro.observe(root.current)
-    return () => ro.disconnect()
+    const el = root.current
+    const again = () => { placeRef.current(); pileRef.current() }
+    const ro = new ResizeObserver(again)
+    if (el) ro.observe(el)
+    // <details> fire toggle on themselves only, so listen in the capture phase.
+    el?.addEventListener('toggle', again, true)
+    return () => { ro.disconnect(); el?.removeEventListener('toggle', again, true) }
   }, [root])
 
   // ---- which paragraph or list item the pointer is level with
@@ -213,19 +283,19 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     const zone = el?.closest('.transcript-inner')
     if (!el || !zone) return
     let raf = 0
-    const move = (e: MouseEvent) => {
+    const level = (x: number, y: number, at: EventTarget | null) => {
       cancelAnimationFrame(raf)
       raf = requestAnimationFrame(() => {
-        if (busy.current || (e.target as Element).closest?.('.rail-row')) return
+        if (busy.current || (at as Element | null)?.closest?.('.rail-row')) return
         const r = el.getBoundingClientRect()
-        if (e.clientY < r.top || e.clientY > r.bottom || e.clientX < r.left - 72 || e.clientX > r.right) { if (targetRef.current) setTarget(null); return }
+        if (y < r.top || y > r.bottom || x < r.left - 72 || x > r.right) { if (targetRef.current) setTarget(null); return }
         // The innermost one level with the pointer; between two, keep the last.
         let best: HTMLElement | null = null, h = Infinity
         for (const c of el.querySelectorAll<HTMLElement>('li, [data-block]')) {
           // A passage in a closed <details> is laid out on top of what follows it.
-          if (c.closest('.ask-card, .run-card, details:not([open])')) continue
+          if (c.closest('details:not([open])') || (c.closest('.ask-card') && !c.closest('.ask-q'))) continue
           const b = c.getBoundingClientRect()
-          if (e.clientY >= b.top - 2 && e.clientY <= b.bottom + 2 && b.height < h) { best = c; h = b.height }
+          if (y >= b.top - 2 && y <= b.bottom + 2 && b.height < h) { best = c; h = b.height }
         }
         if (!best || best === targetRef.current?.el) return
         const anchor = anchorFromRange(contentsOf(best), el)
@@ -233,10 +303,14 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
         if (anchor && top != null) setTarget({ el: best, key: keyOf(anchor), anchor, top })
       })
     }
+    const move = (e: MouseEvent) => level(e.clientX, e.clientY, e.target)
+    // On a touch screen the button shows as the finger goes down, so a passage you scroll into view has it already.
+    const touch = (e: TouchEvent) => { if (e.touches.length === 1) level(e.touches[0].clientX, e.touches[0].clientY, e.target) }
     const leave = () => { if (!busy.current) setTarget(null) }
     zone.addEventListener('mousemove', move as EventListener)
+    zone.addEventListener('touchstart', touch as EventListener, { passive: true })
     zone.addEventListener('mouseleave', leave)
-    return () => { cancelAnimationFrame(raf); zone.removeEventListener('mousemove', move as EventListener); zone.removeEventListener('mouseleave', leave) }
+    return () => { cancelAnimationFrame(raf); zone.removeEventListener('mousemove', move as EventListener); zone.removeEventListener('touchstart', touch as EventListener); zone.removeEventListener('mouseleave', leave) }
   }, [root])
 
   // Clicking the highlight of a reaction to a selection opens a comment on it.
@@ -256,7 +330,7 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
 
   useEffect(() => {
     if (!row) return
-    const down = (e: MouseEvent) => { if (!(e.target as Element).closest('.rail-row')) setRow(false) }
+    const down = (e: MouseEvent) => { if (!(e.target as Element).closest('.rail-row')) setRow(null) }
     document.addEventListener('mousedown', down)
     return () => document.removeEventListener('mousedown', down)
   }, [row])
@@ -264,40 +338,44 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
   // The item to consider a passage sits in, if any.
   const itemOf = (anchor: Anchor) => {
     const n = root.current && rangesFor(anchor, root.current)[0]?.startContainer
-    return (n?.nodeType === 1 ? n as Element : n?.parentElement)?.closest<HTMLElement>('.consider[data-item]')?.dataset.item
+    return (n?.nodeType === 1 ? n as Element : n?.parentElement)?.closest<HTMLElement>('[data-item]')?.dataset.item
   }
+  // As a selection does (Transcript.tsx), which works on iOS: a hidden field takes the focus in the
+  // touch (holdKeyboard), and the card's field takes it over once the card shows.
   const commentOn = (anchor: Anchor, quote: string, whole: boolean) => {
     focusPassage(sid, null)
+    holdKeyboard()
     const k = keyOf(anchor)
     const open = draftsOf(sid).find((d): d is NoteDraft => d.kind === 'note' && !d.reaction && keyOf(d.anchor) === k)
     // Without a gutter the card shows only after the render that state.focus causes, so focus it on the next frame.
-    if (open) { state.focus = open.id; changed(); requestAnimationFrame(() => document.querySelector<HTMLElement>(`.note-card[data-id="${open.id}"] .ri-edit`)?.focus()); return }
+    if (open) { state.focus = open.id; changed(); requestAnimationFrame(() => focusField(document.querySelector<HTMLElement>(`.note-card[data-id="${open.id}"] .ri-edit`))); return }
     const itemKey = itemOf(anchor)
     addDraft(sid, { id: uid(), kind: 'note', anchor, quote, text: '', images: [], createdAt: Date.now(), ...(whole ? { whole } : {}), ...(itemKey ? { itemKey } : {}) })
   }
-  // The target's own reactions not sent yet, and toggling one.
-  const mine = () => { const t = targetRef.current; return t ? draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note' && !!d.whole && keyOf(d.anchor) === t.key) : [] }
-  const toggle = (emoji: string) => {
-    const t = targetRef.current
-    setRow(false); setSearch(false)
-    if (emoji === '+') return setSearch(true)
-    if (!t) return
-    if (emoji === 'comment') return commentOn(t.anchor, t.el.innerText.trim(), true)
-    if (emoji === 'remove') { for (const d of mine()) removeDraft(sid, d.id); return }
-    const cur = mine().find((d) => d.text.trim() === emoji)
+  // A passage's own reactions not sent yet, and toggling one.
+  const mine = (p: Pick) => draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note' && !!d.reaction && !!d.whole === p.whole && keyOf(d.anchor) === keyOf(p.anchor))
+  // Only reactions that draw something: a stray variation selector or skin tone would show as an empty ring.
+  const onOf = (p: Pick) => new Set(mine(p).map((d) => d.text.trim()).filter((e) => /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(e)))
+  const toggle = (emoji: string, p: Pick) => {
+    setRow(null); setSearch(null)
+    if (emoji === '+') return setSearch(p.id)
+    if (emoji === 'comment') return commentOn(p.anchor, p.quote, p.whole)
+    if (emoji === 'remove') { for (const d of mine(p)) removeDraft(sid, d.id); return }
+    const cur = mine(p).find((d) => d.text.trim() === emoji)
     if (cur) return removeDraft(sid, cur.id)
     usedEmoji(emoji)
-    const itemKey = t.el.closest<HTMLElement>('.consider[data-item]')?.dataset.item
-    addDraft(sid, { id: uid(), kind: 'note', anchor: t.anchor, quote: t.el.innerText.trim(), text: emoji, images: [], createdAt: Date.now(), reaction: true, whole: true, ...(itemKey ? { itemKey } : {}) })
+    const itemKey = itemOf(p.anchor)
+    addDraft(sid, { id: uid(), kind: 'note', anchor: p.anchor, quote: p.quote, text: emoji, images: [], createdAt: Date.now(), reaction: true, ...(p.whole ? { whole: true } : {}), ...(itemKey ? { itemKey } : {}) })
     state.focus = null
   }
-  const press = (e: React.PointerEvent) => {
+  // A click does `click`; a held press, or a drag up, opens the passage's row.
+  const press = (p: Pick, click: () => void) => (e: React.PointerEvent) => {
     e.preventDefault()
     pressing.current = busy.current = true
     let held = false
     const y0 = e.clientY
-    const open = () => { if (!held) { held = true; setRow(true) } }
-    const timer = setTimeout(open, 300)
+    const open = () => { if (!held) { held = true; setRow(p.id) } }
+    const timer = setTimeout(open, 200)
     const move = (m: PointerEvent) => { if (y0 - m.clientY > 4) open() }
     const up = (u: PointerEvent) => {
       document.removeEventListener('pointerup', up)
@@ -306,21 +384,72 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
       pressing.current = false
       // A held press opened the row, which keeps it busy; a click did not.
       if (!held) busy.current = false
-      if (!held) {
-        // On a line with reactions, a click opens its comment card; on a bare line it adds your last emoji.
-        const t = targetRef.current, own = t && itemsRef.current.find((it) => it.whole && it.key === t.key)
-        return own ? commentOn(own.anchor, own.quote, true) : toggle(lastEmoji())
+      // iOS brings up the keyboard (for a comment card) only from a touchend, not a pointerup.
+      if (!held && u.pointerType === 'touch') {
+        let done = false
+        const go = () => { if (!done) { done = true; document.removeEventListener('touchend', go); click() } }
+        document.addEventListener('touchend', go)
+        setTimeout(go, 300)
+        return
       }
+      if (!held) return click()
+      // The press and the release are on different elements, so the browser sends the click to an
+      // element around both, at the point of release. Without this, a highlight under that point
+      // took the click and opened a comment on its own passage.
+      const eat = (c: MouseEvent) => { c.stopPropagation(); c.preventDefault() }
+      window.addEventListener('click', eat, { capture: true, once: true })
+      setTimeout(() => window.removeEventListener('click', eat, true), 300)
       const over = (document.elementFromPoint(u.clientX, u.clientY) as Element | null)?.closest<HTMLElement>('[data-emoji]')
-      if (over) toggle(over.dataset.emoji!)
+      if (over) toggle(over.dataset.emoji!, p)
     }
     document.addEventListener('pointermove', move)
     document.addEventListener('pointerup', up)
   }
 
+  // On a touch screen the button shows only once a finger is on the passage. So a press where it
+  // will be (a box the button's size, level with the first line of a paragraph or list item)
+  // shows it and works as a press on it at once: a tap adds your last emoji, a hold or a drag up
+  // opens the row. Not within 20px of the screen's left edge, where a swipe opens the sessions.
+  const pressAt = useRef<(t: NonNullable<typeof target>, e: PointerEvent) => void>(() => {})
+  pressAt.current = (t, e) => {
+    const own = itemsRef.current.find((it) => it.whole && it.key === t.key)
+    const tp = pickOf(t.anchor, passageQuote(t.el), true)
+    press(tp, () => own ? commentOn(own.anchor, own.quote, true) : toggle(lastEmoji(), tp))(e as unknown as React.PointerEvent)
+  }
+  useEffect(() => {
+    const el = root.current
+    const zone = el?.closest('.transcript-inner')
+    if (!el || !zone) return
+    const skip = (at: EventTarget | null) => !!(at as Element | null)?.closest?.('.rail-row, button, a, input, textarea, .note-card')
+    const hit = (x: number, y: number) => {
+      const r = el.getBoundingClientRect()
+      if (x < Math.max(20, r.left - 40) || x > r.left - 4 || y < r.top - 14 || y > r.bottom) return null
+      let best: { el: HTMLElement; key: string; anchor: Anchor; top: number } | null = null, h = Infinity
+      for (const c of el.querySelectorAll<HTMLElement>('li, [data-block]')) {
+        if (c.closest('details:not([open])') || (c.closest('.ask-card') && !c.closest('.ask-q'))) continue
+        const b = c.getBoundingClientRect()
+        if (y < b.top - 14 || y > b.top + 40 || b.height >= h) continue
+        const anchor = anchorFromRange(contentsOf(c), el)
+        const top = anchor && lineMid(rangesFor(anchor, el)[0] ?? null, el)
+        if (anchor && top != null && Math.abs(y - r.top - top) <= 14) { best = { el: c, key: keyOf(anchor), anchor, top }; h = b.height }
+      }
+      return best
+    }
+    const down = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch' || busy.current || skip(e.target)) return
+      const t = hit(e.clientX, e.clientY)
+      if (!t) return
+      flushSync(() => setTarget(t))
+      pressAt.current(t, e)
+    }
+    // No scroll from there, as from the button itself.
+    const hold = (e: TouchEvent) => { if (e.touches.length === 1 && !skip(e.target) && hit(e.touches[0].clientX, e.touches[0].clientY)) e.preventDefault() }
+    zone.addEventListener('pointerdown', down as EventListener)
+    zone.addEventListener('touchstart', hold as EventListener, { passive: false })
+    return () => { zone.removeEventListener('pointerdown', down as EventListener); zone.removeEventListener('touchstart', hold as EventListener) }
+  }, [root])
+
   const all = target && !rows.some((r) => r.top === target.top) ? [...rows, { top: target.top, items: [] }] : rows
-  // Only reactions that draw something: a stray variation selector or skin tone would show as an empty ring.
-  const on = new Set(target ? mine().map((d) => d.text.trim()).filter((e) => /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(e)) : [])
   // The row and the remove button to its left stay right of the transcript's edge, clear of the sidebar.
   const pop = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
@@ -330,39 +459,64 @@ function LeftRail({ sid, root, reacts, drafted }: { sid: string; root: React.Ref
     const left = Math.min(...[...el.children].map((c) => c.getBoundingClientRect().left))
     const min = pane.getBoundingClientRect().left + 8
     if (left < min) el.style.left = `${el.offsetLeft + min - left}px`
-  }, [row, on.size])
+  })
+  // A passage's row of emoji and its emoji search, when open.
+  const popFor = (p: Pick) => {
+    const on = onOf(p)
+    return <>
+      {row === p.id && (
+        <div className="ack-pop" ref={pop}>
+        {/* Takes your reactions off this passage: outside the row, so it can't be mistaken for an emoji. */}
+        {on.size > 0 && <button className="ack-clear" data-emoji="remove" onClick={() => toggle('remove', p)}><XIcon size={14} /></button>}
+        <div className="ack-row">
+          {[...new Set([...on, ...topEmoji(8)])].slice(0, Math.max(8, on.size)).map((e) => <button key={e} data-emoji={e} className={on.has(e) ? 'on' : ''} onClick={() => toggle(e, p)}><span>{e}</span></button>)}
+          <button className="more-emoji" data-emoji="+" onClick={() => toggle('+', p)}>+</button>
+          <button className="more-emoji" data-emoji="comment" onClick={() => toggle('comment', p)}><CommentIcon size={17} /></button>
+        </div>
+        </div>
+      )}
+      {search === p.id && <EmojiPicker onPick={(e) => toggle(e, p)} onClose={() => setSearch(null)} />}
+    </>
+  }
   return <>{all.map((r) => {
     const here = target?.top === r.top
-    const own = here ? r.items.find((it) => it.key === target!.key) : undefined
-    const ack = (
+    const own = here ? r.items.find((it) => it.whole && it.key === target!.key) : undefined
+    const tp = here ? pickOf(target!.anchor, passageQuote(target!.el), true) : null
+    const ack = tp && (
       <div key="ack" className="rail-ack">
-        <button className={`ack-btn${on.size ? ' on' : ''}${own ? ' over' : ''}`} aria-label={own ? 'Comment or change reactions' : 'React with last emoji'} onPointerDown={press}
+        <button className={`ack-btn${onOf(tp).size ? ' on' : ''}${own ? ' over' : ''}`} aria-label={own ? 'Comment or change reactions' : 'React with last emoji'}
+          // On a line with reactions, a click opens its comment card; on a bare line it adds your last emoji.
+          onPointerDown={press(tp, () => own ? commentOn(own.anchor, own.quote, true) : toggle(lastEmoji(), tp))}
           onMouseEnter={() => focusPassage(sid, own ? { anchor: own.anchor } : null)} onMouseLeave={() => focusPassage(sid, null)}>
           <span>{own ? own.emoji.map((e) => <span key={e} className="em">{e}</span>) : lastEmoji()}</span>
         </button>
-        {row && (
-          <div className="ack-pop" ref={pop}>
-          {/* Takes your reactions off this paragraph: outside the row, so it can't be mistaken for an emoji. */}
-          {on.size > 0 && <button className="ack-clear" data-emoji="remove" title="Remove your reactions" onClick={() => toggle('remove')}><XIcon size={14} /></button>}
-          <div className="ack-row">
-            {[...new Set([...on, ...topEmoji(8)])].slice(0, Math.max(8, on.size)).map((e) => <button key={e} data-emoji={e} className={on.has(e) ? 'on' : ''} title={on.has(e) ? `Remove ${e}` : `Add ${e}`} onClick={() => toggle(e)}>{e}</button>)}
-            <button className="more-emoji" data-emoji="+" title="Search emoji" onClick={() => toggle('+')}>+</button>
-            <button className="more-emoji" data-emoji="comment" title="Comment" onClick={() => toggle('comment')}><CommentIcon size={14} /></button>
-          </div>
-          </div>
-        )}
-        {search && <EmojiPicker onPick={toggle} onClose={() => setSearch(false)} />}
+        {popFor(tp)}
       </div>
     )
+    const folded = r.items.filter((it) => it.folded)
     return (
       <div key={r.top} className="rail-row" style={{ top: r.top }}>
-        {r.items.map((it) => it === own ? ack : (
-          <button
-            key={it.key} className={`react-mark${it.drafts.length ? ' draft' : ''}`}
-            onMouseEnter={() => focusPassage(sid, { anchor: it.anchor })} onMouseLeave={() => focusPassage(sid, null)}
-            onClick={() => commentOn(it.anchor, it.quote, it.whole)}
-          >{it.emoji.map((e) => <span key={e} className="em">{e}</span>)}</button>
-        ))}
+        {folded.length > 0 && (
+          <div key="folded" className="rail-ack">
+            <button className={`react-mark${folded.some((it) => it.drafts.length) ? ' draft' : ''}`} aria-label="Open the details to show these reactions"
+              onClick={() => { const d = root.current && closedAround(folded[0].anchor, root.current); if (d) d.open = true }}
+            >{[...new Set(folded.flatMap((it) => it.emoji))].map((e) => <span key={e} className="em">{e}</span>)}</button>
+          </div>
+        )}
+        {r.items.filter((it) => !it.folded).map((it) => {
+          if (it === own) return ack
+          const p = pickOf(it.anchor, it.quote, it.whole)
+          return (
+            <div key={it.key + it.whole} className="rail-ack">
+              <button
+                className={`react-mark${it.drafts.length ? ' draft' : ''}`}
+                onMouseEnter={() => focusPassage(sid, { anchor: it.anchor })} onMouseLeave={() => focusPassage(sid, null)}
+                onPointerDown={press(p, () => commentOn(it.anchor, it.quote, it.whole))}
+              >{it.emoji.map((e) => <span key={e} className="em">{e}</span>)}</button>
+              {popFor(p)}
+            </div>
+          )
+        })}
         {here && !own && ack}
       </div>
     )
@@ -378,7 +532,8 @@ function useCodeCopy(root: React.RefObject<HTMLDivElement | null>, live: boolean
     const click = (e: MouseEvent) => {
       const code = (e.target as Element).closest<HTMLElement>('code')
       // Not code blocks, not code in a link, and not the end of a drag that selected some of it.
-      if (!code || code.closest('pre, a') || !el.contains(code) || !getSelection()?.isCollapsed) return
+      // A path is a link to the Files pane instead (useReveal).
+      if (!code || code.closest('pre, a') || code.classList.contains('file-link') || !el.contains(code) || !getSelection()?.isCollapsed) return
       void navigator.clipboard.writeText(code.textContent ?? '').then(() => {
         // A flash of the accent colour that fades.
         code.classList.add('copied')
@@ -390,20 +545,113 @@ function useCodeCopy(root: React.RefObject<HTMLDivElement | null>, live: boolean
   }, [root, live])
 }
 
+// Each code block gets a copy button at its top right. The button holds only an
+// icon, so the text of the message (which anchors comments) stays the same.
+const COPY = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-.5a1 1 0 00-1-1h-6a1 1 0 00-1 1v6a1 1 0 001 1h.5"/></svg>'
+const COPIED = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3 3 7-7"/></svg>'
+
+function useBlockCopy(root: React.RefObject<HTMLDivElement | null>, pieces: Piece[], live: boolean) {
+  useEffect(() => {
+    const el = root.current
+    if (!el || live) return
+    // Not the command of a <run> card: it has its own Copy button.
+    for (const pre of el.querySelectorAll<HTMLElement>('pre')) {
+      if (pre.closest('.run-card') || pre.parentElement?.classList.contains('code-wrap')) continue
+      const wrap = document.createElement('div')
+      wrap.className = 'code-wrap'
+      pre.replaceWith(wrap)
+      wrap.append(pre)
+      const b = document.createElement('button')
+      b.className = 'code-copy'
+      b.innerHTML = COPY
+      let t = 0
+      b.addEventListener('click', (e) => {
+        e.stopPropagation()
+        void navigator.clipboard.writeText(pre.textContent ?? '').then(() => {
+          b.innerHTML = COPIED
+          b.classList.add('on')
+          clearTimeout(t)
+          t = window.setTimeout(() => { b.innerHTML = COPY; b.classList.remove('on') }, 1200)
+        })
+      })
+      wrap.append(b)
+    }
+  }, [root, pieces, live])
+}
+
+// Inline code that names a file or folder on the session's machine opens it in the Files pane
+// (FileBrowser.tsx), and on this machine it gets a folder button after it too: a click shows it
+// in Finder. Only paths that are there get them. A link to a path opens it in the pane too.
+const PATH = /^(?:(?:~|\.{0,2})\/[^\n<>"|*?]*|[\w.@+-]+\/[^\s<>"|*?]*|[\w@+-][\w.@+-]*\.\w{1,8}(?::\d+){0,2})$/
+const LOCAL_HREF = /^(?![a-z][a-z0-9+.-]*:|\/\/|#|\/api\/)/i
+const found = new Map<string, string | null>()   // machine + cwd + path → the full path, or null
+const FOLDER = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M2 4.5V12a1 1 0 001 1h10a1 1 0 001-1V6a1 1 0 00-1-1H8L6.5 3.5H3A1 1 0 002 4.5z"/></svg>'
+
+function useReveal(root: React.RefObject<HTMLDivElement | null>, sid: string, pieces: Piece[], live: boolean) {
+  useEffect(() => {
+    const el = root.current
+    if (!el || live || state.share) return
+    for (const a of el.querySelectorAll<HTMLAnchorElement>('a[href]')) {
+      const href = a.getAttribute('href')!
+      if (!LOCAL_HREF.test(href) || a.dataset.file) continue
+      a.dataset.file = '1'
+      a.addEventListener('click', (e) => { e.preventDefault(); openFile(sid, decodeURI(href.split('#')[0])) })
+    }
+    const machine = machineOf(sid)
+    const cwd = state.sessions.find((s) => s.id === sid)?.cwd ?? '~'
+    const key = (t: string) => `${machine}\n${cwd}\n${t}`
+    const codes = [...el.querySelectorAll<HTMLElement>('code')].filter((c) => {
+      const t = c.textContent?.trim() ?? ''
+      return !c.closest('pre, a') && !c.classList.contains('file-link') && t.length < 400 && !t.includes('://') && PATH.test(t)
+    })
+    if (!codes.length) return
+    let gone = false
+    const add = () => {
+      for (const c of codes) {
+        const t = c.textContent!.trim()
+        const abs = found.get(key(t))
+        if (!abs || !c.isConnected || c.classList.contains('file-link')) continue
+        c.classList.add('file-link')
+        c.addEventListener('click', () => { if (getSelection()?.isCollapsed) openFile(sid, t) })
+        if (machine !== LOCAL || state.web) continue
+        const b = document.createElement('button')
+        b.className = 'reveal'
+        b.title = state.platform === 'darwin' ? 'Show in Finder' : 'Show in its folder'
+        b.innerHTML = FOLDER
+        b.addEventListener('click', (e) => { e.stopPropagation(); void api('/api/fs/reveal', 'POST', { path: abs }) })
+        c.after(b)
+      }
+    }
+    const ask = [...new Set(codes.map((c) => c.textContent!.trim()))].filter((t) => !found.has(key(t)))
+    if (!ask.length) add()
+    else void api<Record<string, string | null>>('/api/fs/exists', 'POST', { cwd, paths: ask }, machine).then((r) => {
+      for (const t of ask) found.set(key(t), r[t] ?? null)
+      if (!gone) add()
+    }).catch(() => {})
+    return () => { gone = true }
+  }, [root, sid, pieces, live])
+}
+
+// The <details> you opened, so that one stays open when its message renders anew.
+const opened = new Set<string>()
+
 function Pieces({ c, pieces }: { c: Ctx; pieces: Piece[] }) {
   return <>{pieces.map((p) => {
     switch (p.kind) {
       case 'html': return <div key={p.block} data-block={p.block} className="md-block" dangerouslySetInnerHTML={{ __html: p.html }} />
-      case 'ask': return <AskCard key={p.block} c={c} ask={p.ask} />
+      case 'ask': return <AskCard key={p.block} c={c} ask={p.ask} block={p.block} />
+      case 'artifact': return <div key={p.block} data-block={p.block} className="md-block"><ArtifactFrame target={{ artifact: p.name, v: p.v }} inline /></div>
       case 'answer': return <div key={p.block} className="answer-block"><Pieces c={c} pieces={p.pieces} /></div>
       case 'details': return (
-        <details key={p.block} className="more">
+        <details key={p.block} className="more" open={opened.has(`${c.sid}:${c.msg}:${p.block}`)}
+          onToggle={(e) => { const k = `${c.sid}:${c.msg}:${p.block}`; if (e.currentTarget.open) opened.add(k); else opened.delete(k) }}>
           <summary dangerouslySetInnerHTML={{ __html: renderInline(p.title || 'More details') }} />
           <div className="more-body"><Pieces c={c} pieces={p.pieces} /></div>
         </details>
       )
       case 'consider': return <ConsiderCard key={p.block} c={c} p={p} />
-      case 'run': return <RunCard key={p.block} c={c} card={`${c.msg}:${p.block}`} title={p.title} command={p.command} ready={p.closed && !c.live} />
+      case 'review': return <ReviewCard key={p.block} sid={c.sid} group={`${c.msg}:r${p.n}`} title={p.title} block={p.block} files={p.files} live={c.live}><Pieces c={c} pieces={p.pieces} /></ReviewCard>
+      case 'run': return <RunCard key={p.block} c={c} card={`${c.msg}:${p.block}`} block={p.block} title={p.title} command={p.command} ready={p.closed && !c.live} />
     }
   })}</>
 }
@@ -413,12 +661,17 @@ function ConsiderCard({ c, p }: { c: Ctx; p: SectionPiece }) {
   const item = c.items.get(key)
   const status = c.live ? 'live' : item?.status ?? 'open'
   const title = p.title || 'Item'
+  const fold = useFold(status)
+  const ro = !!state.share
 
   // Comment on the item: a margin card on its title, tied to the item.
   const comment = (e: React.MouseEvent) => {
+    // A reply takes back a dismissal that has not gone yet.
+    if (status === 'dismissing') undismissItem(c.sid, key)
+    holdKeyboard()
     // A reaction in the item has no card to go to.
     const existing = draftsOf(c.sid).find((d): d is NoteDraft => d.kind === 'note' && d.itemKey === key && !d.reaction)
-    if (existing) { document.querySelector<HTMLElement>(`.note-card[data-id="${existing.id}"] .ri-edit`)?.focus(); return }
+    if (existing) { focusField(document.querySelector<HTMLElement>(`.note-card[data-id="${existing.id}"] .ri-edit`)); return }
     const card = (e.currentTarget as HTMLElement).closest('.consider')!
     const head = card.querySelector<HTMLElement>('.consider-title')!
     const msgEl = card.closest<HTMLElement>('[data-msg]')!
@@ -431,15 +684,16 @@ function ConsiderCard({ c, p }: { c: Ctx; p: SectionPiece }) {
   }
 
   return (
-    <div className={`consider st-${status}`} data-item={key}>
+    <div className={`consider st-${status}${p.critical ? ' critical' : ''}${fold.cls}`} data-item={key}>
       <div className="consider-head">
-        <div data-block={p.block} className="md-block consider-title" dangerouslySetInnerHTML={{ __html: renderInline(title) }} />
-        {status === 'open' && <span className="item-actions"><button className="icon-btn" title="Dismiss" onClick={() => dismissItem(c.sid, key, title)}><XIcon size={13} /></button></span>}
+        {fold.chevron}
+        <div data-block={p.block} className="md-block consider-title" onClick={fold.onTitle} dangerouslySetInnerHTML={{ __html: renderInline(title) }} />
+        {status === 'open' && !ro && !p.critical && <span className="item-actions"><button className="icon-btn" title="Dismiss" onClick={() => dismissItem(c.sid, key, title)}><XIcon size={13} /></button></span>}
         {(status === 'dismissing' || status === 'completing') && <span className="item-actions"><button className="icon-btn pop-in" title="Undo" onClick={() => undismissItem(c.sid, key)}><UndoIcon size={14} /></button></span>}
         <Done status={status} />
       </div>
       <div className="consider-body"><Pieces c={{ ...c, within: { key, label: title, status } }} pieces={p.pieces} /></div>
-      {(status === 'open' || status === 'drafted') && (
+      {(status === 'open' || status === 'drafted' || (fold.aside && !fold.folded)) && !ro && (
         <div className="consider-foot">
           {p.task && <button className="reply-btn" onClick={() => markDone(c.sid, key, title)}><CheckIcon size={13} /> Done</button>}
           <button className="reply-btn item-reply" onMouseDown={(e) => e.preventDefault()} onClick={comment}><CommentIcon size={13} /> Reply</button>
@@ -464,23 +718,34 @@ function DoneProblem({ sid, itemKey }: { sid: string; itemKey: string }) {
 
 // A command Claude wants you to run: open it in a new Terminal window in the
 // session's directory, or copy it.
-function RunCard({ c, card, title, command, ready }: { c: Ctx; card: string; title: string; command: string; ready: boolean }) {
+function RunCard({ c, card, block, title, command, ready }: { c: Ctx; card: string; block: number; title: string; command: string; ready: boolean }) {
   const st = useStore()
   const [done, setDone] = useState('')
   const flash = (s: string) => { setDone(s); setTimeout(() => setDone(''), 2000) }
   const run = Object.values(st.runs).findLast((r) => r.sid === c.sid && r.card === card)
+  // One run at a time: off while it starts and runs, and after it succeeds; a failure offers it again.
+  const [starting, setStarting] = useState(false)
+  const failed = run?.code != null && run.code !== 0
+  const off = starting || (!!run && !failed)
+  const start = () => {
+    setStarting(true)
+    api<{ token: string }>(`/api/sessions/${c.sid}/run`, 'POST', { command }).then(({ token }) => {
+      state.runs[token] = { sid: c.sid, card, command, ...(c.within ? { item: { key: c.within.key, label: c.within.label } } : {}) }
+      changed()
+    }).finally(() => setStarting(false))
+  }
   return (
-    <div className="run-card" onMouseUp={(e) => e.stopPropagation()}>
-      {title && <div className="run-title" dangerouslySetInnerHTML={{ __html: renderInline(title) }} />}
-      <pre className="hljs" dangerouslySetInnerHTML={{ __html: highlight(command, 'bash') }} />
+    <div className="run-card">
+      {/* Its title and command are one passage, to comment on or react to like a paragraph. */}
+      <div data-block={block}>
+        {title && <div className="run-title" dangerouslySetInnerHTML={{ __html: renderInline(title) }} />}
+        <pre className="hljs" dangerouslySetInnerHTML={{ __html: highlight(command, st.platform === 'win32' ? 'powershell' : 'bash') }} />
+      </div>
       {ready && command && (
-        <div className="run-actions">
-          {st.platform === 'darwin' && (
-            <button className="primary" onClick={() => api<{ token: string }>(`/api/sessions/${c.sid}/run`, 'POST', { command }).then(({ token }) => {
-              state.runs[token] = { sid: c.sid, card, command, ...(c.within ? { item: { key: c.within.key, label: c.within.label } } : {}) }
-              changed()
-            })}>
-              <TerminalIcon size={13} /> Run in Terminal
+        <div className="run-actions" onMouseUp={(e) => e.stopPropagation()}>
+          {(st.platform === 'darwin' || st.platform === 'win32') && (
+            <button className="primary" disabled={off} onClick={start}>
+              <TerminalIcon size={13} /> {failed ? 'Run again' : 'Run in Terminal'}
             </button>
           )}
           <button onClick={() => navigator.clipboard.writeText(command).then(() => flash('Copied'))}>Copy</button>
@@ -489,7 +754,7 @@ function RunCard({ c, card, title, command, ready }: { c: Ctx; card: string; tit
             : <span className={run.code === 0 ? 'run-ok' : 'run-bad'}>{run.code === 0 ? <CheckIcon size={12} /> : <XIcon size={12} />} Exit code {run.code}</span>)}
         </div>
       )}
-      {run?.tail && <details className="run-out"><summary>Output</summary><pre>{run.tail}</pre></details>}
+      {run?.tail && <details className="run-out" onMouseUp={(e) => e.stopPropagation()}><summary>Output</summary><pre>{run.tail}</pre></details>}
     </div>
   )
 }
@@ -499,7 +764,7 @@ function RunCard({ c, card, title, command, ready }: { c: Ctx; card: string; tit
 // edits go back. Edited, it offers only Restore (two clicks), which returns it
 // to untouched, and a grey "Edited" that shows the original over the field
 // while the pointer is on it.
-function DraftCard({ c, ask, compact }: { c: Ctx; ask: Ask & { draft: string }; compact?: boolean }) {
+function DraftCard({ c, ask, compact, block }: { c: Ctx; ask: Ask & { draft: string }; compact?: boolean; block?: number }) {
   const askKey = `${c.msg}:${ask.id}`
   const item = c.items.get(askKey)
   const status = c.live ? 'live' : item?.status ?? 'open'
@@ -508,29 +773,33 @@ function DraftCard({ c, ask, compact }: { c: Ctx; ask: Ask & { draft: string }; 
   const attrs = compact ? {} : { 'data-item': askKey }
   const [confirm, setConfirm] = useState(false)
   const [peek, setPeek] = useState(false)
+  const fold = useFold(status, compact)
   useEffect(() => { if (!confirm) return; const t = setTimeout(() => setConfirm(false), 4000); return () => clearTimeout(t) }, [confirm])
+  const title = compact ? {} : { 'data-block': block, onClick: fold.onTitle }
   const head = (mark: React.ReactNode) => (
     <div className="ask-row">
-      <div className="ask-q draft-title" dangerouslySetInnerHTML={{ __html: renderInline(ask.question) }} />
+      {!compact && fold.chevron}
+      <div className="ask-q draft-title" {...title} dangerouslySetInnerHTML={{ __html: renderInline(ask.question) }} />
       {mark}
     </div>
   )
 
-  if (answer || (status !== 'open' && status !== 'drafted')) {
+  if (answer || state.share || (status !== 'open' && status !== 'drafted' && (!fold.aside || fold.folded || compact))) {
     const text = answer?.text ?? ask.draft
     return (
-      <div className={`ask-card draft-card ${answer ? 'answered' : `st-${status}`}`} {...attrs} onMouseUp={(e) => e.stopPropagation()}>
+      <div className={`ask-card draft-card ${answer ? 'answered' : `st-${status}`}${fold.cls}`} {...attrs}>
         {head(<>
           {answer && <span className="muted draft-how">{answer.draft === 'edited' ? 'Edited' : 'Approved'}</span>}
           {status === 'dismissing' && <button className="icon-btn pop-in" title="Undo" onClick={() => undismissItem(c.sid, askKey)}><UndoIcon size={14} /></button>}
           <Done status={answer ? 'answered' : status} />
         </>)}
-        {!compact && status !== 'dismissing' && status !== 'dismissed' && <div className="draft-text md" dangerouslySetInnerHTML={{ __html: renderText(text) }} />}
+        {!compact && !fold.aside && <div className="draft-text md" dangerouslySetInnerHTML={{ __html: renderText(text) }} />}
       </div>
     )
   }
 
   const patch = (p: Partial<AnswerDraft>) => {
+    reviveItem(c.sid, askKey)
     if (draft) updateDraft(c.sid, draft.id, p)
     else { state.drafts[c.sid] = [...draftsOf(c.sid), { id: uid(), kind: 'answer', askKey, question: ask.question, choices: [], text: ask.draft, images: [], createdAt: Date.now(), original: ask.draft, ...p }]; changed() }
   }
@@ -538,8 +807,8 @@ function DraftCard({ c, ask, compact }: { c: Ctx; ask: Ask & { draft: string }; 
   const edited = text.trim() !== ask.draft.trim()
   const approved = !edited && !!draft?.approved
   return (
-    <div className={`ask-card draft-card${approved || edited ? ' queued' : ''}${approved ? ' approved' : ''}`} {...attrs} onMouseUp={(e) => e.stopPropagation()}>
-      {head(status === 'open' && <button className="icon-btn" title="Dismiss" onClick={() => dismissItem(c.sid, askKey, ask.question)}><XIcon size={13} /></button>)}
+    <div className={`ask-card draft-card${approved || edited ? ' queued' : ''}${approved ? ' approved' : ''}${fold.cls}`} {...attrs}>
+      {head(status === 'open' ? <button className="icon-btn" title="Dismiss" onClick={() => dismissItem(c.sid, askKey, ask.question)}><XIcon size={13} /></button> : fold.aside && <AsideMark sid={c.sid} itemKey={askKey} status={status} />)}
       {/* An edit ends an approval: the edits are what goes back. */}
       <OthersAnswers sid={c.sid} askKey={askKey} />
       <div className="draft-field">
@@ -599,11 +868,11 @@ function Original({ text }: { text: string }) {
   return <div ref={el} className="ri-edit draft-orig" />
 }
 
-export function AskCard({ c, ask, compact }: { c: Ctx; ask: Ask; compact?: boolean }) {
-  return ask.draft != null ? <DraftCard c={c} ask={ask as Ask & { draft: string }} compact={compact} /> : <QuestionCard c={c} ask={ask} compact={compact} />
+export function AskCard({ c, ask, compact, block }: { c: Ctx; ask: Ask; compact?: boolean; block?: number }) {
+  return ask.draft != null ? <DraftCard c={c} ask={ask as Ask & { draft: string }} compact={compact} block={block} /> : <QuestionCard c={c} ask={ask} compact={compact} block={block} />
 }
 
-function QuestionCard({ c, ask, compact }: { c: Ctx; ask: Ask; compact?: boolean }) {
+function QuestionCard({ c, ask, compact, block }: { c: Ctx; ask: Ask; compact?: boolean; block?: number }) {
   const askKey = `${c.msg}:${ask.id}`
   const item = c.items.get(askKey)
   const status = c.live ? 'live' : item?.status ?? 'open'
@@ -612,36 +881,41 @@ function QuestionCard({ c, ask, compact }: { c: Ctx; ask: Ask; compact?: boolean
   const answer = item?.reply?.kind === 'answer' ? item.reply : undefined
   const label = ask.question.split('\n')[0]
   const attrs = compact ? {} : { 'data-item': askKey }
+  const fold = useFold(status, compact)
+  // Its own block, so a passage in it takes comments and reactions.
+  const title = compact ? {} : { 'data-block': block, onClick: fold.onTitle }
 
   if (answer) {
     return (
-      <div className="ask-card answered" {...attrs} onMouseUp={(e) => e.stopPropagation()}>
+      <div className="ask-card answered" {...attrs}>
         <div className="ask-row">
-          <div className="ask-q" dangerouslySetInnerHTML={{ __html: question }} />
+          <div className="ask-q" {...title} dangerouslySetInnerHTML={{ __html: question }} />
           <Done status="answered" />
         </div>
         <div className="ask-answer">
+          <span className="muted ask-who">{state.share ? 'Answer:' : 'You:'}</span>{' '}
           {answer.choices?.length ? <b>{answer.choices.join('; ')}</b> : null} {answer.text}
           <Thumbs images={answer.images} />
         </div>
       </div>
     )
   }
-  if (status !== 'open' && status !== 'drafted') {
+  if (state.share || (status !== 'open' && status !== 'drafted' && (!fold.aside || fold.folded || compact))) {
     return (
-      <div className={`ask-card st-${status}`} {...attrs} onMouseUp={(e) => e.stopPropagation()}>
+      <div className={`ask-card st-${status}${fold.cls}`} {...attrs}>
         <div className="ask-row">
-          <div className="ask-q" dangerouslySetInnerHTML={{ __html: question }} />
-          {status === 'dismissing' && <button className="icon-btn pop-in" title="Undo" onClick={() => undismissItem(c.sid, askKey)}><UndoIcon size={14} /></button>}
-          <Done status={status} />
+          {!compact && fold.chevron}
+          <div className="ask-q" {...title} dangerouslySetInnerHTML={{ __html: question }} />
+          <AsideMark sid={c.sid} itemKey={askKey} status={status} />
         </div>
-        {status === 'live' && ask.options.length > 0 && <div className="ask-options">{ask.options.map((o) => <span key={o} className="chip static">{o}</span>)}</div>}
+        {(status === 'live' || (state.share && !fold.folded)) && ask.options.length > 0 && <div className="ask-options">{ask.options.map((o) => <span key={o} className="chip static">{o}</span>)}</div>}
       </div>
     )
   }
 
   const choices = draft?.choices ?? []
   function patch(p: Partial<AnswerDraft>) {
+    reviveItem(c.sid, askKey)
     const list = draftsOf(c.sid)
     if (draft) updateDraft(c.sid, draft.id, p)
     else {
@@ -653,9 +927,11 @@ function QuestionCard({ c, ask, compact }: { c: Ctx; ask: Ask; compact?: boolean
   const theirs = othersAnswers(c.sid, askKey)
 
   return (
-    <div className={`ask-card${status === 'drafted' ? ' queued' : ''}`} {...attrs} onMouseUp={(e) => e.stopPropagation()}>
+    <div className={`ask-card${status === 'drafted' ? ' queued' : ''}${fold.cls}`} {...attrs}>
       <div className="ask-row">
-        <div className="ask-q" dangerouslySetInnerHTML={{ __html: question }} />
+        {!compact && fold.chevron}
+        <div className="ask-q" {...title} dangerouslySetInnerHTML={{ __html: question }} />
+        {fold.aside && <AsideMark sid={c.sid} itemKey={askKey} status={status} />}
         {status === 'open' && <button className="icon-btn" title="Dismiss" onClick={() => { if (draft) removeDraft(c.sid, draft.id); dismissItem(c.sid, askKey, label) }}><XIcon size={13} /></button>}
       </div>
       {ask.options.length > 0 && (

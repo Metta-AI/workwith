@@ -9,6 +9,8 @@
 //
 // Lines starting with "- " are choices; everything else is the question.
 
+import type { ArtifactAnchor } from './types.ts'
+
 // draft: a <draft> (shared/blocks.ts): text Claude wrote for you to edit and send back.
 // Its title is the question, and your text is the answer.
 export type Ask = { id: string; question: string; options: string[]; draft?: string }
@@ -59,6 +61,22 @@ export function splitQuote(quote: string, words = 8): { head: string; rest: stri
 export function shortQuote(quote: string, words = 8): string {
   const { head, rest } = splitQuote(quote, words)
   return rest ? head.replace(/\s+/g, ' ') + ' …' : head
+}
+
+// Where a comment on an artifact is: the artifact, then the element (by data-pid, else by its
+// CSS path), then what it quotes.
+export function artifactWhere(a: ArtifactAnchor): string {
+  const el = a.pid ? `[data-pid="${a.pid}"]${a.path ? ` > ${a.path}` : ''}` : a.path ? a.path : ''
+  const ver = a.v != null ? ` (version ${a.v})` : ''
+  if (a.text) return `artifact ${a.artifact}${ver}, text${el ? ` in ${el}` : ''}`
+  return `artifact ${a.artifact}${ver}, element ${el || '<body>'}${a.tag ? ` (${a.tag})` : ''}`
+}
+
+// The agent cannot see the page, so it gets more of a quote from an artifact.
+export const ARTIFACT_QUOTE_WORDS = 40
+export function formatArtifactNote(a: ArtifactAnchor, quote: string, text: string): string {
+  const q = `> [${artifactWhere(a)}] ${shortQuote(quote, ARTIFACT_QUOTE_WORDS).replace(/\n+/g, ' ')}`.trimEnd()
+  return text.trim() ? `${q}\n\n${text.trim()}` : q
 }
 
 export function formatNote(quote: string, text: string): string {

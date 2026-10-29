@@ -33,7 +33,7 @@ export function applyAppearance(a: Appearance | undefined) {
   }
   root.classList.toggle('calm', !!x.calm)
   root.classList.toggle('compact-side', !!x.compact)
-  if (a) localStorage.setItem('codiner.appearance', JSON.stringify(x))
+  if (a) localStorage.setItem('codinger.appearance', JSON.stringify(x))
 }
 
 // The accent's colour as a critter's body.

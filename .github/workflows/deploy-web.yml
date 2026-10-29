@@ -1,0 +1,32 @@
+# A push to main is a release: this deploys web.codinger.app (remote/, with the page
+# built into dist/), and each Codinger updates itself from origin/main (server/update.ts).
+# Needs the repository secrets CLOUDFLARE_API_TOKEN (Workers edit) and CLOUDFLARE_ACCOUNT_ID.
+name: Deploy web.codinger.app
+
+on:
+  push:
+    branches: [main]
+    paths: ['web/**', 'shared/**', 'remote/**', 'package.json', 'package-lock.json', 'vite.config.ts', '.github/workflows/deploy-web.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx vite build
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: remote
+          wranglerVersion: '4.151.0'

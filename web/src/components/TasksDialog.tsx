@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useEscape } from '../escape.ts'
 import type { Task } from '../../../shared/types.ts'
-import { api, select, useStore } from '../store.ts'
+import { api, select, useStore, here } from '../store.ts'
 import { fatigue } from '../util.ts'
 import { Mascot } from './Mascot.tsx'
 import { CheckIcon, DashIcon, SearchIcon, TrashIcon, XIcon } from './Icons.tsx'
@@ -16,15 +16,29 @@ import { highlight } from '../highlight.ts'
 
 const MAX = 1024 * 1024 // keep at most this much of a log on screen
 
-const stateOf = (t: Task) => !t.ended ? 'running' : t.stopped ? 'stopped' : t.code === 0 ? 'ok' : 'failed'
-const stateLabel = (t: Task) => !t.ended ? 'Running' : t.stopped ? `Stopped by ${t.stopped === 'user' ? 'you' : 'Claude'}` : t.code == null ? 'Ended' : `Exit code ${t.code}`
+// A line as a terminal shows it: a progress bar redraws its line with \r, so only the last draw stays.
+export const lastDraw = (line: string) => line.split('\r').filter(Boolean).at(-1) ?? ''
+
+export const stateOf = (t: Task) => !t.ended ? 'running' : t.stopped ? 'stopped' : t.code === 0 ? 'ok' : 'failed'
+export const stateLabel = (t: Task) => !t.ended ? 'Running' : t.stopped ? `Stopped by ${t.stopped === 'user' ? 'you' : 'Claude'}` : t.code == null ? 'Ended' : `Exit code ${t.code}`
 
 // Running: a pulsing dot. Ended: a check (exit 0), a cross (failed), or a dash (stopped).
-function StateMark({ t }: { t: Task }) {
+export function StateMark({ t }: { t: Task }) {
   const st = stateOf(t)
-  if (st === 'running') return <span className="task-dot running" title="Running" />
+  if (st === 'running') return <>
+    <span className="task-dot running" title="Running" />
+    {t.progress && <span className="task-pct" title={t.progress.label}>{t.progress.pct}%</span>}
+  </>
   const Icon = st === 'ok' ? CheckIcon : st === 'failed' ? XIcon : DashIcon
   return <span className={`task-mark ${st}`} title={stateLabel(t)}><Icon size={12} /></span>
+}
+
+// How the agent asked to hear of the end (start_task's notify), and, once it ended, whether it has.
+function notifyNote(t: Task) {
+  const asked = t.notify === 'interrupt' ? 'The agent asked to be interrupted when this task ends.'
+    : t.notify === 'turn' ? 'The agent asked for a message of its own when this task ends.'
+    : 'The agent hears of the end with your next message; it did not ask for a message of its own.'
+  return !t.ended ? asked : `${asked} ${t.told ? 'It has heard.' : 'It has not heard yet.'}`
 }
 
 export function TasksDialog({ onClose, first }: { onClose(): void; first?: string }) {
@@ -48,10 +62,10 @@ export function TasksDialog({ onClose, first }: { onClose(): void; first?: strin
                   <div className="tasks-group-head">{name}</div>
                   {!list.length && <div className="tasks-none">No running tasks</div>}
                   {list.map((x) => {
-                    const s = st.sessions.find((m) => m.id === x.sid)
+                    const s = st.sessions.find((m) => m.id === here(x.sid))
                     return (
                       <button key={x.id} className={`task-row${x.id === t?.id ? ' on' : ''}`} onClick={() => setPick(x.id)}>
-                        {s ? <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={22} /> : <span className="task-nobody" />}
+                        {s ? <Mascot status={s.status} look={s.look} fatigue={fatigue(s.context.used, s.context.window)} size={22} child={!!s.parentId} starred={s.starred} /> : <span className="task-nobody" />}
                         <span className="task-main">
                           <span className="task-title">{x.title}</span>
                           <span className="task-sub">{s?.title ?? 'Closed session'} · {minutes((x.ended ?? Date.now()) - x.started)}</span>
@@ -80,7 +94,8 @@ function TaskView({ t, onClose }: { t: Task; onClose(): void }) {
   const [q, setQ] = useState('')
   const [hits, setHits] = useState<{ n: number; line: string }[] | null>(null)
   const [confirm, setConfirm] = useState(false)
-  const s = st.sessions.find((m) => m.id === t.sid)
+  const s = st.sessions.find((m) => m.id === here(t.sid))
+  const shown = useMemo(() => log.split('\n').map(lastDraw).join('\n'), [log])
 
   // The log's end at first, then what is added, every second while it runs (and once more after).
   useEffect(() => {
@@ -119,7 +134,7 @@ function TaskView({ t, onClose }: { t: Task; onClose(): void }) {
       <div className="task-info">
         <div className="task-top">
           <span className="task-meta muted">
-            <StateMark t={t} /> {stateLabel(t)} · {s ? <button className="link" onClick={() => { select(s.id); onClose() }}>{s.title}</button> : 'closed session'} · <span title="Task id, in its log file name and in ps as codiner-task">task <span className="mono">{t.id}</span></span>
+            <StateMark t={t} /> {stateLabel(t)} · {s ? <button className="link" onClick={() => { select(s.id); onClose() }}>{s.title}</button> : 'closed session'} · <span title="Task id, in its log file name and in ps as codinger-task">task <span className="mono">{t.id}</span></span>
             {!t.ended && <> · pid {t.pid}</>}
           </span>
           {!t.ended ? (
@@ -133,6 +148,7 @@ function TaskView({ t, onClose }: { t: Task; onClose(): void }) {
             </button>
           )}
         </div>
+        <div className="task-notify muted">{notifyNote(t)}</div>
         <pre className="task-cmd hljs" title={`In ${t.cwd}`} dangerouslySetInnerHTML={{ __html: highlight(t.command, 'bash') }} />
       </div>
       <div className="task-tools">
@@ -142,7 +158,7 @@ function TaskView({ t, onClose }: { t: Task; onClose(): void }) {
       <pre ref={pre} className="task-log" onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 8 }}>
         {hits
           ? hits.map((h) => <div key={h.n}><span className="task-ln">{h.n}</span>{mark(h.line)}</div>)
-          : log}
+          : shown}
       </pre>
     </div>
   )

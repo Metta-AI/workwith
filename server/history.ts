@@ -1,11 +1,11 @@
 // Claude Code's own session history (~/.claude/projects/<dir>/<session>.jsonl):
-// list it cheaply, and turn one transcript into Codiner events so a session
+// list it cheaply, and turn one transcript into Codinger events so a session
 // started in a terminal can be picked up here with its conversation intact.
 
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { Block, Event, ImageRef, Part } from '../shared/types.ts'
+import type { Block, DirListing, Event, ImageRef, Part } from '../shared/types.ts'
 import { saveImage } from './store.ts'
 
 const PROJECTS = path.join(process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude'), 'projects')
@@ -141,7 +141,7 @@ export function lastCache(cwd: string, csid: string): { at: number; ttl: number 
 const MAX_RESULT = 8000
 const MAX_IMPORT_IMAGES = 40
 
-// A whole transcript as Codiner events. Subagent turns, injected context and
+// A whole transcript as Codinger events. Subagent turns, injected context and
 // bookkeeping entries are dropped, as they are from live sessions.
 export function importTranscript(file: string): { events: Event[]; contextUsed: number; model: string | null } {
   const events: Event[] = []
@@ -217,7 +217,7 @@ function transcriptOf(csid: string): string | null {
 
 // The entry one of your messages hangs off in a Claude Code transcript: resume
 // there and the message, and everything after it, is gone. Found by its uuid,
-// else as the nth message that starts with `text` (older Codiner logs have no
+// else as the nth message that starts with `text` (older Codinger logs have no
 // uuids). null: it was the first message; undefined: it isn't in there.
 export function entryBefore(csid: string, msg: { uuid?: string; text: string; nth: number }): string | null | undefined {
   const file = transcriptOf(csid)
@@ -225,7 +225,13 @@ export function entryBefore(csid: string, msg: { uuid?: string; text: string; nt
   const entries: any[] = []
   for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
     if (!line.startsWith('{')) continue
-    try { const m = JSON.parse(line); if (m.type === 'user' && !m.isSidechain) entries.push(m) } catch { /* torn write */ }
+    try {
+      const m = JSON.parse(line)
+      if (m.isSidechain) continue
+      if (m.type === 'user') entries.push(m)
+      // A message sent while Claude was busy goes in mid-turn as an attachment, with our uuid as its source_uuid.
+      else if (m.type === 'attachment' && m.attachment?.type === 'queued_command') entries.push({ type: 'user', uuid: m.attachment.source_uuid, parentUuid: m.parentUuid, message: { content: m.attachment.prompt } })
+    } catch { /* torn write */ }
   }
   let hit = msg.uuid ? entries.find((m) => m.uuid === msg.uuid) : undefined
   if (!hit && msg.text) {
@@ -237,7 +243,7 @@ export function entryBefore(csid: string, msg: { uuid?: string; text: string; nt
 
 // ---- directories ------------------------------------------------------------
 
-export function listDirs(p: string, hidden: boolean): { path: string; parent: string | null; dirs: string[] } {
+export function listDirs(p: string, hidden: boolean): DirListing {
   const abs = path.resolve(p)
   const dirs = fs.readdirSync(abs, { withFileTypes: true })
     .filter((d) => (d.isDirectory() || d.isSymbolicLink()) && (hidden || !d.name.startsWith('.')))
@@ -245,5 +251,7 @@ export function listDirs(p: string, hidden: boolean): { path: string; parent: st
     .map((d) => d.name)
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
   const parent = path.dirname(abs)
-  return { path: abs, parent: parent === abs ? null : parent, dirs }
+  return { path: abs, parent: parent === abs ? null : parent, dirs, ...(process.platform === 'win32' && { roots: drives() }) }
 }
+
+const drives = () => 'CDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((l) => `${l}:\\`).filter((d) => fs.existsSync(d))

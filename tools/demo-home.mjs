@@ -1,12 +1,12 @@
-// Makes a throwaway CODINER_HOME with made-up sessions, for screenshots of the real
+// Makes a throwaway CODINGER_HOME with made-up sessions, for screenshots of the real
 // app that show none of your own sessions or folders:
 //
-//   node tools/demo-home.mjs [dir]       (dir defaults to /tmp/codiner-demo)
-//   PORT=4646 CODINER_HOME=<dir>/home node server/index.ts --dev
+//   node tools/demo-home.mjs [dir]       (dir defaults to /tmp/codinger-demo)
+//   PORT=4646 CODINGER_HOME=<dir>/home node server/index.ts --dev
 //
 // Then open http://localhost:4646. Nothing starts a claude process until you send.
 import fs from 'node:fs'
-const ROOT = process.argv[2] ?? '/tmp/codiner-demo'
+const ROOT = process.argv[2] ?? '/tmp/codinger-demo'
 const H = `${ROOT}/home`, P = `${ROOT}/projects`
 fs.rmSync(H, { recursive: true, force: true })
 fs.mkdirSync(`${H}/events`, { recursive: true }); fs.mkdirSync(`${H}/master`, { recursive: true })
@@ -67,4 +67,4 @@ const sessions = [
 fs.writeFileSync(`${H}/sessions.json`, JSON.stringify(sessions, null, 1))
 fs.writeFileSync(`${H}/events/demo0001.jsonl`, main.map((e) => JSON.stringify(e)).join('\n') + '\n')
 for (const s of sessions.slice(1)) fs.writeFileSync(`${H}/events/${s.id}.jsonl`, '')
-console.log(`Demo data in ${H}. Start it with:\n  PORT=4646 CODINER_HOME=${H} node server/index.ts --dev`)
+console.log(`Demo data in ${H}. Start it with:\n  PORT=4646 CODINGER_HOME=${H} node server/index.ts --dev`)

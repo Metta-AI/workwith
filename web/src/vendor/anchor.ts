@@ -105,7 +105,7 @@ function nodeOffsetToFlat(idx: Index, node: Node, offset: number): number | null
     if (pt.compareBoundaryPoints(Range.START_TO_START, startR) <= 0) return before ?? e.start // point is at/before this node
     return e.start // point strictly inside (rare for an element position)
   }
-  return before
+  return before ?? 0 // a root with no text at all: an image-only block
 }
 
 // Build the selector pair for a user's live selection Range.
@@ -277,14 +277,17 @@ export function imageBasename(src: string): string {
 }
 
 // Every content <img> under root, in document order, skipping Marginer's own UI.
-function imagesInRoot(root: Node): HTMLImageElement[] {
-  const all = Array.from((root as Element).querySelectorAll?.('img') ?? []) as HTMLImageElement[]
+// Codinger: a video, audio or a media frame anchors the same way, by its src.
+const MEDIA = 'img, video, audio, iframe.media-frame'
+type Media = HTMLImageElement | HTMLVideoElement | HTMLAudioElement | HTMLIFrameElement
+function imagesInRoot(root: Node): Media[] {
+  const all = Array.from((root as Element).querySelectorAll?.(MEDIA) ?? []) as Media[]
   return all.filter((img) => !img.closest('[data-mg-ui],[data-mg-skip]'))
 }
 
 // Resolve an image quote to the live <img> element: the `nth` (1-based) image
 // whose src basename matches. Falls back to the last match if nth overshoots.
-export function resolveImageQuote(quote: string, nth: number, root: Node): HTMLImageElement | null {
+export function resolveImageQuote(quote: string, nth: number, root: Node): Media | null {
   const src = imageSrcOf(quote)
   if (!src) return null
   const want = imageBasename(src)
@@ -295,7 +298,7 @@ export function resolveImageQuote(quote: string, nth: number, root: Node): HTMLI
 
 // Which occurrence (1-based) of its own basename a given <img> is — for capture,
 // mirroring occurrenceOf() for text.
-export function imageOccurrence(img: HTMLImageElement, root: Node): number {
+export function imageOccurrence(img: Media, root: Node): number {
   const want = imageBasename(img.getAttribute('src') ?? '')
   const matches = imagesInRoot(root).filter((i) => imageBasename(i.getAttribute('src') ?? '') === want)
   const n = matches.indexOf(img)
@@ -306,20 +309,20 @@ export function imageOccurrence(img: HTMLImageElement, root: Node): number {
 // attribute would break the moment the markdown is pasted somewhere else) and any
 // whitespace in it is percent-encoded, so the `![](url)` form always parses back.
 // Resolution keys off the basename, so the full URL is only a hint.
-export function imageQuoteFromImg(img: HTMLImageElement): string {
-  const raw = img.currentSrc || img.src || img.getAttribute('src') || ''
+export function imageQuoteFromImg(img: Media): string {
+  const raw = ('currentSrc' in img && img.currentSrc) || img.src || img.getAttribute('src') || ''
   return `![](${raw.replace(/\s/g, '%20')})`
 }
 
 // The <img> elements that fall inside a live range, in document order — used to
 // paint overlay highlights for images caught in a text passage.
-export function imagesInRange(range: Range, root: Node): HTMLImageElement[] {
+export function imagesInRange(range: Range, root: Node): Media[] {
   return imagesInRoot(root).filter((img) => range.intersectsNode(img))
 }
 
 // The flat-text offset an image sits at: the end of the last text node before it
 // (buildIndex skips images, so this is the seam between the text on either side).
-function imageFlat(idx: Index, img: HTMLImageElement): number {
+function imageFlat(idx: Index, img: Media): number {
   let flat = 0
   for (const e of idx.nodes) {
     if ((img.compareDocumentPosition(e.node) & Node.DOCUMENT_POSITION_PRECEDING) !== 0) flat = e.end

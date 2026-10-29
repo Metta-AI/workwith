@@ -1,4 +1,4 @@
-// On-disk state, all under ~/.codiner:
+// On-disk state, all under ~/.codinger:
 //   sessions.json        every session's metadata
 //   events/<id>.jsonl    each session's event log, append-only
 //   images/<sha>.<ext>   images pasted into replies (content-addressed)
@@ -10,14 +10,34 @@ import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Event, ImageRef, SessionMeta, Settings } from '../shared/types.ts'
 
-export const DATA = process.env.CODINER_HOME ?? path.join(os.homedir(), '.codiner')
+const OLD_DATA = path.join(os.homedir(), '.codiner')
+export const DATA = process.env.CODINGER_HOME ?? process.env.CODINER_HOME ?? homeData()
+// Codinger was called Codiner until October 2026. Move ~/.codiner once, and leave a link
+// there for the sessions and tasks that a restart keeps running, which still use the old path.
+// Claude Code keeps the lead's conversation under its directory's name: move that too.
+function homeData(): string {
+  const data = path.join(os.homedir(), '.codinger')
+  if (fs.existsSync(data) || !fs.existsSync(OLD_DATA) || fs.lstatSync(OLD_DATA).isSymbolicLink()) return data
+  // Windows can't move a folder in use (a running task's log, a process's working
+  // directory): stay in the old one until a start when it can.
+  try { fs.renameSync(OLD_DATA, data) } catch { return OLD_DATA }
+  // A junction needs no rights on Windows, where a symbolic link does.
+  try { fs.symlinkSync(data, OLD_DATA, process.platform === 'win32' ? 'junction' : 'dir') } catch { /* no link */ }
+  const projects = path.join(process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude'), 'projects')
+  const key = (dir: string) => path.join(projects, dir.replace(/[^A-Za-z0-9]/g, '-'))
+  const from = key(path.join(OLD_DATA, 'lead')), to = key(path.join(data, 'lead'))
+  try { if (fs.existsSync(from) && !fs.existsSync(to)) fs.renameSync(from, to) } catch { /* the lead starts a new conversation */ }
+  return data
+}
 const EVENTS = path.join(DATA, 'events')
 export const IMAGES = path.join(DATA, 'images')
+export const MEDIA = path.join(DATA, 'media')
 export const LEAD_DIR = path.join(DATA, 'lead')
+const PROMPTS = path.join(DATA, 'prompts')
 // The lead agent was called the master until October 2026. Move its directory once.
 const OLD_LEAD_DIR = path.join(DATA, 'master')
 if (fs.existsSync(OLD_LEAD_DIR) && !fs.existsSync(LEAD_DIR)) fs.renameSync(OLD_LEAD_DIR, LEAD_DIR)
-for (const d of [DATA, EVENTS, IMAGES, LEAD_DIR]) fs.mkdirSync(d, { recursive: true })
+for (const d of [DATA, EVENTS, IMAGES, MEDIA, LEAD_DIR, PROMPTS]) fs.mkdirSync(d, { recursive: true })
 export const LEAD_NOTES = path.join(LEAD_DIR, 'LEAD_NOTES.md')
 // The lead's notes were NOTES.md until October 2026. Move them once (their history moves in index.ts).
 export const OLD_LEAD_NOTES = path.join(LEAD_DIR, 'NOTES.md')
@@ -29,7 +49,7 @@ const SETTINGS = path.join(DATA, 'settings.json')
 export function loadSessions(): SessionMeta[] {
   let all: SessionMeta[]
   try { all = JSON.parse(fs.readFileSync(SESSIONS, 'utf8')) } catch { return [] }
-  return all.map(renameMaster)
+  return all.map(renameMaster).map((m) => m.cwd.startsWith(OLD_DATA + path.sep) ? { ...m, cwd: DATA + m.cwd.slice(OLD_DATA.length) } : m)
 }
 
 // The old master session becomes the lead: new id, kind and directory. Claude Code
@@ -96,6 +116,8 @@ const eventsFile = (id: string) => path.join(EVENTS, `${id}.jsonl`)
 export function readEvents(id: string): Event[] {
   let raw = ''
   try { raw = fs.readFileSync(eventsFile(id), 'utf8') } catch { return [] }
+  // Codinger was called Codiner until October 2026: its messages and its tools had the old name.
+  raw = raw.replaceAll('"from":"codiner"', '"from":"codinger"').replaceAll('"mcp__codiner__', '"mcp__codinger__')
   const out: Event[] = []
   for (const line of raw.split('\n')) if (line.trim()) try { out.push(JSON.parse(line)) } catch { /* torn write */ }
   return out
@@ -133,5 +155,13 @@ export function imageFile(url: string): string | null {
 }
 
 export function expandHome(p: string): string {
-  return p === '~' ? os.homedir() : p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : p
+  return p === '~' ? os.homedir() : /^~[\\/]/.test(p) ? path.join(os.homedir(), p.slice(2)) : p
+}
+
+// A session's system prompt goes to claude as a file: on Windows the whole command
+// line must fit in 32,767 characters, and the prompt alone can be bigger.
+export function promptFile(id: string, text: string): string {
+  const f = path.join(PROMPTS, `${id}.md`)
+  fs.writeFileSync(f, text)
+  return f
 }

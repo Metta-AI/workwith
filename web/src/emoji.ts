@@ -1,7 +1,7 @@
 // Emoji for reactions: the ones you use most come first, and the full list
 // (names from unicode-emoji-json) loads only when you search it.
 
-const KEY = 'codiner.emoji'
+const KEY = 'codinger.emoji'
 const DEFAULT = ['👍', '❤️', '🎉', '💪', '😂', '🤔', '🙏', '👀', '🔥', '🙌']
 
 const counts: Record<string, number> = (() => { try { return JSON.parse(localStorage.getItem(KEY) ?? '{}') } catch { return {} } })()
@@ -32,6 +32,10 @@ export function allEmoji(): Promise<EmojiInfo[]> {
       emoji, name: v.name, group: v.group,
       words: [...(kw[emoji] ?? []), ...(EXTRA[emoji] ?? [])].map((w) => w.toLowerCase().replace(/_/g, ' ')),
     }))
+  }).catch(() => {
+    // Not loaded (a rebuild since this page loaded removes the old files): try again next time.
+    all = null
+    return []
   })
   return all
 }

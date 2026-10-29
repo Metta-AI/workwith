@@ -8,20 +8,21 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { rangesFor, setHighlights } from '../anchoring.ts'
-import { addDraft, draftsOf, othersLive, removeDraft, state, uid, updateDraft, useStore, type NoteDraft } from '../store.ts'
+import { addDraft, draftsOf, othersLive, removeDraft, state, uid, updateDraft, useStore, type ArtDraft, type NoteDraft } from '../store.ts'
 import type { Anchor, Event, Held, ImageRef, Person } from '../../../shared/types.ts'
 import { Who } from './Who.tsx'
 import { isReaction, topEmoji, usedEmoji } from '../emoji.ts'
-import { renderMd } from '../util.ts'
+import { holdKeyboard, renderMd, visibleBox } from '../util.ts'
 import { EmojiPicker } from './EmojiPicker.tsx'
-import { RichInput, Thumbs } from './Inputs.tsx'
+import { focusField, RichInput, Thumbs } from './Inputs.tsx'
 import { XIcon } from './Icons.tsx'
+import { TextDialog, WithPastes } from './Paste.tsx'
 
 export const CARD_W = 272
 export const GUTTER_GAP = 20
 const GAP = 10
 
-const isEmpty = (d: NoteDraft) => !d.text.trim() && !d.images.length
+const isEmpty = (d: NoteDraft | ArtDraft) => !d.text.trim() && !d.images.length
 
 const msgEl = (sid: string, msg: string) => document.querySelector<HTMLElement>(`[data-sid="${sid}"][data-msg="${msg}"]`)
 export const rangesOfNote = (sid: string, d: { anchor: NoteDraft['anchor'] }) => {
@@ -41,10 +42,6 @@ export function onPassage(ranges: Range[], x: number, y: number) {
 }
 
 // Darken one comment's passage while its card (or its sent copy) is hovered or focused.
-// A quick reaction to a passage: an emoji as (part of) the comment.
-const toggleReaction = (text: string, r: string) =>
-  text.includes(r) ? text.replace(r, '').replace(/ {2,}/g, ' ').trim() : text.trim() ? `${text.trimEnd()} ${r}` : r
-
 export function focusPassage(sid: string, d: { anchor: NoteDraft['anchor'] } | null) {
   setHighlights('focus', 'focus', d ? rangesOfNote(sid, d) : [])
 }
@@ -141,32 +138,46 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
       it.card.style.top = `${Math.max(0, top[i])}px`
       bottom = Math.max(bottom, Math.max(0, top[i]) + it.h)
     })
-    // Cards hanging below the last message make room for themselves.
-    const min = bottom ? `${bottom + 40}px` : ''
+    // Cards hanging below the last message make room for themselves, with space to spare.
+    const min = bottom ? `${bottom + 96}px` : ''
     if (box.style.minHeight !== min) box.style.minHeight = min
   }
   const layoutRef = useRef(layout)
   layoutRef.current = layout
 
+  // The card you write in stays in view as it grows, and when the keyboard comes up: the transcript scrolls to show all of it.
+  // So does a card you open.
+  const keepInView = () => {
+    const card = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('.note-card')
+      ?? (openRef.current ? layer.current?.querySelector<HTMLElement>(`.note-card[data-id="${CSS.escape(openRef.current)}"]`) : null)
+    const sc = inner.current?.closest<HTMLElement>('.transcript')
+    if (!card || !sc || !layer.current?.contains(card)) return
+    const over = card.getBoundingClientRect().bottom + 8 - Math.min(sc.getBoundingClientRect().bottom, visibleBox().bottom)
+    if (over > 0) sc.scrollTop += over
+  }
+
   useLayoutEffect(() => layout())
   useEffect(() => {
-    const ro = new ResizeObserver(() => layoutRef.current())
+    const ro = new ResizeObserver(() => { layoutRef.current(); keepInView() })
     if (inner.current) ro.observe(inner.current)
     if (layer.current) for (const c of layer.current.children) ro.observe(c)
-    return () => ro.disconnect()
+    visualViewport?.addEventListener('resize', keepInView)
+    return () => { ro.disconnect(); visualViewport?.removeEventListener('resize', keepInView) }
   }, [notes.length, gutter])
   useEffect(() => { layoutRef.current() }, [events, open, peek])
+  useEffect(() => { if (open) keepInView() }, [open])
 
-  // Without a gutter, a click on a highlight shows its card and puts the caret in it.
+  // A click on a highlight puts the caret in its card (and without a gutter, shows the card).
   useEffect(() => {
     const box = inner.current
-    if (!box || gutter) return
+    if (!box) return
     const click = (e: MouseEvent) => {
       if (!getSelection()?.isCollapsed || (e.target as Element).closest?.('.note-card')) return
       const hit = notesRef.current.find((n) => n.kind === 'draft' && onPassage(rangesOfNote(sid, n), e.clientX, e.clientY))
       if (!hit) return
+      holdKeyboard()
       setOpen(hit.id)
-      requestAnimationFrame(() => layer.current?.querySelector<HTMLElement>(`.note-card[data-id="${hit.id}"] .ri-edit`)?.focus())
+      requestAnimationFrame(() => focusField(layer.current?.querySelector<HTMLElement>(`.note-card[data-id="${hit.id}"] .ri-edit`)))
     }
     box.addEventListener('click', click)
     return () => box.removeEventListener('click', click)
@@ -222,13 +233,27 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
   }, [sid, gutter])
   const notesRef = useRef(notes)
   notesRef.current = notes
+  // Without a gutter, a touch or click outside the open card puts it away at once: its field
+  // may not have the focus, so no blur would take it away.
+  useEffect(() => {
+    if (gutter || !open) return
+    const away = (e: PointerEvent) => {
+      const card = layer.current?.querySelector<HTMLElement>(`.note-card[data-id="${open}"]`), t = e.target as Element
+      if (!card || card.contains(t) || t.closest?.('.emoji-picker, .rail-row')) return
+      if (card.contains(document.activeElement)) (document.activeElement as HTMLElement).blur()
+      if (state.focus === open) state.focus = null
+      setOpen(null)
+    }
+    document.addEventListener('pointerdown', away, true)
+    return () => document.removeEventListener('pointerdown', away, true)
+  }, [open, gutter])
 
   return (
     <div className="margin" ref={layer}>
       {notes.map((n) => n.kind === 'draft' ? (
         <NoteCard
-          key={n.id} sid={sid} note={n.draft!}
-          onFocus={() => { if (state.focus === n.id) state.focus = null; focused.current = n.id; setOpen(n.id); layout(); focusPassage(sid, n) }}
+          key={n.id} sid={sid} note={n.draft!} onOpen={() => setOpen(n.id)}
+          onFocus={() => { if (state.focus === n.id) state.focus = null; focused.current = n.id; setOpen(n.id); layout(); keepInView(); focusPassage(sid, n) }}
           onBlur={() => {
             if (focused.current === n.id) focused.current = null
             focusPassage(sid, null)
@@ -238,42 +263,113 @@ export function Margin({ sid, inner, column, gutter, events }: Props) {
         />
       ) : n.kind === 'badge' ? (
         <button
-          key={n.id} data-id={n.id} className={`react-badge${n.draft ? ' draft' : ''}`} title={n.draft ? 'Remove' : undefined}
+          key={n.id} data-id={n.id} className={`react-badge${n.draft ? ' draft' : ''}`}
           onMouseEnter={() => focusPassage(sid, n)} onMouseLeave={() => focusPassage(sid, null)}
           onClick={() => { if (n.draft) { focusPassage(sid, null); removeDraft(sid, n.id) } }}
         >{n.text.trim()}</button>
       ) : (
-        <div key={n.id} data-id={n.id} className={`note-card sent${n.held ? ' held' : ''}${n.live ? ' live' : ''}`} onMouseEnter={() => focusPassage(sid, n)} onMouseLeave={() => focusPassage(sid, null)}>
-          {(n.by || n.held) && <div className="note-by">{n.live && <Who p={n.who} size={14} />} {n.by ?? 'Someone'}{n.held && <span className="muted"> · held</span>}{n.live && <span className="muted"> · writing</span>}</div>}
-          <div className="md" dangerouslySetInnerHTML={{ __html: renderMd(n.text) }} />
-          <Thumbs images={n.images} />
-        </div>
+        <SentCard key={n.id} sid={sid} n={n} />
       ))}
     </div>
   )
 }
 
-function NoteCard({ sid, note, onFocus, onBlur }: { sid: string; note: NoteDraft; onFocus(): void; onBlur(): void }) {
+// A long comment folds to its first lines. "Show more" opens it in place or, when it is
+// very long, in a dialog: in place it would push the cards under it far down.
+// Also the card of a sent comment on an artifact (ArtifactNotes.tsx), with onHover.
+export function SentCard({ sid, n, onHover = (on) => 'anchor' in n && focusPassage(sid, on ? n as Entry : null) }: { sid: string; n: { id: string; text: string; images?: ImageRef[] } | Entry; onHover?(on: boolean): void }) {
+  const body = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState<'short' | 'long' | 'huge'>('short')
+  const [open, setOpen] = useState(false)
+  const [dialog, setDialog] = useState(false)
+  useLayoutEffect(() => {
+    const box = body.current, inner = box?.firstElementChild
+    if (!box || !inner || open) return
+    // A comment folds only when the fold hides a fair part of it, not a line or two.
+    const ro = new ResizeObserver(() => {
+      const h = inner.scrollHeight / parseFloat(getComputedStyle(box).fontSize)
+      setSize(h > 40 ? 'huge' : h > 14 ? 'long' : 'short')
+    })
+    ro.observe(inner)
+    return () => ro.disconnect()
+  }, [open])
+  const text = <><WithPastes text={n.text} render={renderMd} sid={sid} /><Thumbs images={n.images} /></>
+  // Who wrote it, and whether it is held or still being written (an entry of this margin).
+  const e = 'anchor' in n ? n as Entry : null
+  return (
+    <div data-id={n.id} className={`note-card sent${e?.held ? ' held' : ''}${e?.live ? ' live' : ''}`} onMouseEnter={() => onHover(true)} onMouseLeave={() => onHover(false)}>
+      {e && (e.by || e.held) && <div className="note-by">{e.live && <Who p={e.who} size={14} />} {e.by ?? 'Someone'}{e.held && <span className="muted"> · held</span>}{e.live && <span className="muted"> · writing</span>}</div>}
+      <div ref={body} className={`note-fold${size !== 'short' ? ' long' : ''}${open ? ' open' : ''}`}><div>{text}</div></div>
+      {size !== 'short' && (
+        <button className="link note-more" onClick={() => size === 'huge' ? setDialog(true) : setOpen(!open)}>{open ? 'Show less' : size === 'huge' ? 'Show all' : 'Show more'}</button>
+      )}
+      {dialog && <TextDialog title="Comment" onClose={() => setDialog(false)}><div className="comment-full">{text}</div></TextDialog>}
+    </div>
+  )
+}
+
+// Also the card of a comment on an artifact (ArtifactNotes.tsx).
+// onHover: the pointer comes onto the card or leaves it (for a comment on a message, its passage darkens).
+export function NoteCard({ sid, note, onOpen, onFocus, onBlur, onHover = (on) => note.kind === 'note' && focusPassage(sid, on ? note : null) }: { sid: string; note: NoteDraft | ArtDraft; onOpen(): void; onFocus(): void; onBlur(): void; onHover?(on: boolean): void }) {
   const [focus] = useState(() => state.focus === note.id)
-  useEffect(() => { if (state.focus === note.id) state.focus = null }, [note.id])
   const card = useRef<HTMLDivElement>(null)
-  const [picking, setPicking] = useState(false)
-  // The passage's reactions (not sent yet), which the emoji row shows as on.
-  const k = JSON.stringify(note.anchor)
-  const reactions = draftsOf(sid).filter((d): d is NoteDraft => d.kind === 'note' && !!d.reaction && JSON.stringify(d.anchor) === k)
-  const react = (r: string) => {
-    const same = reactions.find((d) => d.text.trim() === r)
-    if (isEmpty(note) && same) return removeDraft(sid, same.id)
-    if (!note.text.includes(r)) usedEmoji(r)
-    if (isEmpty(note) && reactions.length) {
-      // The passage has reactions already (the card was opened from one): add this one beside them, and keep the card.
-      addDraft(sid, { ...note, id: uid(), text: r, reaction: true, createdAt: Date.now() })
-      state.focus = null
-      return
+  // A new card stays open even if the focus misses it, as a phone allows a focus only in a touch
+  // handler (a selection can end with none). Then a touch elsewhere takes it away while empty.
+  useEffect(() => {
+    if (state.focus !== note.id) return
+    state.focus = null
+    onOpen()
+    const away = (e: PointerEvent) => {
+      if (card.current?.contains(e.target as Node) || card.current?.contains(document.activeElement)) return
+      document.removeEventListener('pointerdown', away)
+      const d = draftsOf(sid).find((x) => x.id === note.id) as NoteDraft | ArtDraft | undefined
+      if (d && isEmpty(d)) removeDraft(sid, note.id)
     }
-    // On a fresh empty card the emoji is a reaction: it moves to the left of the passage and the card goes.
-    if (isEmpty(note)) { focusPassage(sid, null); updateDraft(sid, note.id, { text: r, reaction: true }); return }
-    updateDraft(sid, note.id, { text: toggleReaction(note.text, r) })
+    document.addEventListener('pointerdown', away)
+    return () => document.removeEventListener('pointerdown', away)
+  }, [note.id])
+  // A comment of more than one line moves its image button down under the X (data-multi), so its
+  // text can use that width. It counts the lines with the button at the top, else a line that fits
+  // only without the button would change the state again and again.
+  const measure = () => {
+    const el = card.current, ed = el?.querySelector<HTMLElement>('.ri-edit')
+    if (!el || !ed) return
+    el.removeAttribute('data-multi')
+    el.toggleAttribute('data-multi', ed.scrollHeight > 30)
+  }
+  useLayoutEffect(measure, [note.text])
+  // An image that loads, or a new width of the card, can change the lines.
+  useEffect(() => {
+    const el = card.current!
+    let width = el.offsetWidth, frame = 0
+    el.addEventListener('load', measure, true)
+    const ro = new ResizeObserver(() => {
+      if (el.offsetWidth === width) return
+      width = el.offsetWidth
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(measure)
+    })
+    ro.observe(el)
+    return () => { el.removeEventListener('load', measure, true); ro.disconnect(); cancelAnimationFrame(frame) }
+  }, [])
+  const [picking, setPicking] = useState(false)
+  // The passage's reactions (not sent yet), which the emoji row shows first, on.
+  const k = JSON.stringify(note.anchor)
+  const whole = (d: NoteDraft | ArtDraft) => d.kind === 'note' && !!d.whole
+  const reactions = draftsOf(sid).filter((d): d is NoteDraft | ArtDraft => d.kind === note.kind && !!d.reaction && whole(d) === whole(note) && JSON.stringify(d.anchor) === k)
+  const on = [...new Set(reactions.map((d) => d.text.trim()))]
+  // An emoji from the row is a reaction, never text in the comment: a click on one that is on takes it
+  // off, any other adds it. The card stays, with the caret in it, so you can add words; left empty, it
+  // goes as usual and only the reaction stays.
+  const react = (r: string) => {
+    if (on.includes(r)) for (const d of reactions) { if (d.text.trim() === r) removeDraft(sid, d.id) }
+    else {
+      usedEmoji(r)
+      addDraft(sid, { ...note, id: uid(), text: r, images: [], reaction: true, createdAt: Date.now() })
+      state.focus = null
+    }
+    const ed = card.current?.querySelector<HTMLElement>('.ri-edit')
+    if (ed && document.activeElement !== ed) focusField(ed)
   }
   return (
     <div
@@ -281,19 +377,19 @@ function NoteCard({ sid, note, onFocus, onBlur }: { sid: string; note: NoteDraft
       data-id={note.id}
       ref={card}
       onFocus={onFocus}
-      onMouseEnter={() => focusPassage(sid, note)}
-      onMouseLeave={() => { if (!card.current?.contains(document.activeElement)) focusPassage(sid, null) }}
+      onMouseEnter={() => onHover(true)}
+      onMouseLeave={() => { if (!card.current?.contains(document.activeElement)) onHover(false) }}
       onBlur={() => {
         onBlur()
         // Clicked away from an empty comment: it leaves no trace. (Not while a
         // file dialog has the focus, or while focus just moved within the card.)
         setTimeout(() => {
-          const d = draftsOf(sid).find((x) => x.id === note.id) as NoteDraft | undefined
+          const d = draftsOf(sid).find((x) => x.id === note.id) as NoteDraft | ArtDraft | undefined
           if (d && isEmpty(d) && document.hasFocus() && !card.current?.contains(document.activeElement)) removeDraft(sid, note.id)
         }, 200)
       }}
     >
-      <button className="card-x" title="Discard" onMouseDown={(e) => e.preventDefault()} onClick={() => { focusPassage(sid, null); removeDraft(sid, note.id) }}><XIcon size={12} /></button>
+      <button className="card-x" title="Discard" onMouseDown={(e) => e.preventDefault()} onClick={() => { onHover(false); removeDraft(sid, note.id) }}><XIcon size={12} /></button>
       <RichInput
         value={note.text}
         onChange={(text) => updateDraft(sid, note.id, { text })}
@@ -304,12 +400,13 @@ function NoteCard({ sid, note, onFocus, onBlur }: { sid: string; note: NoteDraft
         minRows={1}
         onEscape={() => { if (isEmpty(note)) removeDraft(sid, note.id); else (document.activeElement as HTMLElement | null)?.blur() }}
       />
-      <div className="reactions" onMouseDown={(e) => e.preventDefault()}>
+      {/* The emoji keep the focus in the comment; the picker's search field can take it. */}
+      <div className="reactions" onMouseDown={(e) => { if (!(e.target as Element).closest('input')) e.preventDefault() }}>
         {/* The passage's reactions first, whatever they are, then your most used. */}
-        {[...new Set([...reactions.map((d) => d.text.trim()), ...topEmoji(10)])].slice(0, Math.max(10, reactions.length)).map((r) => (
-          <button key={r} className={note.text.includes(r) || reactions.some((d) => d.text.trim() === r) ? 'on' : ''} onClick={() => react(r)}>{r}</button>
+        {[...new Set([...on, ...topEmoji(8)])].slice(0, Math.max(8, on.length)).map((r) => (
+          <button key={r} className={on.includes(r) ? 'on' : ''} onClick={() => react(r)}>{r}</button>
         ))}
-        <button className="more-emoji" title="Search emoji" onClick={() => setPicking(true)}>+</button>
+        <button className="more-emoji" onClick={() => setPicking(true)}>+</button>
         {picking && <EmojiPicker onPick={(r) => { react(r); setPicking(false) }} onClose={() => setPicking(false)} />}
       </div>
     </div>
