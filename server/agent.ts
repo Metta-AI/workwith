@@ -14,6 +14,8 @@
 //   CODINGER_BILLING        api: show API spend, not plan limits (Bedrock and Vertex need not say)
 //   CODINGER_NO_SHELL       (server/index.ts) 1: no shell commands, for a page open to strangers
 //   CODINGER_HOSTS          (server/index.ts) may hold "*.trycloudflare.com" for such a tunnel
+//   CODINGER_SUPERVISED     (server/index.ts) 1: a restart only stops this server, and the
+//                           supervisor (systemd, launchd) starts the next one
 
 import fs from 'node:fs'
 import path from 'node:path'

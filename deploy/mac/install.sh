@@ -34,6 +34,8 @@ if [ ! -f "$env" ]; then
   # tailscale serve names the person in Tailscale-User-Login, and strips one the browser sends.
   cat > "$env" <<EOF
 PORT=$PORT
+# launchd starts the next server when Codinger restarts (run.sh builds the page first).
+CODINGER_SUPERVISED=1
 CODINGER_USER_HEADER=Tailscale-User-Login
 CODINGER_HOSTS=$name
 CODINGER_PEOPLE='$PEOPLE'

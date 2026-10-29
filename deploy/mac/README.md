@@ -31,6 +31,7 @@ Notes:
 - The job is a LaunchAgent, not a LaunchDaemon: Claude Code keeps its login in the Keychain,
   so someone must be logged in to the Mac. `sudo pmset autorestart 1` brings it back after a
   power cut (with automatic login, it comes all the way back).
-- `~/.codinger/run.sh` waits while a server of this checkout is up: Codinger restarts
-  itself by starting a new server and exiting, and launchd starting one too would race it.
+- `CODINGER_SUPERVISED=1` (in `desk.env`): a restart only stops the server, handing busy
+  sessions on, and launchd starts the next one; `run.sh` builds the page first. Sessions and
+  tasks run in their own process groups, so they outlive the server.
 - Logs: `~/.codinger/launchd.log`, `~/.codinger/server.log`.

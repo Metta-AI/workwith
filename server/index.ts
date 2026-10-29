@@ -1865,6 +1865,9 @@ setInterval(() => {
 }, 5000).unref()
 
 function restart() {
+  // Under a supervisor (CODINGER_SUPERVISED: systemd, launchd) it starts the next server, which
+  // builds the page if it needs to; this one hands its busy sessions on and goes, as any stop does.
+  if (desk('SUPERVISED') === '1') return shutdown()
   if (process.platform === 'win32') return restartWindows()
   const q = (x: string) => `'${x.replace(/'/g, `'\\''`)}'`
   const log = q(path.join(DATA, 'server.log'))
