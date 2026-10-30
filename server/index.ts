@@ -30,7 +30,8 @@ import { flagProblem } from '../shared/flags.ts'
 import { allTasks, endText, logPath, markTold, readLog, removeTask, searchLog, startTask, startTasks, statusLine, stopTask, taskOf } from './tasks.ts'
 import type { Task, TaskNotify } from '../shared/types.ts'
 import { configsFor, probe, serversFor } from './mcpservers.ts'
-import { agentInfo, ASK_NAME, billing, desk, personOf, serveAgent } from './agent.ts'
+import { agentInfo, ASK_NAME, BASE, billing, desk, personOf, serveAgent } from './agent.ts'
+import { pageUnder, underBase } from './base.ts'
 import { DEFAULT_CACHE_GUARD, cacheLeft, knownTtl } from '../shared/cache.ts'
 import { AGENTS_FILE, agentsPrompt, readAgentsMd, writeAgentsMd } from './agentsmd.ts'
 import { handleMcp, type Tool } from './mcp.ts'
@@ -1721,7 +1722,10 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
 const server = http.createServer(async (req, res) => {
   try {
     if (!localHost(req) || !localOrigin(req)) throw new HttpError(403, 'Codinger only answers requests from its own page')
-    const url = new URL(req.url ?? '/', `http://${req.headers.host}`)
+    // Under CODINGER_BASE the page is at <base>/, so its service worker can have that scope.
+    if (BASE && req.url === BASE) { res.writeHead(308, { location: BASE + '/' }).end(); return }
+    req.url = underBase(BASE, req.url ?? '/')
+    const url = new URL(req.url, `http://${req.headers.host}`)
     if (url.pathname === `/mcp/${MCP_TOKEN}`) {
       const lead = [...sessions.values()].find((s) => s.meta.kind === 'lead')
       return await handleMcp(req, res, lead ? [...tools, lookTool(lead.meta.id)] : tools)
@@ -1734,7 +1738,8 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/api/')) return await api(req, res, url)
     if (serveAgent(url.pathname, res)) return
     if (vite) return vite.middlewares(req, res)
-    serveStatic(url.pathname, res, req.headers['x-codinger-remote'] ? `/m/${remoteName()}` : '')
+    if (req.headers['x-codinger-remote']) serveStatic(url.pathname, res, `/m/${remoteName()}`)
+    else serveStatic(url.pathname, res, BASE, true)
   } catch (e) {
     const status = e instanceof HttpError ? e.status : 500
     if (status === 500) console.error(e)
@@ -1745,8 +1750,9 @@ const server = http.createServer(async (req, res) => {
 const DIST = path.join(ROOT, 'dist')
 const TYPES: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' }
 // base: where the browser sees this machine's files, when the hub passes its page through
-// (/m/<name>, vite.config.ts): the page's root paths go under it, and so do its scripts' loads.
-function serveStatic(p: string, res: http.ServerResponse, base = '') {
+// (/m/<name>, vite.config.ts) or a proxy serves it under CODINGER_BASE (own): the page's root
+// paths go under it, and so do its scripts' loads (server/base.ts).
+function serveStatic(p: string, res: http.ServerResponse, base = '', own = false) {
   let file = path.join(DIST, path.normalize(p).replace(/^(\.\.[/\\])+/, ''))
   const missing = !file.startsWith(DIST) || !fs.existsSync(file) || fs.statSync(file).isDirectory()
   // A build since the page loaded removed its old files: a 404, not the page, which no import can use.
@@ -1757,7 +1763,7 @@ function serveStatic(p: string, res: http.ServerResponse, base = '') {
   const agent = agentInfo()
   if ((base || agent) && type === 'text/html') {
     let html = fs.readFileSync(file, 'utf8')
-    if (base) html = html.replaceAll('"/assets/', `"${base}/assets/`).replace('<head>', `<head><script>window.__base=${JSON.stringify(base + '/')}</script>`)
+    html = pageUnder(html, base, own)
     // An agent's desk is named for the agent, on a phone's home screen too (iOS reads this tag).
     if (agent) html = html.replace('<meta name="apple-mobile-web-app-title" content="Codinger" />', `<meta name="apple-mobile-web-app-title" content="${escapeAttr(agent.name)}" />`)
     res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' }).end(html)
@@ -1773,6 +1779,7 @@ const escapeAttr = (s: string) => s.replace(/[&"<>]/g, (c) => ({ '&': '&amp;', '
 
 const wss = new WebSocketServer({ noServer: true })
 server.on('upgrade', (req, socket, head) => {
+  req.url = underBase(BASE, req.url ?? '/')
   if (req.url?.startsWith('/api/remote/m/')) {
     if (!localHost(req) || !localOrigin(req)) { socket.destroy(); return }
     return remoteUpgrade(req, socket, head)

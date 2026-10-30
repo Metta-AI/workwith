@@ -4,25 +4,25 @@
 // through its machine, which must be connected there. The service worker (public/sw.js) shows
 // them, and a click on one opens its session here.
 
-import { globalId, select, state } from './store.ts'
+import { globalId, ROOT, select, state } from './store.ts'
 
 export const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && isSecureContext
 
 // The hub's push routes: on web.codinger.app itself, or through this machine.
-const base = () => state.web ? '/_remote/push' : '/api/remote/push'
+const base = () => state.web ? '/_remote/push' : `${ROOT}/api/remote/push`
 const post = (path: string, body: unknown) =>
   fetch(base() + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(async (r) => {
     if (!r.ok) throw new Error((await r.json().catch(() => null))?.error ?? `HTTP ${r.status}`)
   })
 
 async function registration() {
-  await navigator.serviceWorker.register('/sw.js')
+  await navigator.serviceWorker.register(`${ROOT}/sw.js`, { scope: `${ROOT}/` })
   return navigator.serviceWorker.ready
 }
 
 export async function pushSubscribed(): Promise<boolean> {
   if (!pushSupported() || Notification.permission !== 'granted') return false
-  const reg = await navigator.serviceWorker.getRegistration('/')
+  const reg = await navigator.serviceWorker.getRegistration(`${ROOT}/`)
   return !!await reg?.pushManager.getSubscription()
 }
 
@@ -43,7 +43,7 @@ export async function enablePush() {
 }
 
 export async function disablePush() {
-  const sub = await (await navigator.serviceWorker.getRegistration('/'))?.pushManager.getSubscription()
+  const sub = await (await navigator.serviceWorker.getRegistration(`${ROOT}/`))?.pushManager.getSubscription()
   if (!sub) return
   await post('/unsubscribe', { endpoint: sub.endpoint }).catch(() => {})
   await sub.unsubscribe()

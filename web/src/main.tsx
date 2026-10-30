@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import { useEffect } from 'react'
-import { api, changed, globalId, opened, select, setGuestName, start, state, useStore, currentMachine, labelOf, localId, machineOf } from './store.ts'
+import { api, changed, globalId, opened, select, setGuestName, start, state, useStore, currentMachine, labelOf, localId, machineOf, ROOT } from './store.ts'
 import type { SessionMeta } from '../../shared/types.ts'
 import { useState } from 'react'
 import { Sidebar } from './components/Sidebar.tsx'
@@ -159,7 +159,7 @@ function AskName() {
   return (
     <div className="modal-back">
       <div className="modal ask-name">
-        {st.agent?.avatar && <img className="ask-name-face" src="/agent/avatar" alt="" />}
+        {st.agent?.avatar && <img className="ask-name-face" src={`${ROOT}/agent/avatar`} alt="" />}
         <h2>Work with {st.agent?.name ?? 'Claude'}</h2>
         <p>What is your name? The others here see it on what you write.</p>
         <input autoFocus placeholder="Your name" value={name} maxLength={40}
@@ -336,6 +336,6 @@ initUrl()
 void start()
 initTooltips()
 // Installable, and readable offline (public/sw.js). Not under Vite's dev server, whose files change.
-if ('serviceWorker' in navigator && !import.meta.env.DEV) void navigator.serviceWorker.register('/sw.js').catch(() => {})
+if ('serviceWorker' in navigator && !import.meta.env.DEV) void navigator.serviceWorker.register(`${ROOT}/sw.js`, { scope: `${ROOT}/` }).catch(() => {})
 initPeek()
 createRoot(document.getElementById('root')!).render(<App />)

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SessionGroup, SessionMeta, Usage } from '../../../shared/types.ts'
-import { api, changed, closeSession, showArchive, currentMachine, LOCAL, localId, machineList, machineOf, offline, select, state, useStore, type Machine, labelOf } from '../store.ts'
+import { api, changed, closeSession, showArchive, currentMachine, globalId, LOCAL, localId, machineList, machineOf, offline, select, setComposer, state, useStore, type Machine, labelOf, ROOT } from '../store.ts'
 import { HistoryDialog } from './HistoryDialog.tsx'
 import { fatigue, timeAgo } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
@@ -196,17 +196,26 @@ export function Sidebar({ width }: { width: number }) {
   const tab = st.web || !local ? 'remote' : st.sideTab
   // Machines move like folders: drag one by its head.
   const drag = useDragSort((_key, names) => { state.machineOrder = names; changed() })
-  const tree = (machine: string) => <MachineTree machine={machine} onNew={(cwd, group) => setNewIn({ cwd, machine, group: group || undefined })} onMenu={openMenu} />
+  // At an agent's desk with its own folder (CODINGER_AGENT_CWD): a new session starts there at once,
+  // no dialog; it fails into the dialog, which says why.
+  const deskCwd = st.agent?.cwd
+  const newSession = (n: { cwd: string; machine?: string; group?: string }) => {
+    if (!deskCwd || (n.machine && n.machine !== LOCAL)) { setNewIn(n); return }
+    void api<SessionMeta>('/api/sessions', 'POST', { cwd: n.cwd || deskCwd, title: '', model: null, permissionMode: 'auto', flags: [], parentId: null, group: n.group, mkdir: true }, LOCAL)
+      .then((meta) => { const id = globalId(LOCAL, meta.id); setComposer(id, { text: '' }); select(id) })
+      .catch(() => { state.error = null; setNewIn(n) })
+  }
+  const tree = (machine: string) => <MachineTree machine={machine} onNew={(cwd, group) => newSession({ cwd, machine, group: group || undefined })} onMenu={openMenu} />
   return (
     <aside className="sidebar" style={{ width }}>
       {/* An agent's desk (server/agent.ts): its face and name over the sessions. */}
       {st.agent && <div className="brand">
-        {st.agent.avatar && <img className="brand-avatar" src="/agent/avatar" alt="" />}
+        {st.agent.avatar && <img className="brand-avatar" src={`${ROOT}/agent/avatar`} alt="" />}
         <span>{st.agent.name}</span>
       </div>}
       <HereNow />
       <div className="side-actions">
-        <button className="primary" onClick={() => setNewIn({ cwd: '', machine: tab === 'local' ? LOCAL : others[0]?.name })}>+ New session</button>
+        <button className="primary" onClick={() => newSession({ cwd: '', machine: tab === 'local' ? LOCAL : others[0]?.name })}>+ New session</button>
         <button onClick={() => setHistory(true)} title={`Continue any Claude Code conversation on ${st.web ? currentMachine() : 'this machine'}, including terminal ones`}>Resume…</button>
         {/* Opens the palette (Palette.tsx), as ⌘K does: the way in on a phone. */}
         <button className="icon-btn side-search" aria-label="Search" data-tip="Search (⌘K)" onClick={() => window.dispatchEvent(new Event('codinger:palette'))}><SearchIcon size={16} /></button>
