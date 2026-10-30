@@ -10,7 +10,7 @@ import { itemsOf } from '../../shared/blocks.ts'
 import { applyAppearance, holdingAppearance } from './appearance.ts'
 import type { Artifact, PreviewTarget, ProlificaState } from '../../shared/artifacts.ts'
 import type { LineComment, Verdict } from '../../shared/review.ts'
-import { deskKey } from './deskKey.ts'
+import { deskKey, firstPanel } from './deskKey.ts'
 
 // reaction: an emoji alone, shown at the left of its passage, not as a card;
 // whole: on a whole paragraph or list item (the reaction button), so not highlighted.
@@ -129,8 +129,8 @@ const mine = (k: string) => deskKey(k, (window as { __root?: string }).__root)
 // On a phone the panel covers the conversation, so they all start closed there.
 const phone = matchMedia('(max-width: 720px)').matches
 // The panel of a session you have not changed it in.
-const panelNew: Panel = { tab: phone ? null : 'items', wide: false }
-let panels: Record<string, Panel> = saved(mine('codinger.panels'), {})
+const panelNew: Panel = { tab: firstPanel((window as { __root?: string }).__root, phone), wide: false }
+let panels: Record<string, Panel> = saved(mine('codinger.sessionPanels'), {})
 if (phone) panels = Object.fromEntries(Object.entries(panels).map(([k, p]) => [k, { ...p, tab: null }]))
 
 export const state = {
@@ -305,7 +305,7 @@ export function changed() {
     localStorage.setItem('codinger.sideHidden', JSON.stringify(state.sideHidden))
     localStorage.setItem('codinger.machineOrder', JSON.stringify(state.machineOrder))
     if (state.artifact) localStorage.setItem('codinger.artifact', state.artifact)
-    localStorage.setItem(mine('codinger.panels'), JSON.stringify(state.panels))
+    localStorage.setItem(mine('codinger.sessionPanels'), JSON.stringify(state.panels))
   }, 300)
 }
 // Tell the server which sessions you are writing a reply in, so the lead's
