@@ -10,6 +10,7 @@ import { itemsOf } from '../../shared/blocks.ts'
 import { applyAppearance, holdingAppearance } from './appearance.ts'
 import type { Artifact, PreviewTarget, ProlificaState } from '../../shared/artifacts.ts'
 import type { LineComment, Verdict } from '../../shared/review.ts'
+import { deskKey } from './deskKey.ts'
 
 // reaction: an emoji alone, shown at the left of its passage, not as a card;
 // whole: on a whole paragraph or list item (the reaction button), so not highlighted.
@@ -123,20 +124,21 @@ type State = {
 }
 
 const saved = <T,>(k: string, d: T): T => { try { return JSON.parse(localStorage.getItem(k) ?? '') ?? d } catch { return d } }
+const mine = (k: string) => deskKey(k, (window as { __root?: string }).__root)
 
 // On a phone the panel covers the conversation, so they all start closed there.
 const phone = matchMedia('(max-width: 720px)').matches
 // The panel of a session you have not changed it in.
 const panelNew: Panel = { tab: phone ? null : 'items', wide: false }
-let panels: Record<string, Panel> = saved('codinger.panels', {})
+let panels: Record<string, Panel> = saved(mine('codinger.panels'), {})
 if (phone) panels = Object.fromEntries(Object.entries(panels).map(([k, p]) => [k, { ...p, tab: null }]))
 
 export const state = {
   events: {},
   streaming: {},
-  selected: saved('codinger.selected', 'lead'),
-  drafts: saved('codinger.drafts', {}),
-  composer: saved('codinger.composer', {}),
+  selected: saved(mine('codinger.selected'), 'lead'),
+  drafts: saved(mine('codinger.drafts'), saved('codinger.drafts', {})),
+  composer: saved(mine('codinger.composer'), {}),
   focus: null,
   showArchived: false,
   sideOpen: false,
@@ -158,7 +160,7 @@ export const state = {
   artifacts: [],
   artifactsPort: 0,
   prolifica: null,
-  preview: saved('codinger.preview', {}),
+  preview: saved(mine('codinger.preview'), {}),
   machines: {},
   web: false,
   email: null,
@@ -183,7 +185,7 @@ export const state = {
 // the page and each conversation). The real hello replaces it.
 type Seen = { at: number; sessions: SessionMeta[]; settings: Settings; agent: AgentInfo | null; me: Person | null; billing: 'api' | 'plan' }
 function restoreSeen() {
-  const seen = saved<Seen | null>('codinger.seen', null)
+  const seen = saved<Seen | null>(mine('codinger.seen'), null)
   if (seen) Object.assign(state, { sessions: seen.sessions, settings: seen.settings, agent: seen.agent, me: seen.me, billing: seen.billing, seenAt: seen.at })
   if (seen?.billing === 'api') state.money = 'usd'
 }
@@ -194,7 +196,7 @@ function keepSeen() {
     const local = state.machines[LOCAL]
     if (!local) return
     const seen: Seen = { at: Date.now(), sessions: local.sessions, settings: local.settings, agent: state.agent, me: state.me, billing: state.billing }
-    try { localStorage.setItem('codinger.seen', JSON.stringify(seen)) } catch { /* full: offline shows less */ }
+    try { localStorage.setItem(mine('codinger.seen'), JSON.stringify(seen)) } catch { /* full: offline shows less */ }
   }, 2000)
 }
 
@@ -289,13 +291,13 @@ export function changed() {
   reportLive()
   clearTimeout(persistTimer)
   persistTimer = window.setTimeout(() => {
-    localStorage.setItem('codinger.drafts', JSON.stringify(state.drafts))
-    localStorage.setItem('codinger.composer', JSON.stringify(state.composer))
-    localStorage.setItem('codinger.selected', JSON.stringify(state.selected))
+    localStorage.setItem(mine('codinger.drafts'), JSON.stringify(state.drafts))
+    localStorage.setItem(mine('codinger.composer'), JSON.stringify(state.composer))
+    localStorage.setItem(mine('codinger.selected'), JSON.stringify(state.selected))
     localStorage.setItem('codinger.showSteps', JSON.stringify(state.showSteps))
     localStorage.setItem('codinger.touchPick', JSON.stringify(state.touchPick))
     localStorage.setItem('codinger.commentButton', JSON.stringify(state.commentButton))
-    localStorage.setItem('codinger.preview', JSON.stringify(state.preview))
+    localStorage.setItem(mine('codinger.preview'), JSON.stringify(state.preview))
     localStorage.setItem('codinger.sideTab', JSON.stringify(state.sideTab))
     localStorage.setItem('codinger.collapsed', JSON.stringify(state.collapsed))
     localStorage.setItem('codinger.sideAll', JSON.stringify(state.sideAll))
@@ -303,7 +305,7 @@ export function changed() {
     localStorage.setItem('codinger.sideHidden', JSON.stringify(state.sideHidden))
     localStorage.setItem('codinger.machineOrder', JSON.stringify(state.machineOrder))
     if (state.artifact) localStorage.setItem('codinger.artifact', state.artifact)
-    localStorage.setItem('codinger.panels', JSON.stringify(state.panels))
+    localStorage.setItem(mine('codinger.panels'), JSON.stringify(state.panels))
   }, 300)
 }
 // Tell the server which sessions you are writing a reply in, so the lead's
