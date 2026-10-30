@@ -59,7 +59,7 @@ test('a server under /desk/ada answers there, behind a proxy named in CODINGER_H
   fs.writeFileSync(claude, '#!/bin/sh\necho \'{"loggedIn":true}\'\n', { mode: 0o755 })
   const port = 4900 + Math.floor(Math.random() * 90)
   const server = spawn(process.execPath, [path.join(import.meta.dirname, 'index.ts')], {
-    env: { ...process.env, HOME: home, PORT: String(port), CODINGER_CLAUDE: claude, CLAUDE_CODE_OAUTH_TOKEN: 'test-not-a-real-token', CODINGER_BASE: '/desk/ada', CODINGER_AGENT_NAME: 'Ada', CODINGER_HOSTS: 'proxy.test', CODINGER_USER_HEADER: 'x-user' },
+    env: { ...process.env, HOME: home, PORT: String(port), CODINGER_CLAUDE: claude, CLAUDE_CODE_OAUTH_TOKEN: 'test-not-a-real-token', CODINGER_BASE: '/desk/ada', CODINGER_AGENT_NAME: 'Ada', CODINGER_AGENT_CWD: '/workspace/ada', CODINGER_HOSTS: 'proxy.test', CODINGER_USER_HEADER: 'x-user' },
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true, // its own process group, so the teardown stops anything it started too
   })
@@ -99,5 +99,6 @@ test('a server under /desk/ada answers there, behind a proxy named in CODINGER_H
     ws.on('error', reject)
   })
   assert.equal(hello.agent.name, 'Ada')
+  assert.equal(hello.agent.cwd, '/workspace/ada', 'the desk tells the page where a new session starts')
   assert.equal(hello.me.login, 'grace@example.com')
 })
