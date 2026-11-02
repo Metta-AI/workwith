@@ -11,16 +11,20 @@
 //   everything else                straight to the network
 
 const CACHE = 'codinger-v3'
+// Where the page is: the root, or the path a proxy serves Codinger under (CODINGER_BASE), e.g.
+// /desk/ada/. The paths below are under it.
+const ROOT = new URL(self.registration.scope).pathname
+const under = (p) => p.startsWith(ROOT) ? '/' + p.slice(ROOT.length) : null
 
 // The page and everything it loads, so the first offline visit works even when the
 // page that installed this worker loaded its files before the worker could see them.
 async function precache() {
   const cache = await caches.open(CACHE)
-  const res = await fetch('/')
+  const res = await fetch(ROOT)
   if (!res.ok) return
   const html = await res.clone().text()
-  await cache.put('/', res)
-  const urls = [...html.matchAll(/(?:src|href)="(\/(?:assets|agent)\/[^"]+|\/manifest\.webmanifest)"/g)].map((m) => m[1])
+  await cache.put(ROOT, res)
+  const urls = [...html.matchAll(/(?:src|href)="([^"]*\/(?:assets|agent)\/[^"]+|[^"]*\/manifest\.webmanifest)"/g)].map((m) => m[1]).filter((u) => u.startsWith(ROOT))
   await Promise.all(urls.map((u) => cache.add(u).catch(() => {})))
 }
 
@@ -59,11 +63,12 @@ async function cacheFirst(req) {
 self.addEventListener('fetch', (e) => {
   const req = e.request
   const url = new URL(req.url)
-  if (req.method !== 'GET' || url.origin !== location.origin) return
-  if (req.mode === 'navigate') return e.respondWith(networkFirst(req, '/'))
-  if (url.pathname.startsWith('/assets/')) return e.respondWith(cacheFirst(req))
-  if (url.pathname.startsWith('/agent/') || url.pathname === '/manifest.webmanifest') return e.respondWith(networkFirst(req))
-  if (/^\/api\/sessions\/[^/]+\/events$/.test(url.pathname)) return e.respondWith(networkFirst(req))
+  const p = under(url.pathname)
+  if (req.method !== 'GET' || url.origin !== location.origin || p == null) return
+  if (req.mode === 'navigate') return e.respondWith(networkFirst(req, ROOT))
+  if (p.startsWith('/assets/')) return e.respondWith(cacheFirst(req))
+  if (p.startsWith('/agent/') || p === '/manifest.webmanifest') return e.respondWith(networkFirst(req))
+  if (/^\/api\/sessions\/[^/]+\/events$/.test(p)) return e.respondWith(networkFirst(req))
 })
 
 self.addEventListener('push', (e) => {
@@ -88,6 +93,6 @@ self.addEventListener('notificationclick', (e) => {
       page.postMessage({ type: 'codinger-push', machine, session })
       return page.focus()
     }
-    return self.clients.openWindow(`/?push=${encodeURIComponent(`${machine}~${session}`)}`)
+    return self.clients.openWindow(`${ROOT}?push=${encodeURIComponent(`${machine}~${session}`)}`)
   })())
 })

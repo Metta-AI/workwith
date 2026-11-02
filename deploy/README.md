@@ -21,6 +21,12 @@ By hand, once per host:
 
 Update: build in `/opt/codinger`, then `sudo systemctl restart codinger-workwith`.
 
+Several desks on one site: when the proxy serves each under its own path and passes the path
+on unchanged (`example.com/desk/ada/…` to Ada's Codinger as `/desk/ada/…`), set
+`CODINGER_BASE=/desk/ada` (no trailing slash) and put the site's host in `CODINGER_HOSTS`.
+The page, its files, `/api`, `/ws`, the manifest and the service worker are then under the
+base, and the service worker's scope is `/desk/ada/`. Unset, Codinger is at the root.
+
 `mac/` runs Codinger on a Mac on your tailnet (a Mac mini at home), on your Claude
 subscription, behind `tailscale serve`, with `git push` to update it.
 

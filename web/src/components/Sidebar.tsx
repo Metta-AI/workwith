@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SessionGroup, SessionMeta, Usage } from '../../../shared/types.ts'
-import { api, changed, closeSession, showArchive, currentMachine, LOCAL, localId, machineList, machineOf, offline, select, state, useStore, type Machine, labelOf } from '../store.ts'
+import { api, changed, closeSession, showArchive, currentMachine, LOCAL, localId, machineList, machineOf, offline, select, state, useStore, type Machine, labelOf, ROOT } from '../store.ts'
 import { HistoryDialog } from './HistoryDialog.tsx'
 import { fatigue, timeAgo } from '../util.ts'
 import { Mascot, STATUS_LABEL } from './Mascot.tsx'
@@ -201,7 +201,7 @@ export function Sidebar({ width }: { width: number }) {
     <aside className="sidebar" style={{ width }}>
       {/* An agent's desk (server/agent.ts): its face and name over the sessions. */}
       {st.agent && <div className="brand">
-        {st.agent.avatar && <img className="brand-avatar" src="/agent/avatar" alt="" />}
+        {st.agent.avatar && <img className="brand-avatar" src={`${ROOT}/agent/avatar`} alt="" />}
         <span>{st.agent.name}</span>
       </div>}
       <HereNow />

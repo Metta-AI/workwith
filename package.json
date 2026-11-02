@@ -9,7 +9,8 @@
     "dev": "node server/index.ts --dev",
     "build": "vite build",
     "start": "vite build && node server/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test server/*.test.ts"
   },
   "engines": {
     "node": ">=23.6"
