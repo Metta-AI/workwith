@@ -5,6 +5,8 @@
 //   CODINGER_AGENT_AVATAR   an image file: its face in the sidebar
 //   CODINGER_AGENT_CSS      a CSS file that sets its colours (no theme prompt then)
 //   CODINGER_AGENT_COLOR    the colour of the installed app's title bar, e.g. #0f4a44
+//   CODINGER_AGENT_CWD      the agent's own folder: "+ New session" starts a session there at
+//                           once, with no dialog (people at a desk have no other folder to pick)
 //   CODINGER_USER_HEADER    the header the proxy names the signed-in person in
 //   CODINGER_PEOPLE         names to show: "ada@example.com=Ada,grace@example.com=Grace"
 //                           (otherwise the login before the @, capitalised)
@@ -33,12 +35,13 @@ const NAME = desk('AGENT_NAME')
 const AVATAR = existing(desk('AGENT_AVATAR'))
 const AVATAR_TYPE = AVATAR ? { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml' }[path.extname(AVATAR).toLowerCase()] ?? 'application/octet-stream' : ''
 const THEME = existing(desk('AGENT_CSS'))
+const CWD = desk('AGENT_CWD') || undefined
 
 export const ASK_NAME = desk('ASK_NAME') === '1'
 export const BASE = parseBase(desk('BASE'))
 
 export const agentInfo = (): AgentInfo | undefined =>
-  NAME ? { name: NAME, avatar: !!AVATAR, theme: !!THEME } : undefined
+  NAME ? { name: NAME, avatar: !!AVATAR, theme: !!THEME, ...(CWD ? { cwd: CWD } : {}) } : undefined
 
 // Claude Code on Bedrock or Vertex bills each token; there is no plan with limits to show.
 export const billing = (): 'api' | 'plan' =>

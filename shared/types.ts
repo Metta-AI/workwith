@@ -152,7 +152,8 @@ export type Person = { login: string; name: string; guest?: boolean }
 
 // The agent this Codinger belongs to, when it runs on an agent's own host (server/agent.ts):
 // its name for "Message Ada", and whether it has a face and a theme of its own.
-export type AgentInfo = { name: string; avatar: boolean; theme: boolean }
+// cwd: CODINGER_AGENT_CWD, where "+ New session" starts one at once (server/agent.ts).
+export type AgentInfo = { name: string; avatar: boolean; theme: boolean; cwd?: string }
 
 // by: who wrote the part, when Codinger knows people apart (see Person).
 export type Part = ({ by?: Person }) & (
