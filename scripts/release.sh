@@ -35,4 +35,19 @@ npm run build
 notes=$(git log --no-merges --format='- %s' "$last..HEAD" 2>/dev/null | cut -c1-160 | head -80 || true)
 git tag -a "$next" -m "$next" -m "${notes:-(first release)}"
 git push -q origin main "$next"
-echo "released $next ($(git rev-parse --short HEAD)). Hosts: agentctl fleet-status, then agentctl fleet-apply"
+echo "released $next ($(git rev-parse --short HEAD))"
+
+# A release that no host runs helps nobody: show the fleet and roll it, when agentctl is here
+# (agents-toolkit; AGENTCTL names it when it isn't on PATH). RELEASE_NO_APPLY=1 only shows.
+agentctl=${AGENTCTL:-$(command -v agentctl || true)}
+if [ -z "$agentctl" ]; then
+  echo "Hosts: agentctl fleet-status, then agentctl fleet-apply"
+else
+  "$agentctl" fleet-status || true
+  if [ "${RELEASE_NO_APPLY:-}" = 1 ] || [ ! -t 0 ]; then
+    echo "Roll the hosts forward: $agentctl fleet-apply"
+  else
+    read -r -p "Roll every host forward to $next now? [Y/n] " yn
+    case $yn in n*|N*) echo "Later: $agentctl fleet-apply" ;; *) "$agentctl" fleet-apply ;; esac
+  fi
+fi

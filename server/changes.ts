@@ -35,6 +35,10 @@ const SKIP = [DATA, process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.c
 // read from DATA/changes when blame needs them, so many changing files can't fill the heap.
 const tips = new Map<string, { text: string; n: number }>()
 const seen = new Map<string, string>()   // by file: its mtime and size when Codinger last read it
+// Versions that an earlier Codinger kept of files under SKIP (gigabytes of transcript snapshots, on a
+// host that ran one) would stay on disk for good, since those files never show as clean: they go
+// the first time each repository is looked at.
+const swept = new Set<string>()
 
 const run = (args: string[], cwd: string) => new Promise<string | null>((ok) => {
   execFile('git', args, { cwd, timeout: 5000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 }, (err, out) => ok(err ? null : String(out)))
@@ -133,8 +137,10 @@ async function look(cwd: string, sid: string, started: number, until = Infinity,
   }
   for (const p of dirty.get(top) ?? []) if (!now.has(p)) forget(p)
   dirty.set(top, now)
+  const sweep = !swept.has(top)
+  swept.add(top)
   for (const p of now) {
-    if (SKIP.some((d) => p.startsWith(d))) continue
+    if (SKIP.some((d) => p.startsWith(d))) { if (sweep) fs.rm(fileOf(p), { force: true }, () => {}); continue }
     let s: fs.Stats
     try { s = fs.statSync(p) } catch { continue }
     if (!s.isFile() || s.size > MAX || s.mtimeMs >= until) continue

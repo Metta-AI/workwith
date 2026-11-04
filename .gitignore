@@ -8,3 +8,8 @@ HANDOFF-*.md
 
 # Secrets (API tokens) for local tools
 .env
+
+# Workwith (the desk): its transcripts and change snapshots live here, host-only.
+# Without this, git shows ~30k of them as untracked and the desk tracked its own data (OOM, 2026-11-04).
+.codinger/
+.codiner
