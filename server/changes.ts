@@ -31,9 +31,11 @@ const fileOf = (p: string) => path.join(DIR, `${createHash('sha1').update(p).dig
 // changes: in a home folder that is a git repository, git shows them as untracked.
 const real = (d: string) => { try { return fs.realpathSync(d) } catch { return d } }
 const SKIP = [DATA, process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude')].map((d) => real(d) + path.sep)
-// By file: its newest version and how many it has. Only that one stays in memory; the rest are
-// read from DATA/changes when blame needs them, so many changing files can't fill the heap.
-const tips = new Map<string, { text: string; n: number }>()
+// By file: a hash of its newest version and how many it has. Only that stays in memory; the versions
+// are read from DATA/changes when blame needs them, so many changing files (a home folder with
+// thousands of untracked logs) can't fill the heap.
+const sha = (s: string) => createHash('sha1').update(s).digest('hex')
+const tips = new Map<string, { hash: string; n: number }>()
 const seen = new Map<string, string>()   // by file: its mtime and size when Codinger last read it
 // Versions that an earlier Codinger kept of files under SKIP (gigabytes of transcript snapshots, on a
 // host that ran one) would stay on disk for good, since those files never show as clean: they go
@@ -58,16 +60,16 @@ async function topOf(dir: string): Promise<string | null> {
 function versions(p: string): Version[] {
   const v: Version[] = []
   try { for (const l of fs.readFileSync(fileOf(p), 'utf8').split('\n')) if (l.trim()) try { v.push(JSON.parse(l)) } catch { /* torn */ } } catch { /* none yet */ }
-  tips.set(p, { text: v.at(-1)?.text ?? '', n: v.length })
+  tips.set(p, { hash: sha(v.at(-1)?.text ?? ''), n: v.length })
   return v
 }
-function tip(p: string): { text: string; n: number } {
+function tip(p: string): { hash: string; n: number } {
   return tips.get(p) ?? (versions(p), tips.get(p)!)
 }
 function add(p: string, v: Version) {
   const n = tip(p).n + 1
   fs.appendFileSync(fileOf(p), JSON.stringify(v) + '\n')
-  tips.set(p, { text: v.text, n })
+  tips.set(p, { hash: sha(v.text), n })
 }
 function forget(p: string) {
   tips.delete(p)
@@ -149,7 +151,7 @@ async function look(cwd: string, sid: string, started: number, until = Infinity,
     seen.set(p, key)
     const text = fs.readFileSync(p, 'utf8')
     const t = tip(p)
-    if (t.n && t.text === text) continue
+    if (t.n && t.hash === sha(text)) continue
     const mine = s.mtimeMs >= started - 100
     const had = t.n > 0
     if (!had) {
@@ -158,7 +160,7 @@ async function look(cwd: string, sid: string, started: number, until = Infinity,
     }
     if (mine && p === editReal) {
       const before = undo(text, edit!.edits)
-      if (before != null && before !== tip(p).text) add(p, { ts: Date.now(), who: had ? 'you' : 'unknown', text: before })
+      if (before != null && sha(before) !== tip(p).hash) add(p, { ts: Date.now(), who: had ? 'you' : 'unknown', text: before })
     }
     add(p, { ts: Date.now(), who: mine ? sid : had ? 'you' : 'unknown', text })
   }
