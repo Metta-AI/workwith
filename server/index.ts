@@ -1843,6 +1843,12 @@ initAuth({
   signedIn: () => { for (const s of sessions.values()) s.retryAfterSignIn((p) => hiddenFor(s, p)) },
 })
 
+// Behind a reverse proxy (Caddy on the agent hosts, tailscale serve on a Mac) the proxy keeps idle
+// connections to this server for a minute or two, and Node drops its own after five seconds: a
+// request sent down a connection Node just closed is a 502 for the person, now and then, with
+// nothing wrong. So idle connections outlive any proxy's idea of idle.
+server.keepAliveTimeout = 150_000
+server.headersTimeout = 155_000
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Codinger on http://localhost:${PORT}${DEV ? ' (dev)' : ''}`)
   startRemote(PORT, artifactsPort, (remote) => broadcast({ type: 'remote', remote }))
