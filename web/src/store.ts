@@ -146,7 +146,7 @@ export const state = {
   lightbox: null,
   showSteps: saved('codinger.showSteps', false),
   touchPick: saved('codinger.touchPick', true),
-  commentButton: saved('codinger.commentButton', false),
+  commentButton: saved('codinger.commentButtonV2', true),
   // 'both' was a choice until October 2026.
   money: (['usd', 'pct', 'week'] as const).find((x) => x === saved('codinger.money', 'pct')) ?? 'pct',
   runs: {},
@@ -296,7 +296,7 @@ export function changed() {
     localStorage.setItem(mine('codinger.selected'), JSON.stringify(state.selected))
     localStorage.setItem('codinger.showSteps', JSON.stringify(state.showSteps))
     localStorage.setItem('codinger.touchPick', JSON.stringify(state.touchPick))
-    localStorage.setItem('codinger.commentButton', JSON.stringify(state.commentButton))
+    localStorage.setItem('codinger.commentButtonV2', JSON.stringify(state.commentButton))
     localStorage.setItem(mine('codinger.preview'), JSON.stringify(state.preview))
     localStorage.setItem('codinger.sideTab', JSON.stringify(state.sideTab))
     localStorage.setItem('codinger.collapsed', JSON.stringify(state.collapsed))
