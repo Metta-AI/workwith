@@ -272,6 +272,7 @@ export function Sidebar({ width }: { width: number }) {
       <div className="side-foot">
         <button className="link" title={st.web ? `Settings of ${currentMachine()}` : 'Settings'} onClick={() => setSettings(true)}><GearIcon size={14} /></button>
         <div className="side-foot-mid">
+          {st.billing === 'api' && st.billingNote && <span className="usage-fallback" data-tip={st.billingNote}>API</span>}
           {st.billing === 'api' && <ApiSpend sessions={st.sessions} open={() => setSettings('cost')} />}
           {st.billing !== 'api' && (u.fiveHour != null || u.sevenDay != null) && (
             <div className="usage" data-tip={limitsTip(u)} onClick={() => setSettings('cost')}>

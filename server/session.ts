@@ -18,6 +18,7 @@ import { mediaTypeOf, splitImages, withoutImages } from '../shared/images.ts'
 import { splitPastes } from '../shared/pastes.ts'
 import type { Block, Event, Part, Person, PermissionMode, SessionMeta, Status, Usage } from '../shared/types.ts'
 import { AUTH_ERROR, CLAUDE, childEnv } from './auth.ts'
+import { LIMIT_ERROR, modelFor, onPlan, sessionEnv } from './billing.ts'
 import { entryBefore } from './history.ts'
 import { Proc } from './proc.ts'
 import { keepMediaIn } from './media.ts'
@@ -30,6 +31,8 @@ export type Hooks = {
   delta(s: Session, text: string, reset: boolean): void
   truncate(s: Session, seq: number): void
   authFailed(s: Session): void
+  // The plan's usage limit stopped a turn (server/billing.ts); resetsAt in seconds.
+  limitHit(s: Session, resetsAt?: number): void
   usage(u: Usage): void
   commands(s: Session, list: SlashCommand[]): void
   mcpServers(s: Session): Record<string, unknown> | null   // MCP servers to add once the process starts
@@ -64,6 +67,7 @@ export class Session {
   private stopping = false       // we asked the process to end (sleep, close, delete)
   private interrupted = false
   private authRetry: number | null = null  // a message that failed for want of a login, to send again
+  private limited: { resetsAt?: number } | null = null  // the plan's limit stopped this turn
   private terminalOnly = new Set(['doctor', 'color', 'focus', 'reload-plugins', 'heapdump'])
   private pending = new Map<string, { input: any; suggestions: any[] }>()
   // The prompt cache's clock starts when an API call starts, which the stream doesn't
@@ -135,6 +139,9 @@ export class Session {
 
   // A finished session ends its process after a while; the next message resumes it.
   // Never while a turn, a permission prompt, a compaction or background work is live.
+  // Ends an idle process so the next message starts one on the account billing uses now.
+  restartIfIdle() { if (this.canSleep()) this.stop() }
+
   private canSleep() {
     const m = this.meta
     return !!this.proc && ['idle', 'waiting', 'asking'].includes(m.status) && !m.compacting && !this.background
@@ -166,7 +173,7 @@ export class Session {
       // Its name among Claude Code sessions (what agents message it by) carries its Codinger id.
       '--name', claudeName(m.id),
       '--permission-mode', m.permissionMode,
-      ...(m.model ? ['--model', m.model] : []),
+      ...(modelFor(m.model) ? ['--model', modelFor(m.model)!] : []),
       ...flagArgs(m.flags, os.homedir()),
       ...(m.resumeAt ? ['--resume', m.claudeSessionId, '--resume-session-at', m.resumeAt, '--fork-session']
         : m.started ? ['--resume', m.claudeSessionId] : ['--session-id', m.claudeSessionId]),
@@ -174,7 +181,7 @@ export class Session {
       ...args,
     ]
     if (!fs.existsSync(m.cwd)) throw new Error(`Directory not found: ${m.cwd}`)
-    const p = Proc.spawn(CLAUDE, full, { cwd: m.cwd, env: childEnv() })
+    const p = Proc.spawn(CLAUDE, full, { cwd: m.cwd, env: sessionEnv(childEnv()) })
     this.proc = p
     this.listen(p)
     // Ask for the command list (with descriptions) the way the Agent SDK does.
@@ -265,7 +272,7 @@ export class Session {
       cmd: CLAUDE,
       args: [
         '-p', '--output-format', 'json', '--permission-mode', m.permissionMode,
-        ...(m.model ? ['--model', m.model] : []),
+        ...(modelFor(m.model) ? ['--model', modelFor(m.model)!] : []),
         // Its flags too: the same tools, so the same prompt cache.
         ...flagArgs(m.flags, os.homedir()),
         '--resume', m.claudeSessionId, '--fork-session', '--no-session-persistence', '--max-turns', '1',
@@ -273,7 +280,7 @@ export class Session {
         ...args,
       ],
       cwd: m.cwd,
-      env: childEnv(),
+      env: sessionEnv(childEnv()),
     }
   }
 
@@ -525,6 +532,7 @@ export class Session {
           else if (b.type === 'tool_use') blocks.push({ type: 'tool_use', id: b.id, name: b.name, input: b.input })
         }
         if (synthetic && blocks.some((b) => b.type === 'text' && AUTH_ERROR.test(b.text))) this.authError()
+        if (synthetic && onPlan() && blocks.some((b) => b.type === 'text' && LIMIT_ERROR.test(b.text))) this.limited ??= {}
         if (!synthetic && a.usage) {
           const u = a.usage
           // The first call of a conversation: how big a new session starts.
@@ -579,6 +587,14 @@ export class Session {
         } else if (msg.is_error) {
           m.error = String(msg.result ?? msg.subtype ?? 'error').slice(0, 500)
           if (AUTH_ERROR.test(m.error) && this.authRetry == null) this.authError()
+          if (LIMIT_ERROR.test(m.error) && onPlan()) this.limited ??= {}
+        }
+        if (this.limited) {
+          const { resetsAt } = this.limited
+          this.limited = null
+          const last = this.getEvents().findLast((e) => e.t === 'user')
+          if (last && this.authRetry == null) this.authRetry = last.seq
+          this.hooks.limitHit(this, resetsAt)
         }
         if (!this.outstanding) this.interrupted = false
         if (msg.num_turns > 0 || msg.is_error) {
@@ -636,6 +652,7 @@ export class Session {
       case 'rate_limit_event': {
         const i = msg.rate_limit_info ?? {}
         const w = i.unifiedWindows ?? {}
+        if (i.status === 'rejected' && !i.isUsingOverage && onPlan()) this.limited = { resetsAt: i.resetsAt }
         this.hooks.usage({ fiveHour: w.five_hour?.utilization, sevenDay: w.seven_day?.utilization, resetsAt: i.resetsAt, status: i.status, ...(i.isUsingOverage ? { overage: true } : {}) })
         return
       }

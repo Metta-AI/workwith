@@ -5,6 +5,7 @@
 
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import type { AuthState } from '../shared/types.ts'
+import { noLogin, planEnv, signedIn as backOnPlan } from './billing.ts'
 
 // The Claude Code binary. Codinger was called Codiner until October 2026; the old name still works.
 export const CLAUDE = process.env.CODINGER_CLAUDE ?? process.env.CODINER_CLAUDE ?? 'claude'
@@ -22,10 +23,10 @@ let onSignedIn: () => void = () => {}
 export function initAuth(o: { change(a: AuthState): void; signedIn(): void }) {
   onChange = o.change
   onSignedIn = o.signedIn
-  execFile(CLAUDE, ['auth', 'status'], { env: childEnv(), timeout: 20_000, windowsHide: true }, (_err, out) => {
+  execFile(CLAUDE, ['auth', 'status'], { env: planEnv(childEnv()), timeout: 20_000, windowsHide: true }, (_err, out) => {
     let loggedIn = true
     try { loggedIn = JSON.parse(out).loggedIn !== false } catch { /* unknown: assume fine */ }
-    if (!loggedIn) needed()
+    if (!loggedIn) { noLogin(); needed() }
   })
 }
 
@@ -54,7 +55,7 @@ export function needed() {
 
 export function startLogin() {
   if (proc) return
-  const p = spawn(CLAUDE, ['auth', 'login'], { env: childEnv(), windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+  const p = spawn(CLAUDE, ['auth', 'login'], { env: planEnv(childEnv()), windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
   proc = p
   let out = ''
   set({ state: 'pending' })
@@ -71,7 +72,7 @@ export function startLogin() {
   p.on('exit', (code) => {
     if (proc !== p) return
     proc = null
-    if (code === 0) { lastSignIn = Date.now(); set({ state: 'ok' }); onSignedIn() }
+    if (code === 0) { lastSignIn = Date.now(); backOnPlan(); set({ state: 'ok' }); onSignedIn() }
     else if (auth.state === 'pending') {
       const tail = out.replace(/\x1b\][^\x07]*\x07|\x1b\[[\d;]*m/g, '').trim().split('\n').filter((l) => !/Paste code|browser|visit:/i.test(l)).slice(-3).join(' ')
       set({ state: 'failed', error: tail || `claude auth login exited with code ${code}` })

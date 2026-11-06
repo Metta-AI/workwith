@@ -239,7 +239,9 @@ export type ServerMsg =
   // agent: set when Codinger runs as one agent's desk; me: who this browser is, per the proxy;
   // billing: 'api' when Claude Code bills per token (Bedrock, Vertex), so there are no plan limits.
   | { type: 'hello'; sessions: SessionMeta[]; settings: Settings; usage: Usage; platform: string; home: string; auth: AuthState; stale?: boolean; staleAt?: number; update?: UpdateStatus; remote?: RemoteStatus; device?: 'laptop' | 'desktop'
-      agent?: AgentInfo; me?: Person | null; askName?: boolean; billing?: 'api' | 'plan' }
+      agent?: AgentInfo; me?: Person | null; askName?: boolean; billing?: 'api' | 'plan'; billingNote?: string }
+  // Billing moved between the plan and per-token (CODINGER_BILLING=fallback); note: why it's per token.
+  | { type: 'billing'; billing: 'api' | 'plan'; note?: string }
   | { type: 'device'; device: 'laptop' | 'desktop' }
   | { type: 'remote'; remote: RemoteStatus }
   | { type: 'auth'; auth: AuthState }

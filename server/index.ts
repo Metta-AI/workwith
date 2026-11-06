@@ -44,6 +44,7 @@ import { AUTOPILOT_MODES, amount, nudge, startAutopilot, usedOf, verdict } from 
 import { blame, initFileHistory, moveHistory, noteEdit, record as recordVersion, versions } from './filehistory.ts'
 import { claim, refresh, toolEnded, toolStarted, whoChanged } from './changes.ts'
 import { CLAUDE, authState, cancelLogin, childEnv, initAuth, needed as authNeeded, startLogin, submitCode } from './auth.ts'
+import { FALLBACK, billingNote, limitHit, noLogin, onBilling, onPlan, sessionEnv } from './billing.ts'
 import { deviceType, findDevice } from './device.ts'
 import { remoteCancelLink, remoteForget, remoteHub, remoteLink, remoteName, remoteOn, remoteNotify, remoteProxy, remoteStatus, remoteUpgrade, startRemote } from './remote.ts'
 import { startUpdates, updateModeChanged, updateNow, updatePrompt, updateStatus } from './update.ts'
@@ -244,7 +245,12 @@ const hooks: Hooks = {
     }
   },
   delta: (s, text, reset) => broadcast({ type: 'delta', sessionId: s.meta.id, text, reset }),
-  authFailed: () => authNeeded(),
+  authFailed: (s) => {
+    // With a provider to fall back on, the message goes again there while someone signs in.
+    if (FALLBACK && onPlan()) { noLogin(); setTimeout(() => s.retryAfterSignIn((p) => hiddenFor(s, p)), 1000) }
+    authNeeded()
+  },
+  limitHit: (s, resetsAt) => { limitHit(resetsAt); setTimeout(() => s.retryAfterSignIn((p) => hiddenFor(s, p)), 500) },
   truncate: (s, seq) => { broadcast({ type: 'truncate', sessionId: s.meta.id, seq }); metaChanged() },
   usage: (u) => { meter.limit(u); costs.limit(u); usage = { ...u, rate: meter.rate() }; broadcast({ type: 'usage', usage }) },
   commands: (s, list) => {
@@ -1055,7 +1061,7 @@ function startContext(cwd: string, fresh: boolean): Promise<string> {
   const file = promptFile(meta.id, prompt)
   return new Promise((resolve, reject) => {
     execFile(CLAUDE, ['-p', '--output-format', 'json', '--no-session-persistence', '--append-system-prompt-file', file, ...args, '--', '/context'],
-      { cwd, env: childEnv(), timeout: 120_000, windowsHide: true, maxBuffer: 8 << 20 }, (err, out) => {
+      { cwd, env: sessionEnv(childEnv()), timeout: 120_000, windowsHide: true, maxBuffer: 8 << 20 }, (err, out) => {
         fs.rm(file, { force: true }, () => {})
         let text = ''
         try { text = String(JSON.parse(out).result ?? '') } catch { /* reported below */ }
@@ -1795,7 +1801,7 @@ server.on('upgrade', (req, socket, head) => {
     sockets.add(ws)
     present.set(ws, personOf(req))
     ws.on('close', () => { sockets.delete(ws); present.delete(ws); broadcast({ type: 'people', people: people() }) })
-    ws.send(JSON.stringify({ type: 'hello', sessions: metas(), settings, usage, platform: process.platform, home: os.homedir(), auth: authState(), stale, staleAt, update: updateStatus(), remote: remoteStatus(), device: deviceType(), agent: agentInfo(), me: personOf(req), askName: ASK_NAME, billing: billing() } satisfies ServerMsg))
+    ws.send(JSON.stringify({ type: 'hello', sessions: metas(), settings, usage, platform: process.platform, home: os.homedir(), auth: authState(), stale, staleAt, update: updateStatus(), remote: remoteStatus(), device: deviceType(), agent: agentInfo(), me: personOf(req), askName: ASK_NAME, billing: billing(), billingNote: billingNote() } satisfies ServerMsg))
     ws.send(JSON.stringify({ type: 'tasks', tasks: allTasks() } satisfies ServerMsg))
     ws.send(JSON.stringify(artifactsMsg()))
     broadcast({ type: 'people', people: people() })
@@ -1841,6 +1847,12 @@ initFileHistory({
     seqOf: (toolUseId: string) => s.getEvents().find((e) => e.t === 'assistant' && e.blocks.some((b) => b.type === 'tool_use' && b.id === toolUseId))?.seq ?? null,
   })),
   changed: (p) => broadcast({ type: 'file', path: p }),
+})
+
+// Billing moved between the plan and the provider: idle processes start again on the new one.
+onBilling(() => {
+  for (const s of sessions.values()) s.restartIfIdle()
+  broadcast({ type: 'billing', billing: billing(), note: billingNote() })
 })
 
 initAuth({

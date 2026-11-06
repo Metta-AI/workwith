@@ -16,7 +16,12 @@
 //   CODINGER_ASK_NAME       1: a browser that the proxy names nobody in asks its person for a
 //                           name and keeps it (cookie codinger.name). Nothing checks that name:
 //                           only for a page that people reach without a sign-in, e.g. a tunnel
-//   CODINGER_BILLING        api: show API spend, not plan limits (Bedrock and Vertex need not say)
+//   CODINGER_BILLING        api: show API spend, not plan limits (Bedrock and Vertex need not say).
+//                           fallback: sessions run on the Claude Code login's plan, and on the
+//                           Bedrock/Vertex the environment sets up only while there is no login
+//                           or the plan's limit is reached (server/billing.ts)
+//   CODINGER_ALERT_CMD      (server/billing.ts) a shell command run when sessions go to per-token
+//                           billing, with the reason in CODINGER_ALERT_TEXT
 //   CODINGER_NO_SHELL       (server/index.ts) 1: no shell commands, for a page open to strangers
 //   CODINGER_HOSTS          (server/index.ts) may hold "*.trycloudflare.com" for such a tunnel
 //   CODINGER_SUPERVISED     (server/index.ts) 1: a restart only stops this server, and the
@@ -27,6 +32,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type http from 'node:http'
+import { billingState } from './billing.ts'
 import type { AgentInfo, Person } from '../shared/types.ts'
 import { parseBase } from './base.ts'
 
@@ -49,8 +55,9 @@ export const agentInfo = (): AgentInfo | undefined =>
   NAME ? { name: NAME, avatar: !!AVATAR, theme: !!THEME, ...(CWD ? { cwd: CWD } : {}) } : undefined
 
 // Claude Code on Bedrock or Vertex bills each token; there is no plan with limits to show.
+// CODINGER_BILLING=fallback: the plan, and the provider only while the plan can't (server/billing.ts).
 export const billing = (): 'api' | 'plan' =>
-  env.CLAUDE_CODE_USE_BEDROCK || env.CLAUDE_CODE_USE_VERTEX || desk('BILLING') === 'api' ? 'api' : 'plan'
+  desk('BILLING') === 'api' ? 'api' : billingState().on
 
 const NAMES = new Map((desk('PEOPLE') ?? '').split(',').flatMap((x) => {
   const at = x.indexOf('=')

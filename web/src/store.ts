@@ -95,6 +95,7 @@ type State = {
   people: Person[]                   // who has the page open now (server: 'people')
   askName: boolean                   // nobody says: ask this browser's person for a name (CODINGER_ASK_NAME)
   billing: 'api' | 'plan'            // 'api': billed per token, so no plan limits to show
+  billingNote: string | null         // per token for now, though the desk has a plan: why
   seenAt: number | null              // offline: when the session list shown was last current
   page: 'artifacts' | null           // a page in place of the selected session
   artifact: string | null            // the artifact chosen on the Artifacts page
@@ -178,6 +179,7 @@ export const state = {
   askName: false,
   people: [],
   billing: 'plan',
+  billingNote: null,
   seenAt: null,
 } as Partial<State> as State
 
@@ -510,7 +512,7 @@ function onServer(m: ServerMsg, machine: string) {
       if (state.restarting === machine) state.restarting = null
       // An agent's desk (server/agent.ts) and who this browser is: the page's own machine says.
       if (!machine) {
-        state.agent = m.agent ?? null; state.me = m.me ?? null; state.askName = !!m.askName; state.billing = m.billing ?? 'plan'
+        state.agent = m.agent ?? null; state.me = m.me ?? null; state.askName = !!m.askName; state.billing = m.billing ?? 'plan'; state.billingNote = m.billingNote ?? null
         if (state.billing === 'api') state.money = 'usd'
         state.seenAt = null; keepSeen()
       }
@@ -533,6 +535,9 @@ function onServer(m: ServerMsg, machine: string) {
     case 'artifacts': if (looks) { state.artifacts = m.artifacts; state.artifactsPort = m.port; state.prolifica = m.prolifica }; break
     case 'preview': state.preview = { ...state.preview, [g(m.sessionId)]: { target: m.target, at: m.at } }; break
     case 'auth': M.auth = m.auth; break
+    case 'billing':
+      if (!machine) { state.billing = m.billing; state.billingNote = m.note ?? null; state.money = m.billing === 'api' ? 'usd' : state.money }
+      break
     case 'stale': M.stale = m.stale; M.staleAt = m.staleAt; break
     case 'update': M.update = m.update; break
     case 'device': M.device = m.device; break
