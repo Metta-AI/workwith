@@ -5,6 +5,9 @@
 //   CODINGER_AGENT_AVATAR   an image file: its face in the sidebar
 //   CODINGER_AGENT_CSS      a CSS file that sets its colours (no theme prompt then)
 //   CODINGER_AGENT_COLOR    the colour of the installed app's title bar, e.g. #0f4a44
+//   CODINGER_AGENT_ABOUT    one line on what the agent is for: the page's description in link previews
+//                           (smaller copies of the avatar, <name>-32.png, -64, -180, -512 next to
+//                           it, serve as the tab icon and preview image; the avatar stands in otherwise)
 //   CODINGER_AGENT_CWD      the agent's own folder: "+ New session" starts a session there at
 //                           once, with no dialog (people at a desk have no other folder to pick)
 //   CODINGER_USER_HEADER    the header the proxy names the signed-in person in
@@ -36,6 +39,8 @@ const AVATAR = existing(desk('AGENT_AVATAR'))
 const AVATAR_TYPE = AVATAR ? { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml' }[path.extname(AVATAR).toLowerCase()] ?? 'application/octet-stream' : ''
 const THEME = existing(desk('AGENT_CSS'))
 const CWD = desk('AGENT_CWD') || undefined
+const ABOUT = desk('AGENT_ABOUT')?.trim() || undefined
+const ICON_SIZES = new Set(['32', '64', '180', '512'])
 
 export const ASK_NAME = desk('ASK_NAME') === '1'
 export const BASE = parseBase(desk('BASE'))
@@ -110,10 +115,48 @@ export function serveAgent(pathname: string, res: http.ServerResponse): boolean 
     res.end(THEME ? fs.readFileSync(THEME) : '')
     return true
   }
+  const icon = /^\/agent\/icon-(\d+)\.png$/.exec(pathname)
+  if (icon && AVATAR && ICON_SIZES.has(icon[1])) {
+    // A smaller copy next to the avatar when there is one (avatar-32.png); else the avatar itself.
+    const sized = path.join(path.dirname(AVATAR), `${path.basename(AVATAR, path.extname(AVATAR))}-${icon[1]}.png`)
+    const file = fs.existsSync(sized) ? sized : AVATAR
+    res.writeHead(200, { 'content-type': file === sized ? 'image/png' : AVATAR_TYPE, 'cache-control': 'max-age=3600' })
+    fs.createReadStream(file).pipe(res)
+    return true
+  }
   if (pathname === '/agent/avatar' && AVATAR) {
     res.writeHead(200, { 'content-type': AVATAR_TYPE, 'cache-control': 'max-age=3600' })
     fs.createReadStream(AVATAR).pipe(res)
     return true
   }
   return false
+}
+
+const attr = (s: string) => s.replace(/[&"<>]/g, (c) => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+// An agent's desk page names the agent everywhere a page is shown without being opened: the tab
+// and home-screen icon (its face, not Codinger's) and the link-preview tags that chat apps read.
+// origin is where the browser reached this page (https://host), for the preview's absolute URLs.
+export function agentPage(html: string, origin: string): string {
+  if (!NAME) return html
+  const name = attr(NAME)
+  const about = attr(ABOUT ?? `${NAME}'s desk: work with ${NAME} here.`)
+  html = html.replace('<title>Codinger</title>', `<title>Work with ${name}</title>`)
+    .replace('<meta name="apple-mobile-web-app-title" content="Codinger" />', `<meta name="apple-mobile-web-app-title" content="${name}" />`)
+  const color = desk('AGENT_COLOR')
+  if (color) html = html.replace('<meta name="theme-color" content="#1d1c1a" />', `<meta name="theme-color" content="${attr(color)}" />`)
+  const tags = [
+    `<meta name="description" content="${about}" />`,
+    '<meta property="og:type" content="website" />',
+    `<meta property="og:site_name" content="${name}" />`,
+    `<meta property="og:title" content="Work with ${name}" />`,
+    `<meta property="og:description" content="${about}" />`,
+    `<meta property="og:url" content="${attr(`${origin}${BASE}/`)}" />`,
+  ]
+  if (AVATAR) {
+    html = html.replace(/<link rel="icon" href="data:image\/svg\+xml,[^"]*" \/>/, '<link rel="icon" type="image/png" sizes="32x32" href="/agent/icon-32.png" />\n    <link rel="icon" type="image/png" sizes="64x64" href="/agent/icon-64.png" />')
+      .replace('<link rel="apple-touch-icon" href="/agent/avatar" />', '<link rel="apple-touch-icon" sizes="180x180" href="/agent/icon-180.png" />')
+    tags.push(`<meta property="og:image" content="${attr(`${origin}${BASE}/agent/icon-512.png`)}" />`, `<meta property="og:image:alt" content="${name}" />`)
+  }
+  return html.replace('</head>', `  ${tags.join('\n    ')}\n  </head>`)
 }
