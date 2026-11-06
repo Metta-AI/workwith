@@ -30,6 +30,7 @@ import { flagProblem } from '../shared/flags.ts'
 import { allTasks, endText, logPath, markTold, readLog, removeTask, searchLog, startTask, startTasks, statusLine, stopTask, taskOf } from './tasks.ts'
 import type { Task, TaskNotify } from '../shared/types.ts'
 import { configsFor, probe, serversFor } from './mcpservers.ts'
+import { agentStatus, agentStatusPrompt, agentStatusText } from './agentstatus.ts'
 import { agentInfo, agentPage, ASK_NAME, BASE, billing, desk, personOf, serveAgent } from './agent.ts'
 import { pageUnder, underBase } from './base.ts'
 import { DEFAULT_CACHE_GUARD, cacheLeft, knownTtl } from '../shared/cache.ts'
@@ -275,7 +276,7 @@ function launchFor(meta: SessionMeta): () => Launch {
         // Artifacts live in one folder for every session (server/artifacts.ts).
         '--add-dir', ARTIFACTS,
       ],
-      prompt: WORKER_PROMPT + (settings.estimates !== false ? estimatesPrompt() : '') + lookPrompt(meta.look) + titlePrompt(meta) + mcpPrompt(meta) + artifactsPrompt() + (notes ? workerNotesPrompt(notesFile(meta.id)) : '') + agentsPrompt(),
+      prompt: WORKER_PROMPT + (settings.estimates !== false ? estimatesPrompt() : '') + lookPrompt(meta.look) + titlePrompt(meta) + mcpPrompt(meta) + artifactsPrompt() + agentStatusPrompt() + (notes ? workerNotesPrompt(notesFile(meta.id)) : '') + agentsPrompt(),
     }
   }
   return () => ({
@@ -427,8 +428,10 @@ function resumeHistory(claudeId: string): Session {
 // that ended stay unheard until a message that can carry them.
 function hiddenFor(s: Session, parts: Part[]): { hidden?: string; tasks?: string[] } {
   if (slashCommand(parts)) return {}
-  if (s.meta.kind === 'lead') return { hidden: board() }
+  const status = agentStatusText()
+  if (s.meta.kind === 'lead') return { hidden: [board(), status].filter(Boolean).join('\n\n') }
   const out: string[] = []
+  if (status) out.push(status)
   // Tasks that ended since it last heard; the message keeps their ids, to show them.
   const ended = tasksEnded(s)
   out.push(...ended.map(endText))
@@ -1084,6 +1087,8 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL
   // A request no route answers says which one it was, so its error is of use where it shows.
   const notFound = () => new HttpError(404, `Not found: ${method} ${url.pathname}`)
 
+  // The rest of the agent (server/agentstatus.ts), for the sidebar's panel.
+  if (a === 'agent-status' && method === 'GET') return send(res, 200, { status: agentStatus() })
   // Remote access (server/remote.ts): set up on this machine only, not from the web.
   if (a === 'remote') {
     if (method === 'GET' && !id) return send(res, 200, remoteStatus())

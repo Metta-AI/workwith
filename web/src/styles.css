@@ -1719,3 +1719,17 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adj
 /* The Comment button by a selection, when selecting does not open a comment (Settings). */
 .comment-offer { position: fixed; z-index: 50; transform: translate(6px, calc(-100% - 4px)); padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--text); font-size: calc(12.5px * var(--fs, 1)); box-shadow: 0 2px 8px rgba(0, 0, 0, .15); cursor: pointer; }
 .comment-offer:hover { border-color: var(--accent); color: var(--accent); }
+
+/* The rest of the agent (StatusPanel.tsx) */
+.agent-status { margin: 0 8px 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); font-size: calc(12px * var(--fs, 1)); }
+.agent-status-head { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 7px; padding: 7px 9px; cursor: pointer; }
+.agent-status-sum { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-status-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: #4a9d6b; }
+.agent-status-dot.busy { background: #d79a2b; animation: agent-status-pulse 1.6s ease-in-out infinite; }
+@keyframes agent-status-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .agent-status-dot.busy { animation: none; } }
+.agent-status-warn { padding: 0 9px 7px; color: #c0483a; }
+.agent-status-body { padding: 0 9px 8px; display: flex; flex-direction: column; gap: 3px; }
+.agent-status-h { margin-top: 6px; font-weight: 600; }
+.agent-status-row { display: flex; justify-content: space-between; gap: 8px; }
+.agent-status-row > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
